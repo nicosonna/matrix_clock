@@ -5,6 +5,24 @@
 
 ---
 
+## 0. Exemplaire en main — relevé `esptool` du 2026-11-05
+
+| Lu par `esptool flash_id` | Valeur | Conséquence |
+|---|---|---|
+| Puce | **ESP32-D0WD-V3, révision v3.0** | Cible du projet. Révision 3 : pas de contournement du bug de cache PSRAM à activer (et pas de PSRAM de toute façon). |
+| Cœurs / horloge | 2 × 240 MHz, quartz 40 MHz | Confortable pour WiFi + SPI/DMA + HTTP. |
+| Flash | **4 Mo** (GigaDevice, JEDEC `c8 4016` = GD25Q32), tension 3,3 V | La table de partitions de `spec-serveur-web.md` §5 (2 × 1920 Ko OTA + NVS 48 Ko) tient **exactement**. Pas de place pour une partition de données en plus : la page web vit dans l'image. |
+| eFuse | **étalonnage Vref présent** | `adc_cali` disposera du schéma « ligne » : l'ADC de la photorésistance sera étalonné sans intervention. |
+| PSRAM | aucune (module WROOM-32) | Attendu. Jamais appliquer un `sdkconfig` S3/PSRAM à cette carte. |
+| Pont USB-série | **Silicon Labs CP210x**, vu sur **COM21** ce jour (désigné par Nicolas) | L'énumération COM bouge sous Windows : revérifier avant de flasher. Un **autre** WROOM-32 (CH340, rév. 3.1, flash Puya) a été vu plus tôt sur COM6 : compatible aussi, mais ce n'est pas la carte de l'horloge. **COM15 est la carte ThermoSync (ESP32-S3, 16 Mo) : ne jamais la flasher avec ce projet.** |
+
+Relevé avec le Python de l'IDF :
+`C:\Users\<user>\.espressif\python_env\idf5.3_py3.11_env\Scripts\python.exe -m esptool --port COM21 flash_id`
+(`esptool.py` n'est **pas** dans le `PATH` PowerShell même après `export.ps1`).
+L'adresse MAC relevée n'est volontairement pas consignée ici : dépôt public.
+
+**Verdict : compatible, sans réserve, avec tout ce qui est spécifié.**
+
 ## 1. Nomenclature
 
 | Élément | Référence | Note |

@@ -9,7 +9,8 @@ ThermoSync), **canal d'alerte** et **moteur de règles
 d'alerte** local, **page web** de paramétrage complet avec **wizards**,
 **portail captif** de mise en service repris de la borne et de ThermoSync.
 Cible : devkit **ESP32-WROOM-32** (4 Mo, sans PSRAM), carte `horloge-v1`.
-Dépôt **public**. Langues (décision du 2026-11-05) :
+Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
+`horloge`, remote `origin`). Langues (décision du 2026-11-05) :
 - **Code en anglais** : identifiants, commentaires, Doxygen, logs `ESP_LOGx`,
   messages de commit, `README.md` de la racine.
 - **Page web en français** (interface de la maison) ; **documentation en
@@ -261,4 +262,9 @@ Contraintes **impératives** :
   build en **PowerShell** via `export.ps1`. Les tests host tournent sous Git Bash
   (g++ MinGW `C:\msys64\mingw64\bin`).
 - USB/série **instable** sous Windows : revérifier le port
-  (`[System.IO.Ports.SerialPort]::GetPortNames()`) avant de flasher.
+  (`[System.IO.Ports.SerialPort]::GetPortNames()`) avant de flasher. La carte
+  en main : **ESP32-D0WD-V3 rév. 3.0, 4 Mo, Vref en eFuse, pont CP210x** (COM21
+  le 2026-11-05 — relevé dans `documentation/cartes/horloge-v1/README.md` §0).
+  ⚠️ **COM15 est la carte ThermoSync (ESP32-S3)** : ne jamais la flasher d'ici.
+  `esptool.py` n'est pas dans le `PATH` PowerShell : utiliser
+  `~\.espressif\python_env\idf5.3_py3.11_env\Scripts\python.exe -m esptool`.

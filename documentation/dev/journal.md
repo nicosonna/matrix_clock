@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-05 (suite 4) — Carte identifiée : compatible
+
+`esptool flash_id` sur la carte désignée par Nicolas (**COM21**, CP210x) :
+**ESP32-D0WD-V3 rév. 3.0, 4 Mo de flash (GigaDevice GD25Q32), quartz 40 MHz,
+étalonnage Vref en eFuse, pas de PSRAM**. Tout correspond à la cible spécifiée :
+la table de partitions 4 Mo tient, l'ADC sera étalonné, aucun contournement de
+révision à prévoir. Relevé consigné dans `cartes/horloge-v1/README.md` §0 (sans
+l'adresse MAC : dépôt public).
+
+Deux pièges notés : `esptool.py` absent du `PATH` PowerShell (passer par le
+Python de l'IDF) ; et **plusieurs cartes branchées** — un premier relevé avait
+lu un autre WROOM-32 (COM6, CH340, rév. 3.1, flash Puya, compatible aussi), et
+**COM15 est la carte ThermoSync (ESP32-S3, 16 Mo)**, à ne jamais flasher d'ici.
+
+---
+
 ## 2026-11-05 (suite 3) — Aucun acquittement, fuseau réglable, code en anglais, Git
 
 **Quoi.** Trois décisions de Nicolas, répercutées partout :
@@ -26,8 +42,9 @@
    descriptifs, le code fait foi.
 
 **Git.** `git init` (branche `main`), `.gitignore` ESP-IDF, `README.md`, puis
-**commit initial** à la demande de Nicolas (specs seules). Licence à choisir
-avant publication.
+**commit initial** à la demande de Nicolas (specs seules). Remote `origin` =
+`https://github.com/nicosonna/matrix_clock.git` (dépôt public, vide à la
+création). Licence à choisir avant publication.
 
 **État.** Specs à jour, rien d'implémenté.
 

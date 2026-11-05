@@ -1,4 +1,7 @@
-# Horloge — connected LED matrix clock (ESP-IDF)
+# matrix_clock — connected LED matrix clock (ESP-IDF)
+
+Repository: `github.com/nicosonna/matrix_clock` (the project is called
+*Horloge* in its French documentation).
 
 A living-room clock on a **WS2812B 8×32 LED matrix**, driven by an
 **ESP32-WROOM-32** running **ESP-IDF** (no Arduino, no PlatformIO), written in

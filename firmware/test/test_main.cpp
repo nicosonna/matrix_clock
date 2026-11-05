@@ -67,6 +67,8 @@ int main() {
     run_alerts_tests();
     std::printf("-- timekeeping: POSIX rules, local time with DST, calendar, validity\n");
     run_timekeeping_tests();
+    std::printf("-- settings: JSON writer, forms (all or nothing), models, page orphans\n");
+    run_settings_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

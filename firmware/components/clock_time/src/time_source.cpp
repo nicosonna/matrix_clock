@@ -4,6 +4,7 @@
  */
 #include "clock_time/time_source.hpp"
 
+#include <cstring>
 #include <ctime>
 
 #include "esp_log.h"
@@ -20,6 +21,8 @@ namespace clock_time {
 namespace {
 
 constexpr char kTag[] = "time";
+/// Longest NTP host name kept (matches settings::kHostMax).
+constexpr std::size_t kNtpServerMax = 63U;
 
 portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 timekeeping::TzRule s_rule{};          // UTC until start()
@@ -60,7 +63,15 @@ esp_err_t start(const char* ntp_server, const char* posix_tz) noexcept {
         ESP_LOGE(kTag, "time-zone rule \"%s\" rejected: showing UTC", (posix_tz != nullptr) ? posix_tz : "");
         (void)set_timezone("UTC0");
     }
-    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG(ntp_server);
+    // lwIP keeps the *pointer* to the server name: it must outlive the caller's buffer.
+    static char s_server[kNtpServerMax + 1U];
+    if ((ntp_server == nullptr) || (ntp_server[0] == '\0') || (std::strlen(ntp_server) > kNtpServerMax)) {
+        ESP_LOGE(kTag, "NTP server name missing or too long: no synchronisation");
+        return ESP_ERR_INVALID_ARG;
+    }
+    std::strncpy(s_server, ntp_server, kNtpServerMax);
+    s_server[kNtpServerMax] = '\0';
+    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG(s_server);
     cfg.sync_cb = on_sync;
     cfg.start = true;
     cfg.wait_for_sync = false;  // nobody blocks on it: the display shows --:-- meanwhile

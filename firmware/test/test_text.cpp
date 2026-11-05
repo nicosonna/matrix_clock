@@ -165,10 +165,13 @@ void test_transliterate() {
 
 // ---------------------------------------------------------------- AFF-10 / 11
 
+constexpr display::ClockColors kMono{kWhite, kWhite, kWhite};
+constexpr display::DateColors kMonoDate{kWhite, kWhite};
+
 void test_clock_scene() {
     display::TimeInfo t{true, 12U, 34U, 30U, 5U, 11U, 5U};
     FrameBuffer fb;
-    display::draw_clock(fb, t, display::kClockCentredX, true, false, kWhite);
+    display::draw_clock(fb, t, display::kClockCentredX, true, false, kMono);
     CHECK_EQ(display::kClockWidth, 25);
     // Nothing left of x = 3 nor right of x = 27: 25 columns, centred.
     bool inside = true;
@@ -188,12 +191,20 @@ void test_clock_scene() {
     CHECK(fb.get(15U, 0U) == kBlack);
     const uint16_t with_colon = lit_count(fb);
     fb.clear();
-    display::draw_clock(fb, t, display::kClockCentredX, false, false, kWhite);
+    display::draw_clock(fb, t, display::kClockCentredX, false, false, kMono);
     CHECK_EQ(lit_count(fb), with_colon - 2U);
+
+    // Colours: digits, colon and bar each take their own colour.
+    const display::ClockColors tri{Rgb{255U, 255U, 255U}, Rgb{255U, 160U, 40U}, Rgb{40U, 80U, 200U}};
+    fb.clear();
+    display::draw_clock(fb, t, display::kClockCentredX, true, true, tri);
+    CHECK((fb.get(15U, 2U) == Rgb{255U, 160U, 40U}));   // colon
+    CHECK((fb.get(0U, 7U) == Rgb{40U, 80U, 200U}));     // seconds bar
+    CHECK((fb.get(4U, 1U) == Rgb{255U, 255U, 255U}));   // the '1' of 12: column 4 lit, white
 
     // Seconds bar: 30 s = 16 pixels on the bottom row.
     fb.clear();
-    display::draw_clock(fb, t, display::kClockCentredX, false, true, kWhite);
+    display::draw_clock(fb, t, display::kClockCentredX, false, true, kMono);
     uint8_t bar = 0U;
     for (uint8_t x = 0U; x < display::kWidth; ++x) {
         if (fb.get(x, 7U) != kBlack) {
@@ -206,7 +217,7 @@ void test_clock_scene() {
     // nothing resembling a digit (no pixel on row 0 or row 6).
     display::TimeInfo unsure{false, 12U, 34U, 30U, 5U, 11U, 5U};
     fb.clear();
-    display::draw_clock(fb, unsure, display::kClockCentredX, true, true, kWhite);
+    display::draw_clock(fb, unsure, display::kClockCentredX, true, true, kMono);
     CHECK_EQ(lit_count(fb), 4U * 5U + 2U);
     bool only_row3 = true;
     for (uint8_t x = 0U; x < display::kWidth; ++x) {
@@ -221,12 +232,12 @@ void test_clock_scene() {
     // And it is not what 00:00 would look like.
     FrameBuffer zero;
     display::TimeInfo midnight{true, 0U, 0U, 0U, 1U, 1U, 0U};
-    display::draw_clock(zero, midnight, display::kClockCentredX, true, false, kWhite);
+    display::draw_clock(zero, midnight, display::kClockCentredX, true, false, kMono);
     CHECK(lit_count(zero) != 22U);
 
     // Date: "SAM 05.11" fits in kDateWidth columns; nothing when not sure.
     fb.clear();
-    display::draw_date(fb, t, 1U, 1U, kWhite);
+    display::draw_date(fb, t, 1U, 1U, kMonoDate);
     CHECK(lit_count(fb) > 0U);
     bool date_inside = true;
     for (uint8_t y = 0U; y < display::kHeight; ++y) {
@@ -239,8 +250,14 @@ void test_clock_scene() {
     }
     CHECK(date_inside);
     CHECK(fb.get(22U, 5U) == kWhite);  // the dot between day and month
+    // Weekday and date in their own colours.
+    const display::DateColors two{Rgb{255U, 160U, 40U}, Rgb{200U, 200U, 200U}};
     fb.clear();
-    display::draw_date(fb, unsure, 1U, 1U, kWhite);
+    display::draw_date(fb, t, 1U, 1U, two);
+    CHECK((fb.get(1U, 2U) == Rgb{255U, 160U, 40U}));    // 'S' of SAM: column 0x12 lights glyph rows 1 and 4 -> panel row 2
+    CHECK((fb.get(22U, 5U) == Rgb{200U, 200U, 200U}));  // the dot
+    fb.clear();
+    display::draw_date(fb, unsure, 1U, 1U, kMonoDate);
     CHECK_EQ(lit_count(fb), 0);
     CHECK(std::strcmp(display::weekday_abbrev(0U), "LUN") == 0);
     CHECK(std::strcmp(display::weekday_abbrev(1U), "MAR") == 0);
@@ -254,8 +271,8 @@ void test_clock_scene() {
     {
         AllocGuard guard;
         fb.clear();
-        display::draw_clock(fb, t, display::kClockCentredX, true, true, kWhite);
-        display::draw_date(fb, t, 1U, 1U, kWhite);
+        display::draw_clock(fb, t, display::kClockCentredX, true, true, kMono);
+        display::draw_date(fb, t, 1U, 1U, kMonoDate);
         char out[16];
         (void)display::transliterate("\xC3\x89t\xC3\xA9", out, sizeof(out));
         display::draw_text(fb, display::kFont3x5, -3, 2, out, kWhite);

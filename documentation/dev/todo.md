@@ -20,9 +20,8 @@
       anglais, commit initial le 2026-11-05.
 - [ ] Choisir une **licence** avant de publier (MIT ? GPL-3.0 ? — c'est un choix
       de Nicolas, pas un défaut).
-- [ ] Table **fuseaux IANA → règles POSIX** compilée dans l'image (liste courte :
-      Europe, Amérique du Nord, UTC), sélection sur `/systeme`, application à
-      chaud (`setenv("TZ")`, `tzset()`).
+- [x] ~~Table fuseaux IANA → POSIX, sélection sur `/systeme`, application à chaud~~
+      (règle maison, pas `tzset()` ; 2026-11-05).
 
 ## Phase 1 — à faire, dans l'ordre
 
@@ -75,10 +74,14 @@
       `clock_time` (SNTP)~~ — `TIME-01` → `TIME-08`, HW-TIME-01 (2026-11-05).
       Reste : serveur NTP et fuseau en **NVS** via la page `/systeme` (liste
       `named_zones()`), bascule réelle à observer le 29 mars 2026 (HW-TIME-02).
-- [ ] `settings` pur + `/api/<domaine>/modele` + `POST` tout-ou-rien
-      (`WEB-01` → `WEB-08`), puis les pages et les wizards.
-- [ ] OTA + **rollback** (`esp_ota_mark_app_valid_cancel_rollback` après dalle
-      allumée **et** serveur en écoute) + barre de progression sur la dalle.
+- [x] ~~`settings` pur + `/api/<domaine>/modele` + `POST` tout-ou-rien
+      (`WEB-01` → `WEB-08`), pages `/affichage`, `/luminosite`, `/systeme` et
+      wizards (correspondance, photorésistance)~~ (2026-11-05). Reste :
+      HW-WEB-01 (téléphone), HW-SYS-01, couleurs **réglables** sur la page
+      (thème fixe pour l'instant), libellés des `Valeur n` = nom de l'entité
+      quand `homeassistant` existera.
+- [x] ~~OTA + **rollback** + barre de progression sur la dalle~~ (2026-11-05,
+      HW-WEB-02). Reste HW-WEB-03 (image cassée ⇒ rollback).
 - [ ] `homeassistant` pur : machine d'état WebSocket, `render_template`, lecteur JSON
       sans allocation, décodage typé, péremption (`HA-01` → `HA-15`).
 - [ ] `clock_homeassistant` : `esp_websocket_client`, réassemblage borné 2 Ko,

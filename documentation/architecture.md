@@ -81,6 +81,7 @@ volontaire.
 | `clock_time` | SNTP ; la conversion et la validité sont dans `timekeeping` (pur) | oui (transport) |
 | `clock_homeassistant` | `esp_websocket_client`, `esp-mqtt`, HTTPS Open-Meteo | oui (transport) |
 | `clock_web` | `esp_http_server`, page embarquée, DNS captif, mDNS | oui (transport) |
+| `clock_settings` | blobs NVS versionnés par domaine, copie partagée sous mutex, compteur de version scruté par la tâche d'affichage (application à chaud) | oui (NVS, FreeRTOS) |
 | `main/app_main.cpp` | câblage | oui |
 
 ---

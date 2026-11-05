@@ -14,6 +14,7 @@ set(BRIGHT ${CMAKE_CURRENT_SOURCE_DIR}/../components/brightness)
 set(NET ${CMAKE_CURRENT_SOURCE_DIR}/../components/network)
 set(ALERTS ${CMAKE_CURRENT_SOURCE_DIR}/../components/alerts)
 set(TIME ${CMAKE_CURRENT_SOURCE_DIR}/../components/timekeeping)
+set(SET ${CMAKE_CURRENT_SOURCE_DIR}/../components/settings)
 
 add_executable(test_clock
     test_main.cpp
@@ -24,6 +25,11 @@ add_executable(test_clock
     test_network.cpp
     test_alerts.cpp
     test_timekeeping.cpp
+    test_settings.cpp
+    ${SET}/src/json_writer.cpp
+    ${SET}/src/model.cpp
+    ${SET}/src/forms.cpp
+    ${SET}/src/json.cpp
     ${TIME}/src/tz.cpp
     ${TIME}/src/local_time.cpp
     ${TIME}/src/validity.cpp
@@ -50,9 +56,12 @@ target_include_directories(test_clock PRIVATE
     ${NET}/include
     ${ALERTS}/include
     ${TIME}/include
+    ${SET}/include
     ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(test_clock PRIVATE
-    CLOCK_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+    CLOCK_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    # Embedded pages, checked against the settings model (no orphan field).
+    CLOCK_WWW="${CMAKE_CURRENT_SOURCE_DIR}/../components/clock_web/www")
 
 # Safety standard (CLAUDE.md): no exceptions, no RTTI, strict warnings as errors —
 # an implicit conversion or a shadowed variable must not pass.

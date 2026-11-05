@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Horloge</title>
+<style>
+:root { --fond:#f5f6f8; --carte:#ffffff; --texte:#1d2024; --doux:#5d636b; --accent:#2f5d8a; --erreur:#b3261e; --ok:#2f7d5b; --bord:#d9dde3; }
+@media (prefers-color-scheme: dark) {
+  :root { --fond:#14171b; --carte:#1d2126; --texte:#e7eaee; --doux:#9aa2ab; --accent:#6fa8dc; --erreur:#f2b8b5; --ok:#5fbf92; --bord:#323840; }
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--fond); color:var(--texte); }
+header { display:flex; align-items:center; gap:.6rem; padding:.9rem 1rem .4rem; max-width:40rem; margin:0 auto; }
+header svg { width:1.5rem; height:1.5rem; stroke:var(--accent); fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+header h1 { font-size:1.2rem; margin:0; flex:1; }
+nav { max-width:40rem; margin:0 auto; padding:0 1rem; display:flex; gap:.25rem; flex-wrap:wrap; border-bottom:1px solid var(--bord); }
+nav a { padding:.55rem .8rem; text-decoration:none; color:var(--doux); border-bottom:2px solid transparent; }
+nav a.actif { color:var(--accent); border-color:var(--accent); font-weight:600; }
+main { max-width:40rem; margin:0 auto; padding:1rem 1rem 2rem; }
+section { display:none; } section.actif { display:block; }
+.carte { background:var(--carte); border:1px solid var(--bord); border-radius:.75rem; padding:1rem; margin-bottom:1rem; }
+.carte h2 { font-size:1.05rem; margin:0 0 .5rem; }
+.champ { margin:.8rem 0; }
+.champ > label { display:block; font-weight:600; margin-bottom:.3rem; }
+input, select { padding:.55rem .7rem; font-size:1rem; border:1px solid var(--bord); border-radius:.5rem; background:var(--fond); color:var(--texte); max-width:100%; }
+input[type=number] { width:9rem; } input[type=time] { width:9rem; } input[type=text] { width:100%; }
+.unite { margin-left:.4rem; color:var(--doux); }
+.bascule { display:flex; align-items:center; gap:.6rem; cursor:pointer; font-weight:600; }
+.bascule input { width:1.2rem; height:1.2rem; margin:0; }
+button { padding:.6rem 1rem; font-size:1rem; font-weight:600; border:0; border-radius:.5rem; background:var(--accent); color:#fff; cursor:pointer; }
+button.second { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+button.danger { background:var(--erreur); }
+button.petit { padding:.3rem .55rem; font-size:.9rem; }
+button:disabled { opacity:.4; cursor:default; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+.aide { font-size:.85rem; color:var(--doux); margin:.25rem 0 0; }
+.msg { min-height:1.4rem; margin-top:.6rem; font-size:.95rem; } .ok { color:var(--ok); } .ko { color:var(--erreur); }
+.grille { display:grid; grid-template-columns:repeat(auto-fit, minmax(9rem,1fr)); gap:.6rem; }
+.tuile { background:var(--fond); border:1px solid var(--bord); border-radius:.6rem; padding:.6rem .8rem; }
+.tuile b { display:block; font-size:1.3rem; }
+.tuile span { color:var(--doux); font-size:.85rem; }
+.etapes { display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.5rem; }
+.barre { height:.6rem; background:var(--bord); border-radius:.3rem; overflow:hidden; margin-top:.5rem; }
+.barre div { height:100%; width:0; background:var(--accent); transition:width .2s; }
+.boutons { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.8rem; }
+table.liste { width:100%; border-collapse:collapse; }
+table.liste td, table.liste th { padding:.3rem .25rem; text-align:left; border-bottom:1px solid var(--bord); font-size:.95rem; }
+table.liste th { color:var(--doux); font-weight:600; font-size:.85rem; }
+table.liste input[type=number] { width:5.5rem; }
+table.liste select { max-width:11rem; }
+.actions { white-space:nowrap; }
+.actions button { margin-left:.2rem; }
+.actions svg { width:1rem; height:1rem; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-2px; }
+</style>
+</head>
+<body>
+<header>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+  <h1>Horloge</h1>
+</header>
+<nav>
+  <a href="/" data-page="tableau">Tableau de bord</a>
+  <a href="/affichage" data-page="affichage">Affichage</a>
+  <a href="/luminosite" data-page="luminosite">Luminosité</a>
+  <a href="/systeme" data-page="systeme">Système</a>
+  <a href="/wifi">WiFi</a>
+</nav>
+<main>
+
+<section id="tableau">
+  <div class="carte">
+    <h2>État</h2>
+    <div class="grille" id="tuiles"></div>
+    <p class="aide" id="remplaces"></p>
+  </div>
+</section>
+
+<section id="affichage">
+  <div class="carte">
+    <h2>Ce que la dalle affiche</h2>
+    <p class="aide">Les scènes passent dans l'ordre de la liste. Une scène sans donnée (date avant la synchronisation, valeur Home Assistant absente) est sautée.</p>
+    <form id="form-affichage" data-domaine="affichage" data-groupe="scenes"></form>
+  </div>
+  <div class="carte">
+    <h2>Correspondance de la dalle — wizard</h2>
+    <p class="aide">L'horloge allume des motifs ; répondez à ce que vous voyez. Rien n'est enregistré avant la fin.</p>
+    <div id="wiz-map"></div>
+  </div>
+  <div class="carte">
+    <h2>Dalle et rendu</h2>
+    <form id="form-affichage-2" data-domaine="affichage" data-groupe="dalle"></form>
+  </div>
+</section>
+
+<section id="luminosite">
+  <div class="carte">
+    <h2>Luminosité</h2>
+    <form id="form-luminosite" data-domaine="luminosite" data-groupe="reglage"></form>
+  </div>
+  <div class="carte">
+    <h2>Étalonnage de la photorésistance — wizard</h2>
+    <p class="aide">Quatre mesures, dont une dalle allumée dans le noir pour chiffrer l'auto-éclairage du capteur.</p>
+    <p>Mesure en direct : <b id="brut">—</b> <span class="aide" id="brut-mv"></span></p>
+    <div id="wiz-lum"></div>
+  </div>
+  <div class="carte">
+    <h2>Réglages avancés</h2>
+    <form id="form-luminosite-2" data-domaine="luminosite" data-groupe="avance"></form>
+  </div>
+</section>
+
+<section id="systeme">
+  <div class="carte">
+    <h2>Heure</h2>
+    <form id="form-systeme" data-domaine="systeme" data-groupe=""></form>
+  </div>
+  <div class="carte">
+    <h2>Mise à jour du firmware</h2>
+    <p class="aide">Fichier <code>matrix_clock.bin</code>. L'horloge redémarre ; si la nouvelle image ne confirme pas son démarrage, l'ancienne revient.</p>
+    <input type="file" id="fichier" name="firmware" accept=".bin">
+    <div class="boutons"><button id="ota" class="second" type="button">Envoyer et redémarrer</button></div>
+    <div class="barre"><div id="ota-barre"></div></div>
+    <p class="msg" id="ota-msg"></p>
+  </div>
+  <div class="carte">
+    <h2>Maintenance</h2>
+    <div class="boutons">
+      <button class="second" type="button" id="redemarrer">Redémarrer</button>
+      <button class="danger" type="button" id="usine">Réglages d'usine</button>
+    </div>
+    <p class="aide">Les réglages d'usine effacent tout, réseau WiFi compris : l'horloge revient en portail captif.</p>
+    <p class="msg" id="maint-msg"></p>
+  </div>
+</section>
+
+</main>
+<script>
+(function () {
+  'use strict';
+  var pages = ['tableau', 'affichage', 'luminosite', 'systeme'];
+  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/systeme': 'systeme' };
+  // Which fields each form shows (the model stays the single source of truth for everything else).
+  var groupes = {
+    scenes: ['scenes', 'vitesse_defilement', 'clignotement', 'barre_secondes'],
+    dalle: ['axe_premier', 'serpentin', 'origine', 'largeur_module', 'budget_ma'],
+    reglage: ['mode', 'lum_manuelle', 'lum_min', 'lum_max', 'extinction_active', 'extinction_debut', 'extinction_fin'],
+    avance: ['pas_lum', 'montee_s', 'descente_s', 'compensation_counts', 'courbe']
+  };
+  var libelleScene = { Heure: 'Heure', Date: 'Date', Valeur: 'Valeur Home Assistant', DeuxLignes: 'Heure + valeur (deux lignes)', Defilement: 'Texte défilant', Nuit: 'Nuit (dalle sombre)', Test: 'Motif de test' };
+  var ICONE_HAUT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+  var ICONE_BAS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>';
+  var ICONE_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+  function dire(el, texte, ok) { el.textContent = texte; el.className = 'msg ' + (ok ? 'ok' : 'ko'); }
+  function post(url, corps) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: corps })
+      .then(function (r) { return r.text().then(function (t) { return { ok: r.ok, texte: t }; }); });
+  }
+  function erreurTexte(t) {
+    try { var j = JSON.parse(t); if (j.champ !== undefined) { return (j.champ ? j.champ + ' : ' : '') + j.raison; } if (j.raison) { return j.raison; } } catch (e) {}
+    return t;
+  }
+  function el(tag, attrs, texte) {
+    var e = document.createElement(tag);
+    if (attrs) { Object.keys(attrs).forEach(function (k) { if (k === 'class') { e.className = attrs[k]; } else { e[k] = attrs[k]; } }); }
+    if (texte !== undefined) { e.textContent = texte; }
+    return e;
+  }
+  function deuxChiffres(n) { return (n < 10 ? '0' : '') + n; }
+  function minutesVersHeure(m) { m = parseInt(m, 10) || 0; return deuxChiffres(Math.floor(m / 60)) + ':' + deuxChiffres(m % 60); }
+  function heureVersMinutes(t) { var p = (t || '00:00').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); }
+
+  // ---- navigation (one page, four paths; the server serves the same file for each)
+  function montrer(page) {
+    pages.forEach(function (p) { document.getElementById(p).className = (p === page) ? 'actif' : ''; });
+    document.querySelectorAll('nav a[data-page]').forEach(function (a) { a.className = (a.getAttribute('data-page') === page) ? 'actif' : ''; });
+  }
+  document.querySelectorAll('nav a[data-page]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      var page = a.getAttribute('data-page');
+      history.pushState(null, '', a.getAttribute('href'));
+      montrer(page); charger(page);
+    });
+  });
+  window.addEventListener('popstate', function () { var p = chemins[location.pathname] || 'tableau'; montrer(p); charger(p); });
+
+  // ---- scene list editor: kind, duration, enabled, order
+  function editeurScenes(nom, modele, valeur, form) {
+    var boite = el('div', { class: 'champ' });
+    var table = el('table', { class: 'liste' });
+    table.innerHTML = '<thead><tr><th>Scène</th><th>Durée (s)</th><th>Active</th><th></th></tr></thead>';
+    var corps = el('tbody');
+    table.appendChild(corps);
+    var lignes = [];
+    (valeur || '').split(',').forEach(function (item) {
+      if (!item) { return; }
+      var p = item.split(':');
+      var m = /^([A-Za-z]+)(\d)?$/.exec(p[0]);
+      if (!m) { return; }
+      lignes.push({ type: m[1], index: m[2] ? parseInt(m[2], 10) : 0, duree: parseInt(p[1], 10) || 0, actif: p[2] !== '0' });
+    });
+    function serialiser() {
+      return lignes.map(function (l) { return l.type + (l.type === 'Valeur' ? l.index : '') + ':' + l.duree + ':' + (l.actif ? 1 : 0); }).join(',');
+    }
+    var ajouter = el('button', { type: 'button', class: 'second petit' }, 'Ajouter une scène');
+    function dessiner() {
+      corps.innerHTML = '';
+      lignes.forEach(function (l, i) {
+        var tr = el('tr');
+        var td1 = el('td');
+        var sel = el('select');
+        (modele.types_scene || []).forEach(function (t) {
+          if (t === 'Test') { return; }
+          if (t === 'Valeur') {
+            for (var v = 0; v < 8; v++) { var o = el('option', { value: 'Valeur' + v }, libelleScene.Valeur + ' ' + (v + 1)); if (l.type === 'Valeur' && l.index === v) { o.selected = true; } sel.appendChild(o); }
+          } else {
+            var o2 = el('option', { value: t }, libelleScene[t] || t); if (l.type === t) { o2.selected = true; } sel.appendChild(o2);
+          }
+        });
+        sel.onchange = function () { var mm = /^([A-Za-z]+)(\d)?$/.exec(sel.value); l.type = mm[1]; l.index = mm[2] ? parseInt(mm[2], 10) : 0; };
+        td1.appendChild(sel);
+        var td2 = el('td');
+        var dur = el('input', { type: 'number', min: 0, max: 3600, value: l.duree });
+        dur.onchange = function () { l.duree = parseInt(dur.value, 10) || 0; };
+        td2.appendChild(dur);
+        var td3 = el('td');
+        var act = el('input', { type: 'checkbox', checked: l.actif });
+        act.onchange = function () { l.actif = act.checked; };
+        td3.appendChild(act);
+        var td4 = el('td', { class: 'actions' });
+        var haut = el('button', { type: 'button', class: 'second petit', title: 'Monter', disabled: i === 0 }); haut.innerHTML = ICONE_HAUT;
+        haut.onclick = function () { lignes.splice(i - 1, 0, lignes.splice(i, 1)[0]); dessiner(); };
+        var bas = el('button', { type: 'button', class: 'second petit', title: 'Descendre', disabled: i === lignes.length - 1 }); bas.innerHTML = ICONE_BAS;
+        bas.onclick = function () { lignes.splice(i + 1, 0, lignes.splice(i, 1)[0]); dessiner(); };
+        var sup = el('button', { type: 'button', class: 'second petit', title: 'Retirer' }); sup.innerHTML = ICONE_X;
+        sup.onclick = function () { lignes.splice(i, 1); dessiner(); };
+        td4.appendChild(haut); td4.appendChild(bas); td4.appendChild(sup);
+        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+        corps.appendChild(tr);
+      });
+      ajouter.disabled = lignes.length >= 8;
+    }
+    ajouter.onclick = function () { lignes.push({ type: 'Heure', index: 0, duree: 10, actif: true }); dessiner(); };
+    boite.appendChild(el('label', {}, modele.libelle || nom));
+    boite.appendChild(table);
+    var bb = el('div', { class: 'boutons' }); bb.appendChild(ajouter); boite.appendChild(bb);
+    if (modele.aide) { boite.appendChild(el('p', { class: 'aide' }, modele.aide)); }
+    form.lecteurs.push(function () { return nom + '=' + encodeURIComponent(serialiser()); });
+    dessiner();
+    return boite;
+  }
+
+  // ---- curve editor: raw reading -> level
+  function editeurCourbe(nom, modele, valeur, form) {
+    var boite = el('div', { class: 'champ' });
+    var table = el('table', { class: 'liste' });
+    table.innerHTML = '<thead><tr><th>Mesure du capteur (0–4095)</th><th>Niveau (0–255)</th><th></th></tr></thead>';
+    var corps = el('tbody'); table.appendChild(corps);
+    var points = [];
+    (valeur || '').split(',').forEach(function (item) { var p = item.split(':'); if (p.length === 2) { points.push({ brut: parseInt(p[0], 10) || 0, niveau: parseInt(p[1], 10) || 0 }); } });
+    var ajouter = el('button', { type: 'button', class: 'second petit' }, 'Ajouter un point');
+    function dessiner() {
+      corps.innerHTML = '';
+      points.forEach(function (pt, i) {
+        var tr = el('tr');
+        var a = el('input', { type: 'number', min: 0, max: 4095, value: pt.brut }); a.onchange = function () { pt.brut = parseInt(a.value, 10) || 0; };
+        var b = el('input', { type: 'number', min: 0, max: 255, value: pt.niveau }); b.onchange = function () { pt.niveau = parseInt(b.value, 10) || 0; };
+        var sup = el('button', { type: 'button', class: 'second petit', title: 'Retirer', disabled: points.length <= 2 }); sup.innerHTML = ICONE_X;
+        sup.onclick = function () { points.splice(i, 1); dessiner(); };
+        var t1 = el('td'); t1.appendChild(a); var t2 = el('td'); t2.appendChild(b); var t3 = el('td', { class: 'actions' }); t3.appendChild(sup);
+        tr.appendChild(t1); tr.appendChild(t2); tr.appendChild(t3); corps.appendChild(tr);
+      });
+      ajouter.disabled = points.length >= 6;
+    }
+    ajouter.onclick = function () { var d = points[points.length - 1]; points.push({ brut: Math.min(4095, (d ? d.brut : 0) + 500), niveau: d ? d.niveau : 0 }); dessiner(); };
+    boite.appendChild(el('label', {}, modele.libelle || nom));
+    boite.appendChild(table);
+    var bb = el('div', { class: 'boutons' }); bb.appendChild(ajouter); boite.appendChild(bb);
+    if (modele.aide) { boite.appendChild(el('p', { class: 'aide' }, modele.aide)); }
+    form.lecteurs.push(function () { return nom + '=' + encodeURIComponent(points.map(function (p) { return p.brut + ':' + p.niveau; }).join(',')); });
+    dessiner();
+    return boite;
+  }
+
+  // ---- generic field from the firmware model (type, label, unit, bounds, help): nothing is copied by hand
+  function champ(nom, m, valeur, form) {
+    if (m.type === 'scenes') { return editeurScenes(nom, m, valeur, form); }
+    if (m.type === 'courbe') { return editeurCourbe(nom, m, valeur, form); }
+    var boite = el('div', { class: 'champ' });
+    var id = 'f-' + form.id + '-' + nom;
+    var ctrl;
+    if (m.type === 'booleen') {
+      var lab = el('label', { class: 'bascule', htmlFor: id });
+      ctrl = el('input', { type: 'checkbox', id: id, checked: !!valeur });
+      lab.appendChild(ctrl); lab.appendChild(document.createTextNode(m.libelle || nom));
+      boite.appendChild(lab);
+      form.lecteurs.push(function () { return nom + '=' + (ctrl.checked ? '1' : '0'); });
+    } else {
+      boite.appendChild(el('label', { htmlFor: id }, m.libelle || nom));
+      if (m.type === 'choix') {
+        ctrl = el('select', { id: id });
+        m.valeurs.forEach(function (v) { var o = el('option', { value: v }, v); if (v === String(valeur)) { o.selected = true; } ctrl.appendChild(o); });
+      } else if (m.type === 'heure') {
+        ctrl = el('input', { type: 'time', id: id, value: minutesVersHeure(valeur), step: 60 });
+        boite.appendChild(ctrl);
+        form.lecteurs.push(function () { return nom + '=' + heureVersMinutes(ctrl.value); });
+        if (m.aide) { boite.appendChild(el('p', { class: 'aide' }, m.aide)); }
+        return boite;
+      } else if (m.type === 'entier') {
+        ctrl = el('input', { type: 'number', id: id, min: m.min, max: m.max, step: 1, value: valeur });
+      } else {
+        ctrl = el('input', { type: 'text', id: id, maxLength: m.max, value: valeur });
+      }
+      boite.appendChild(ctrl);
+      if (m.unite) { boite.appendChild(el('span', { class: 'unite' }, m.unite)); }
+      form.lecteurs.push(function () { return nom + '=' + encodeURIComponent(ctrl.value); });
+    }
+    var aide = m.aide || '';
+    if (m.type === 'entier') { aide += (aide ? ' ' : '') + 'De ' + m.min + ' à ' + m.max + ', défaut ' + m.defaut + '.'; }
+    if (aide) { boite.appendChild(el('p', { class: 'aide' }, aide)); }
+    return boite;
+  }
+
+  function construire(form, modele, valeurs) {
+    form.innerHTML = '';
+    form.lecteurs = [];
+    var groupe = form.getAttribute('data-groupe');
+    var noms = groupe ? groupes[groupe] : Object.keys(modele.champs);
+    noms.forEach(function (nom) {
+      var m = modele.champs[nom];
+      if (!m) { return; }
+      var valeur = (valeurs && valeurs[nom] !== undefined) ? valeurs[nom] : m.defaut;
+      form.appendChild(champ(nom, m, valeur, form));
+    });
+    var bb = el('div', { class: 'boutons' });
+    bb.appendChild(el('button', { type: 'submit' }, 'Enregistrer'));
+    var msg = el('p', { class: 'msg' });
+    form.appendChild(bb); form.appendChild(msg);
+    form.onsubmit = function (e) {
+      e.preventDefault();
+      var corps = form.lecteurs.map(function (f) { return f(); }).join('&');
+      post('/api/' + form.getAttribute('data-domaine'), corps).then(function (r) {
+        dire(msg, r.ok ? 'Enregistré et appliqué.' : erreurTexte(r.texte), r.ok);
+      }).catch(function () { dire(msg, 'Envoi impossible.', false); });
+    };
+  }
+  function chargerDomaine(domaine) {
+    var forms = document.querySelectorAll('form[data-domaine="' + domaine + '"]');
+    Promise.all([fetch('/api/' + domaine + '/modele').then(function (r) { return r.json(); }),
+                 fetch('/api/' + domaine).then(function (r) { return r.json(); })])
+      .then(function (res) { forms.forEach(function (f) { construire(f, res[0], res[1]); }); })
+      .catch(function () { forms.forEach(function (f) { f.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; }); });
+  }
+
+  // ---- dashboard
+  var etatTimer = null;
+  function tuile(titre, valeur) { var t = el('div', { class: 'tuile' }); t.appendChild(el('b', {}, valeur)); t.appendChild(el('span', {}, titre)); return t; }
+  function lireEtat() {
+    fetch('/api/etat').then(function (r) { return r.json(); }).then(function (e) {
+      var h = e.heure, l = e.luminosite, n = e.reseau, c = e.courant;
+      var g = document.getElementById('tuiles'); g.innerHTML = '';
+      g.appendChild(tuile('Heure' + (h.sure ? '' : ' (non synchronisée)'), h.sure ? h.texte : '--:--'));
+      g.appendChild(tuile('Date', h.sure ? h.date : '—'));
+      g.appendChild(tuile('Luminosité appliquée', l.niveau + ' / 255'));
+      g.appendChild(tuile('Capteur (brut / filtré)', (l.defaut ? 'DÉFAUT ' : '') + l.brut + ' / ' + l.filtre));
+      g.appendChild(tuile('Courant estimé', c.estime_ma + ' mA / ' + c.budget_ma + (c.ecretage ? ' (écrêté)' : '')));
+      g.appendChild(tuile('Réseau', n.etat + (n.ip ? ' — ' + n.ip : '')));
+      g.appendChild(tuile('Scène', e.scene));
+      g.appendChild(tuile('En marche depuis', Math.floor(e.fonctionnement_s / 60) + ' min'));
+      document.getElementById('remplaces').textContent = e.reglages_remplaces ? 'Attention : des réglages invalides en mémoire ont été remplacés par les défauts.' : '';
+    }).catch(function () {});
+  }
+
+  // ---- mapping wizard
+  var carte = {};
+  function motif(nom) { return post('/api/affichage/test', 'motif=' + nom); }
+  var etapesMap = [
+    { motif: 'pixel', q: 'Un seul pixel est allumé. Dans quel coin ?', rep: [['En haut à gauche', 'origine', 'HautGauche'], ['En haut à droite', 'origine', 'HautDroite'], ['En bas à gauche', 'origine', 'BasGauche'], ['En bas à droite', 'origine', 'BasDroite']] },
+    { motif: 'colonne', q: 'Huit pixels sont allumés. Forment-ils une colonne verticale ou une ligne horizontale ?', rep: [['Une colonne', 'axe_premier', 'Colonne'], ['Une ligne', 'axe_premier', 'Ligne']] },
+    { motif: 'chenillard', q: 'Un point parcourt le ruban. Quand il change de colonne (ou de ligne), repart-il du même côté ou du côté opposé ?', rep: [['Côté opposé (serpentin)', 'serpentin', '1'], ['Même côté', 'serpentin', '0']] },
+    { motif: 'diagonale', q: 'Une diagonale : est-elle nette, ou brisée tous les 8 pixels ?', rep: [['Nette', 'largeur_module', '0'], ['Brisée', 'largeur_module', '8']] },
+    { motif: 'plein', q: 'Tout est blanc (faible). Enregistrer la correspondance ?', rep: [['Enregistrer', '', ''], ['Annuler', 'annuler', '']] }
+  ];
+  function wizardMap(i) {
+    var boite = document.getElementById('wiz-map');
+    if (i === 0) { carte = { origine: 'HautGauche', axe_premier: 'Colonne', serpentin: '1', largeur_module: '0' }; }
+    var e = etapesMap[i];
+    motif(e.motif);
+    boite.innerHTML = '';
+    boite.appendChild(el('p', {}, (i + 1) + '/' + etapesMap.length + ' — ' + e.q));
+    var box = el('div', { class: 'etapes' });
+    e.rep.forEach(function (r) {
+      var b = el('button', { type: 'button', class: 'second' }, r[0]);
+      b.onclick = function () {
+        if (r[1] === 'annuler') { motif('aucun'); boutonWizard('wiz-map', 'Lancer le wizard', function () { wizardMap(0); }); return; }
+        if (r[1]) { carte[r[1]] = r[2]; }
+        if (i + 1 < etapesMap.length) { wizardMap(i + 1); return; }
+        var corps = Object.keys(carte).map(function (k) { return k + '=' + encodeURIComponent(carte[k]); }).join('&');
+        post('/api/affichage', corps).then(function (res) {
+          motif('aucun');
+          boutonWizard('wiz-map', 'Relancer le wizard', function () { wizardMap(0); }, res.ok ? 'Correspondance enregistrée.' : erreurTexte(res.texte), res.ok);
+          chargerDomaine('affichage');
+        });
+      };
+      box.appendChild(b);
+    });
+    boite.appendChild(box);
+  }
+  function boutonWizard(id, texte, action, message, ok) {
+    var boite = document.getElementById(id); boite.innerHTML = '';
+    if (message) { boite.appendChild(el('p', { class: 'msg ' + (ok ? 'ok' : 'ko') }, message)); }
+    var b = el('button', { type: 'button' }, texte); b.onclick = action; boite.appendChild(b);
+  }
+
+  // ---- brightness wizard
+  var brutTimer = null;
+  var mesures = {};
+  var etapesLum = [
+    ['brut_nuit', 'Faites le noir dans la pièce. La dalle est éteinte. Puis validez.'],
+    ['brut_nuit_allume', 'Ne bougez rien : la dalle est à fond. Validez.'],
+    ['brut_soir', 'Allumez l’éclairage du soir (dalle éteinte). Validez.'],
+    ['brut_jour', 'Revenez en plein jour. Validez.']
+  ];
+  function lireBrut() {
+    fetch('/api/luminosite/brut').then(function (r) { return r.json(); }).then(function (b) {
+      document.getElementById('brut').textContent = b.valide ? b.brut : 'capteur en défaut';
+      document.getElementById('brut-mv').textContent = b.valide ? '(' + b.mv + ' mV)' : '';
+    }).catch(function () {});
+  }
+  function wizardLum(i) {
+    var boite = document.getElementById('wiz-lum');
+    if (i === 0) { mesures = {}; }
+    if (i >= etapesLum.length) {
+      var corps = Object.keys(mesures).map(function (k) { return k + '=' + mesures[k]; }).join('&');
+      post('/api/luminosite/wizard', corps).then(function (r) {
+        motif('aucun');
+        var t = r.ok ? 'Courbe enregistrée.' : erreurTexte(r.texte);
+        try { var j = JSON.parse(r.texte); if (j.ok) { t += ' Auto-éclairage : ' + j.compensation_counts + ' comptes.' + (j.deporter ? ' Le capteur voit trop la dalle : déplacez-le.' : ''); } } catch (e) {}
+        boutonWizard('wiz-lum', 'Relancer le wizard', function () { wizardLum(0); }, t, r.ok);
+        chargerDomaine('luminosite');
+      });
+      return;
+    }
+    motif(i === 1 ? 'plein' : 'aucun');
+    boite.innerHTML = '';
+    boite.appendChild(el('p', {}, (i + 1) + '/' + etapesLum.length + ' — ' + etapesLum[i][1]));
+    var box = el('div', { class: 'etapes' });
+    var ok = el('button', { type: 'button', class: 'second' }, 'Valider la mesure');
+    ok.onclick = function () {
+      fetch('/api/luminosite/brut').then(function (r) { return r.json(); }).then(function (b) {
+        if (!b.valide) { alert('Capteur en défaut : mesure impossible.'); return; }
+        mesures[etapesLum[i][0]] = b.brut; wizardLum(i + 1);
+      });
+    };
+    var non = el('button', { type: 'button', class: 'second' }, 'Annuler');
+    non.onclick = function () { motif('aucun'); boutonWizard('wiz-lum', 'Lancer le wizard', function () { wizardLum(0); }); };
+    box.appendChild(ok); box.appendChild(non); boite.appendChild(box);
+  }
+
+  // ---- system: OTA and maintenance
+  document.getElementById('ota').onclick = function () {
+    var f = document.getElementById('fichier').files[0];
+    var msg = document.getElementById('ota-msg');
+    if (!f) { dire(msg, 'Choisissez un fichier .bin.', false); return; }
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/ota');
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = function (e) { if (e.lengthComputable) { document.getElementById('ota-barre').style.width = Math.round(100 * e.loaded / e.total) + '%'; } };
+    xhr.onload = function () { dire(msg, xhr.responseText, xhr.status === 200); };
+    xhr.onerror = function () { dire(msg, 'Transfert interrompu.', false); };
+    dire(msg, 'Envoi en cours… ne coupez pas l’alimentation.', true);
+    xhr.send(f);
+  };
+  document.getElementById('redemarrer').onclick = function () {
+    post('/api/systeme/redemarrer', '').then(function (r) { dire(document.getElementById('maint-msg'), r.texte, r.ok); });
+  };
+  document.getElementById('usine').onclick = function () {
+    if (!confirm('Effacer tous les réglages, réseau WiFi compris ?')) { return; }
+    post('/api/systeme/usine', 'confirme=OUI').then(function (r) { dire(document.getElementById('maint-msg'), r.texte, r.ok); });
+  };
+
+  // ---- page loading
+  function charger(page) {
+    if (etatTimer) { clearInterval(etatTimer); etatTimer = null; }
+    if (brutTimer) { clearInterval(brutTimer); brutTimer = null; }
+    if (page === 'tableau') { lireEtat(); etatTimer = setInterval(lireEtat, 2000); }
+    if (page === 'affichage') { chargerDomaine('affichage'); boutonWizard('wiz-map', 'Lancer le wizard', function () { wizardMap(0); }); }
+    if (page === 'luminosite') { chargerDomaine('luminosite'); lireBrut(); brutTimer = setInterval(lireBrut, 1000); boutonWizard('wiz-lum', 'Lancer le wizard', function () { wizardLum(0); }); }
+    if (page === 'systeme') { chargerDomaine('systeme'); }
+  }
+  var initiale = chemins[location.pathname] || 'tableau';
+  montrer(initiale);
+  charger(initiale);
+})();
+</script>
+</body>
+</html>

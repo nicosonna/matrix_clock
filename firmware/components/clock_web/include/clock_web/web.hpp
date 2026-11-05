@@ -6,9 +6,10 @@
  * The **decisions** (attempts, grace, lease, fallback, portal) live in the pure
  * `network::WifiSupervisor`, tested on the PC; this component only applies its
  * plan: Wi-Fi mode, connection, captive DNS, credentials in NVS. The HTTP
- * server serves the embedded Wi-Fi page, the portal detection probes, and the
- * **inbound notification channel** (`POST /api/notification`) that the hub,
- * Node-RED or a script can use.
+ * server serves the embedded pages, the settings API (models and values from
+ * the pure `settings` component, persistence in `clock_settings`), the OS
+ * portal probes, the OTA upload, and the **inbound notification channel**
+ * (`POST /api/notification`) that the hub, Node-RED or a script can use.
  *
  * @note A network failure never stops the display: start() logs and returns a
  *       status, no abort().
@@ -32,6 +33,19 @@ enum class WebStatus : uint8_t {
 /// Receives a decoded notification; returns false if it could not be queued.
 using NotificationHandler = bool (*)(const alerts::Notification&);
 
+/// What the application lends to the server (all optional but the first).
+struct Hooks {
+    NotificationHandler on_notification;
+    /// Writes the dashboard JSON (`/api/etat`); returns 0 if the buffer is too small.
+    std::size_t (*status_json)(char* out, std::size_t size);
+    /// Shows a commissioning pattern by name (`aucun`, `pixel`, `colonne`, `diagonale`, `plein`, `chenillard`).
+    bool (*test_pattern)(const char* name);
+    /// Live photoresistor reading for the brightness wizard.
+    bool (*ldr_raw)(uint16_t& raw, bool& valid, int& millivolts);
+    /// OTA progress for the panel (0..100, active false when done or failed).
+    void (*ota_progress)(uint8_t percent, bool active);
+};
+
 /// Snapshot of the network state for the display and `/api/info`.
 struct NetworkInfo {
     bool portal;            ///< Captive portal active (access point up).
@@ -43,12 +57,11 @@ struct NetworkInfo {
 };
 
 /**
- * @brief Starts NVS, the network and the HTTP server.
- * @param on_notification Called for every valid `POST /api/notification`.
+ * @brief Starts NVS, the settings store, the network and the HTTP server.
  * @return WebStatus::Ok, or the first failed step (logged).
  * @note Non-blocking: Wi-Fi, DNS and HTTP run in their own tasks.
  */
-WebStatus start(NotificationHandler on_notification) noexcept;
+WebStatus start(const Hooks& hooks) noexcept;
 
 /// @return A copy of the current network state (safe from any task).
 NetworkInfo info() noexcept;
@@ -59,7 +72,6 @@ bool portal_active() noexcept;
 bool save_credentials(const char* ssid, const char* pass) noexcept;
 bool forget_credentials() noexcept;
 std::size_t scan_json(char* out, std::size_t out_size) noexcept;
-NotificationHandler notification_handler() noexcept;
 }  // namespace detail
 
 }  // namespace clock_web

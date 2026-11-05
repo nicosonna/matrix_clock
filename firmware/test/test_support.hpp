@@ -67,3 +67,4 @@ void run_brightness_tests();
 void run_network_tests();
 void run_alerts_tests();
 void run_timekeeping_tests();
+void run_settings_tests();

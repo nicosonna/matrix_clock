@@ -5,6 +5,69 @@
 
 ---
 
+## 2026-11-05 (suite 10) — Réglages, page web complète, wizards, OTA, couleurs
+
+**Quoi.** Étape 7 de la phase 1, plus deux demandes de Nicolas (« l'IP une
+seule fois à la connexion », « plus de couleur ») et, pendant la nuit, « une
+page plus intuitive avec de vraies heures », « choisir ce que la dalle affiche
+et l'ordre » :
+
+- `components/settings/` (pur) : `JsonWriter` borné (profondeur 8, `nullptr`
+  refusé, débordement ⇒ longueur 0), modèle `DisplaySettings` /
+  `SystemSettings` / `brightness::Config`, formulaires **tout-ou-rien**
+  (`apply_*_form`, `FormError{champ, raison}`), texte des scènes
+  `Heure:20:1,Valeur0:8:1` et de la courbe `300:8,900:40`, JSON de **modèle**
+  (`type`, `libelle`, `unite`, bornes, défaut, aide ; types `heure`, `scenes`,
+  `courbe` pour les widgets) et de valeurs. **Source de vérité unique** : la
+  page ne recopie aucune borne ni aucun nom.
+- `components/clock_settings/` : blobs NVS versionnés (`clk_cfg/display`,
+  `bright`, `system`), copie partagée sous mutex, compteur de version que la
+  tâche d'affichage scrute pour **appliquer à chaud** (contrôleur de luminosité
+  reconstruit, ordonnanceur relancé, fuseau), `replaced_on_boot()` signalé sur
+  le tableau de bord, `factory_reset()` (réglages + Wi-Fi).
+- `clock_web` : `Hooks` (notification, `status_json`, motif de test, mesure
+  brute, progression OTA) ; routes `/`, `/affichage`, `/luminosite`,
+  `/systeme` (une page), `/api/etat`, `/api/<domaine>/modele`, `GET`/`POST
+  /api/<domaine>` (400 `{"ok":false,"champ","raison"}`), `/api/affichage/test`,
+  `/api/luminosite/brut`, `/api/luminosite/wizard` (4 mesures →
+  `build_from_wizard`), `/api/systeme/redemarrer`, `/api/systeme/usine`
+  (`confirme=OUI`), **`POST /api/ota`** (écriture par blocs de 4 Ko dans
+  l'emplacement inactif, barre sur la dalle, redémarrage, rollback armé —
+  l'image se confirme au premier rafraîchissement de la dalle).
+- `www/app.html` (19,5 Ko, aucune ressource externe, thème auto) : tableau de
+  bord, formulaires **construits depuis le modèle** avec libellés en clair,
+  unités, aide et bornes du firmware ; **heures en HH:MM** (`<input
+  type=time>` ↔ minutes du jour) ; **éditeur de scènes** (type, durée, active,
+  monter/descendre/retirer, ≤ 8) — c'est là qu'on choisit ce que la dalle
+  affiche et dans quel ordre ; éditeur de **courbe** par points ; wizard de
+  correspondance (pixel, colonne, chenillard pour le serpentin, diagonale,
+  plein) ; wizard de luminosité (4 mesures, avertissement « déportez le
+  capteur ») ; OTA avec barre ; redémarrage ; usine avec confirmation.
+- `app_main` : thème de couleurs (chiffres blancs, deux-points ambre, barre des
+  secondes bleue, jour ambre, date blanche, état bleu clair, notification par
+  priorité) ; le texte d'état est une passe **unique** (priorité 0, durée
+  calculée sur la largeur du texte) à l'obtention de l'IP, et toutes les 60 s
+  en portail ; une notification entrante prime et ré-arme l'état. Rotation par
+  défaut Heure 20 s / Date 5 s (le défilement permanent est retiré).
+- `clock_scene` : `ClockColors` / `DateColors` à la place d'une couleur unique.
+
+**Défauts trouvés et corrigés.** (1) `clock_time::start()` passait à lwIP un
+pointeur vers un nom de serveur NTP **sur la pile de `app_main`** : plus aucune
+synchro après le passage aux réglages NVS — copie statique désormais (et
+l'horloge se synchronise en 6 s). (2) La passe d'état était « oubliée » entre
+sa mise en file et son affichage, et sortait avec le texte/la couleur d'une
+notification : machine d'état `pending` → `queued` → `showing` explicite.
+(3) `JsonWriter` déréférençait un `nullptr` (trouvé par le nouveau test).
+
+**Résultats.** Tests host : **9 299 vérifications, 0 échec, couverture 97,9 %**
+(1 865 lignes) ; `settings` 96,5 % (`forms.cpp`). Image 1 006 Ko (49 % libre).
+Sur la carte : API complète vérifiée par `curl` (HW-WEB-04), **OTA par HTTP**
+(HW-WEB-02 : 998 Ko en 5,6 s, image confirmée), heure SURE à 6 s, ordre des
+scènes changé à chaud. **À observer par Nicolas** : la passe d'IP (HW-WEB-05),
+les couleurs (HW-WEB-06), la page au téléphone (HW-WEB-01).
+
+---
+
 ## 2026-11-05 (suite 9) — L'heure : règles POSIX en logique pure, SNTP, `--:--` devient l'heure
 
 **Quoi.** Étape 6 de la phase 1 :

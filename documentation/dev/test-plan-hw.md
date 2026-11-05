@@ -182,14 +182,14 @@ l'horloge.
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| WEB-01 | `form_field()` | Couvert aussi par RES-10, appliqué aux 6 formulaires | À ÉCRIRE |
-| WEB-02 | `appliquer_<domaine>()` | Tout-ou-rien : un champ fautif ⇒ 400, **rien** modifié | À ÉCRIRE |
-| WEB-03 | idem | Champ nommé, raison en français, bornes exactes | À ÉCRIRE |
-| WEB-04 | `modele_json()` | `/api/<domaine>/modele` ⇄ modèle de config : aucun paramètre orphelin, **8 domaines** | À ÉCRIRE |
-| WEB-05 | `json_ecrivain` | Échappement, troncature propre avec `incomplet`, jamais de JSON invalide | À ÉCRIRE |
-| WEB-06 | `decoder_notification()` | Mêmes bornes et rejets que HA-13 | À ÉCRIRE |
-| WEB-07 | `usine()` | Refus sans `confirme=OUI` | À ÉCRIRE |
-| WEB-08 | `motif_test()` | Chaque motif produit le tampon attendu | À ÉCRIRE |
+| WEB-01 | `form_field()` | Couvert aussi par RES-10, appliqué aux formulaires d'affichage, de luminosité, de système, du wizard de luminosité, de `usine` et de `test` | **PASSE** 2026-11-05 (`test_settings.cpp`) |
+| WEB-02 | `settings::apply_<domain>_form()` | Tout-ou-rien : un champ fautif ⇒ `false` + `FormError`, **rien** modifié dans `out` ; corps vide ⇒ succès sans changement ; mauvais encodage (`%ZZ`) sur chaque champ ⇒ refus nommé | **PASSE** 2026-11-05 |
+| WEB-03 | idem | Champ nommé, raison en français, bornes exactes (`budget_ma` 400..15000, `vitesse_defilement` 5..60, `largeur_module` 0/8, `pas_lum` 1..32, `extinction_*` 0..1439, scènes ≤ 8, courbe 2..6 points croissants, fuseau dans la table, hôte NTP valide) | **PASSE** 2026-11-05 |
+| WEB-04 | `settings::*_model_json()` ⇄ `www/app.html` | Le modèle nomme chaque champ avec `type`, `libelle`, bornes, défaut, aide (`heure` pour les minutes du jour, `scenes` et `courbe` pour les éditeurs) ; la page **construit** ses formulaires depuis `/api/<domaine>/modele` (aucun `name=` recopié), répartit chaque champ dans **exactement un** groupe, possède un widget par type émis (dont `type: 'time'` et le réordonnancement des scènes) ; les clés et valeurs codées en dur par les wizards existent dans le modèle ; aucun `https://`, aucun emoji. 3 domaines sur les 8 prévus (les autres suivent leur composant) | **PASSE** 2026-11-05 |
+| WEB-05 | `settings::JsonWriter` | Échappement, virgules, profondeur ≤ 8, `nullptr` refusé, débordement ⇒ `length()` = 0 (le serveur répond 500 `incomplet`), jamais de JSON invalide | **PASSE** 2026-11-05 |
+| WEB-06 | `alerts::decode_form()` | Mêmes bornes et rejets que HA-13 | **PASSE** 2026-11-05 (= ALR-15) |
+| WEB-07 | `handle_factory()` (`web_server.cpp`) | Refus sans `confirme=OUI` | Vérifié par HTTP sur la carte (400 sans confirmation) ; logique dans l'adaptateur, pas de test host |
+| WEB-08 | `display::draw_test_pattern()` | Chaque motif produit le tampon attendu | **PASSE** 2026-11-05 (= AFF-06 ; `POST /api/affichage/test` vérifié sur la carte) |
 
 ### 1.9 `timekeeping` — heure locale, règles POSIX, validité
 
@@ -247,7 +247,7 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-HA-04 | Automatisation réelle qui déclenche `horloge_notification` | Notification affichée au bon rendu | À FAIRE |
 | HW-ALR-01 | Sonde refroidie sous le seuil de la règle `GEL` | Alerte après la durée de confirmation, pas avant | À FAIRE |
 | HW-ALR-02 | Règle `AERER` levée, puis fenêtre ouverte | Passages toutes les `rappel_s` tant que l'air est mauvais ; disparition **seule** quand le niveau retombe ; aucun bouton sur la page | À FAIRE |
-| HW-SYS-01 | Fuseau changé sur `/systeme` (`Europe/Zurich` → `UTC`) | Heure décalée **sans redémarrage** ; défaut `Europe/Zurich` après réglages d'usine | À FAIRE (page `/systeme` pas encore écrite ; `set_timezone()` à chaud existe) |
+| HW-SYS-01 | Fuseau changé sur `/systeme` (`Europe/Zurich` → `UTC`) | Heure décalée **sans redémarrage** ; défaut `Europe/Zurich` après réglages d'usine | À FAIRE (page écrite, à jouer sur la carte) |
 | HW-TIME-01 | Mise sous tension, box jointe, SNTP `pool.ntp.org` | `--:--` jusqu'à la synchro, puis l'heure locale de Zurich ; date en 3×5 | **PASSE** 2026-11-05 : `boot_grace` → `connected` à 23 s, `SNTP synchronised` à 31 s, `time is now SURE (2026-11-05 03:33:24)`, heure et date sur la dalle |
 | HW-TIME-02 | Changement d'heure réel (29 mars 2026 à 02:00 → 03:00, 25 octobre 03:00 → 02:00) | La dalle bascule d'elle-même, sans redémarrage ni resynchro | À FAIRE (en mars) — couvert sur host à la seconde par TIME-02 |
 | HW-ALR-03 | Une nuit complète en heures silencieuses | Aucun clignotement, alerte conservée et visible au réveil | À FAIRE |
@@ -264,8 +264,11 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-MQ-02 | Mise sous tension de l'horloge, pendant les 3 min de préchauffage | Entités d'air *inconnues* (`null`), puis valeurs ; `prechauffage` à `on` puis `off` | À FAIRE |
 | HW-MQ-03 | Horloge débranchée ; puis Home Assistant redémarré | `disponible` passe `offline` (testament) ; après redémarrage de HA, entités retrouvées (découverte renvoyée) | À FAIRE |
 | HW-WEB-01 | Page sur iPhone, Android, PC, thèmes clair et sombre | Lisible, utilisable au doigt | À FAIRE |
-| HW-WEB-02 | OTA d'une image valide | Barre de progression sur la dalle, redémarrage sur la nouvelle image | À FAIRE |
+| HW-WEB-02 | OTA d'une image valide (`curl --data-binary @matrix_clock.bin /api/ota`) | Barre de progression sur la dalle, redémarrage sur la nouvelle image, `OTA image confirmed` | **PASSE** 2026-11-05 : 998 Ko en 5,6 s, redémarrage sur l'autre emplacement, image confirmée, réglages conservés (budget 2500 relu) |
 | HW-WEB-03 | OTA d'une image **volontairement cassée** | **Rollback** automatique sur l'ancienne image | À FAIRE |
+| HW-WEB-04 | `GET /api/affichage`, `POST budget_ma=99999` puis `budget_ma=2500` ; `GET /api/luminosite/brut` ; `POST extinction_debut=1380` ; `POST scenes=Date:5:1,Heure:20:1` | 400 `{"ok":false,"champ":"budget_ma","raison":…}` puis 200 ; lecture brute vivante ; heures relues ; **ordre des scènes** appliqué sans redémarrage (log `Date` puis `Heure`) | **PASSE** 2026-11-05 |
+| HW-WEB-05 | Texte d'état (IP) à la connexion | Une **seule** passe `http://<ip>  horloge.local` en bleu clair à l'obtention de l'IP, jamais dans la rotation ; en portail : SSID + mot de passe toutes les 60 s | À OBSERVER (logique en place ; passe trop courte pour le log de 5 s) |
+| HW-WEB-06 | Couleurs : chiffres blancs, deux-points ambre, barre des secondes bleue, jour ambre + date blanche | Lisibilité à l'œil | À CONFIRMER par Nicolas |
 | HW-HUB-01…| *(phase 2)* hub de test en Docker, puis vraie carte | — | PHASE 2 |
 
 ---

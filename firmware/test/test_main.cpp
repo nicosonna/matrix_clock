@@ -71,6 +71,8 @@ int main() {
     run_settings_tests();
     std::printf("-- air quality: AHT21 CRC/decoding, ENS160 registers, measurement loop, levels, logo\n");
     run_air_quality_tests();
+    std::printf("-- home assistant: JSON reader, values, reassembly, WebSocket client, weather\n");
+    run_homeassistant_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

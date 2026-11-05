@@ -37,5 +37,5 @@ ctest --test-dir "$BUILD" --output-on-failure
 if [ "$COVERAGE" = "ON" ]; then
     # Home-made gcov aggregation (no gcovr needed): target >= 95 % on the pure
     # components; non-zero exit code otherwise.
-    python -I "$HERE/coverage_summary.py" "$BUILD" "$HERE/../components/display" "$HERE/../components/brightness" "$HERE/../components/network" "$HERE/../components/alerts" "$HERE/../components/timekeeping" "$HERE/../components/settings"
+    python -I "$HERE/coverage_summary.py" "$BUILD" "$HERE/../components/display" "$HERE/../components/brightness" "$HERE/../components/network" "$HERE/../components/alerts" "$HERE/../components/timekeeping" "$HERE/../components/settings" "$HERE/../components/air_quality" "$HERE/../components/homeassistant"
 fi

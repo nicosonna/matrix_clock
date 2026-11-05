@@ -69,3 +69,4 @@ void run_alerts_tests();
 void run_timekeeping_tests();
 void run_settings_tests();
 void run_air_quality_tests();
+void run_homeassistant_tests();

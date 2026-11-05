@@ -5,6 +5,60 @@
 
 ---
 
+## 2026-11-05 (suite 11) — Qualité de l'air : ENS160 + AHT21 sur I²C, niveaux, logo, page `/air`
+
+**Quoi.** Étape 9 de la phase 1 (« oublie pas la partie I²C ») :
+
+- `components/air_quality/` (pur) : `I2cBus` injecté (`write`, `read`,
+  `write_read`, `recover`) ; `aht21` (CRC-8 poly 0x31, décodage en centi-°C et
+  dixièmes de %, statuts `Busy` / `CrcError` / `NotCalibrated`) ; `ens160`
+  (registres, `PART_ID`, décodage de `DEVICE_STATUS` et du bloc AQI / TVOC /
+  eCO2, encodage K×64 / %×512 écrêté) ; **`AirSensor`**, machine d'état **non
+  bloquante** (une transaction par `step()`, délais par horodatage) : sonde →
+  mode standard → vérification AHT21 → cycle de 1 s (déclenchement, lecture,
+  compensation écrite **avant** la lecture des données, status, données si
+  valides et fraîches) ; absence (nouvelle sonde / 60 s), défaut après 3
+  échecs consécutifs puis `recover()`, AHT21 absent ou en défaut ⇒ repli 25 °C
+  / 50 % drapeauté ; `levels` (`LevelConfig` validée, `raw_level`,
+  **`LevelTracker`** avec confirmation et hystérésis asymétrique, `Unknown`
+  immédiat sur lecture invalide, couleurs avec gris pour l'inconnu,
+  `build_offset`).
+- `display/air_logo` : glyphes 6×6 et 8×8 ; `SceneKind::Air` (ajouté **en fin
+  d'énumération** pour ne pas casser les blobs NVS) + `SceneAvailability.air`.
+- `settings` : domaine **air** (`AirSettings` : actif, adresse, `LevelConfig`,
+  logo, décalage), formulaire tout-ou-rien, modèle JSON avec le type
+  `temperature` (centi-°C stockés, °C affichés), blob NVS `air`.
+- `clock_hal/i2c_bus` : `i2c_master` d'ESP-IDF 5.3, 100 kHz, pull-ups
+  internes, délai 50 ms par transaction, **récupération** d'un bus bloqué (bus
+  détruit, SCL cadencé 9 fois en GPIO, STOP, bus recréé).
+- `app_main` : tâche `air` (cœur 0, priorité 3, pas de 20 ms, niveau à 1 Hz,
+  journal au changement), snapshot partagé, `/api/etat.air` complet (dont
+  `statut_brut` et `opmode_brut` pour le diagnostic), scène **Air** (logo 8×8
+  + `AQI n` ou valeur, `--` si invalide), logo 6×6 à côté de l'heure
+  (`ZoneIcone`, heure alignée à gauche), hook de température brute pour le
+  wizard.
+- `clock_web` : `/air`, `/api/air/modele`, `GET`/`POST /api/air`,
+  `POST /api/air/wizard` (`reference` en centi-°C ⇒ décalage calculé sur la
+  mesure brute, avertissement > 2 °C).
+- Page : onglet **Air** (tuiles vivantes, explications préchauffage / première
+  mise en service / compensation par défaut / défaut), **wizard** en 3 étapes
+  (détection, décalage avec thermomètre de référence, logo), deux formulaires.
+
+**Sur le module réel** (HW-AIR-08) : `PART_ID` 0x0160 à 0x53, `OPMODE` relu
+0x02, AHT21 calibré à 0x38 : 24,9 °C / 37,6 %. `DEVICE_STATUS` = 0x8B : le
+capteur, neuf, est dans sa **première heure** (validité 2) — la page le dit,
+l'AQI reste `--`, le logo gris : la règle d'honnêteté fonctionne telle quelle.
+Le wizard de décalage a été exercé par HTTP (380 centi avec une référence
+fictive, remis à 0 ensuite). Dette D11 (registres) levée pour `PART_ID`,
+`OPMODE`, `DEVICE_STATUS`, AHT21 ; `DATA_*` à confronter après la première
+heure.
+
+**Résultats.** Tests host : **9 955 vérifications, 0 échec, couverture 97,8 %**
+(2 014 lignes ; `air_quality` : `aht21` / `ens160` / `levels` 100 %, `sensor`
+97 %). Image 1 045 Ko (47 % libre). OTA ×2.
+
+---
+
 ## 2026-11-05 (suite 10) — Réglages, page web complète, wizards, OTA, couleurs
 
 **Quoi.** Étape 7 de la phase 1, plus deux demandes de Nicolas (« l'IP une

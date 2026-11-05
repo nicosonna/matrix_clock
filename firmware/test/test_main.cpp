@@ -69,6 +69,8 @@ int main() {
     run_timekeeping_tests();
     std::printf("-- settings: JSON writer, forms (all or nothing), models, page orphans\n");
     run_settings_tests();
+    std::printf("-- air quality: AHT21 CRC/decoding, ENS160 registers, measurement loop, levels, logo\n");
+    run_air_quality_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

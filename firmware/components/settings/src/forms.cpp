@@ -22,6 +22,11 @@ const char* const kBrightnessFields[] = {"mode", "lum_manuelle", "lum_min", "lum
 const std::size_t kBrightnessFieldCount = sizeof(kBrightnessFields) / sizeof(kBrightnessFields[0]);
 
 const char* const kSystemFields[] = {"fuseau", "serveur_ntp"};
+const char* const kAirFields[] = {"actif", "adresse", "grandeur_pilote", "seuil_eco2_bon", "seuil_eco2_moyen",
+                                  "seuil_eco2_mauvais", "seuil_eco2_tres_mauvais", "seuil_tvoc_bon", "seuil_tvoc_moyen",
+                                  "seuil_tvoc_mauvais", "seuil_tvoc_tres_mauvais", "hysteresis_eco2", "hysteresis_tvoc",
+                                  "confirmation_s", "logo_air", "decalage_temperature"};
+const std::size_t kAirFieldCount = sizeof(kAirFields) / sizeof(kAirFields[0]);
 const std::size_t kSystemFieldCount = sizeof(kSystemFields) / sizeof(kSystemFields[0]);
 
 namespace {
@@ -129,6 +134,7 @@ const char* scene_kind_name(display::SceneKind k) noexcept {
         case display::SceneKind::Scroll: return "Defilement";
         case display::SceneKind::Night: return "Nuit";
         case display::SceneKind::Test: return "Test";
+        case display::SceneKind::Air: return "Air";
         case display::SceneKind::Clock:
         default: return "Heure";
     }
@@ -170,7 +176,7 @@ bool origin_from_name(const char* s, display::Origin& o) noexcept {
 bool scene_kind_from_name(const char* s, display::SceneKind& k) noexcept {
     const display::SceneKind all[] = {display::SceneKind::Clock, display::SceneKind::Date, display::SceneKind::Value,
                                       display::SceneKind::TwoLines, display::SceneKind::Scroll, display::SceneKind::Night,
-                                      display::SceneKind::Test};
+                                      display::SceneKind::Test, display::SceneKind::Air};
     for (display::SceneKind cand : all) {
         if (same(s, scene_kind_name(cand))) {
             k = cand;
@@ -567,6 +573,119 @@ bool apply_system_form(const char* body, std::size_t len, const SystemSettings& 
         return fail(err, "", "réglages incohérents");
     }
     out = s;
+    return true;
+}
+
+
+// ------------------------------------------------------------------ air form
+
+const char* air_logo_name(AirLogoMode m) noexcept {
+    switch (m) {
+        case AirLogoMode::None: return "Aucun";
+        case AirLogoMode::Scene: return "Scene";
+        case AirLogoMode::IconZone:
+        default: return "ZoneIcone";
+    }
+}
+
+bool air_logo_from_name(const char* s, AirLogoMode& m) noexcept {
+    if (s == nullptr) {
+        return false;
+    }
+    const AirLogoMode all[] = {AirLogoMode::None, AirLogoMode::IconZone, AirLogoMode::Scene};
+    for (AirLogoMode cand : all) {
+        if (same(s, air_logo_name(cand))) {
+            m = cand;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool apply_air_form(const char* body, std::size_t len, const AirSettings& current, AirSettings& out,
+                    FormError& err) noexcept {
+    AirSettings a = current;
+    char v[kFieldMax];
+    int8_t r = 0;
+    int32_t i = 0;
+
+    if ((r = fetch(body, len, "actif", v, sizeof(v))) < 0) {
+        return fail(err, "actif", kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, a.enabled)) {
+        return fail(err, "actif", "0 ou 1");
+    }
+    if ((r = fetch(body, len, "adresse", v, sizeof(v))) < 0) {
+        return fail(err, "adresse", kBadEncoding);
+    }
+    if (r > 0) {
+        if (same(v, "0x53")) {
+            a.ens160_address = air_quality::kEns160AddressHigh;
+        } else if (same(v, "0x52")) {
+            a.ens160_address = air_quality::kEns160AddressLow;
+        } else {
+            return fail(err, "adresse", "0x52 ou 0x53");
+        }
+    }
+    if ((r = fetch(body, len, "grandeur_pilote", v, sizeof(v))) < 0) {
+        return fail(err, "grandeur_pilote", kBadEncoding);
+    }
+    if ((r > 0) && !air_quality::pilot_from_name(v, a.levels.pilot)) {
+        return fail(err, "grandeur_pilote", "Aqi, Eco2 ou Tvoc");
+    }
+    struct U16Field {
+        const char* name;
+        uint16_t* target;
+        int32_t lo;
+        int32_t hi;
+        const char* reason;
+    };
+    const U16Field u16[] = {
+        {"seuil_eco2_bon", &a.levels.eco2_thresholds[0], 1, 65535, "ppm, 1 à 65535"},
+        {"seuil_eco2_moyen", &a.levels.eco2_thresholds[1], 1, 65535, "ppm, 1 à 65535"},
+        {"seuil_eco2_mauvais", &a.levels.eco2_thresholds[2], 1, 65535, "ppm, 1 à 65535"},
+        {"seuil_eco2_tres_mauvais", &a.levels.eco2_thresholds[3], 1, 65535, "ppm, 1 à 65535"},
+        {"seuil_tvoc_bon", &a.levels.tvoc_thresholds[0], 1, 65535, "ppb, 1 à 65535"},
+        {"seuil_tvoc_moyen", &a.levels.tvoc_thresholds[1], 1, 65535, "ppb, 1 à 65535"},
+        {"seuil_tvoc_mauvais", &a.levels.tvoc_thresholds[2], 1, 65535, "ppb, 1 à 65535"},
+        {"seuil_tvoc_tres_mauvais", &a.levels.tvoc_thresholds[3], 1, 65535, "ppb, 1 à 65535"},
+        {"hysteresis_eco2", &a.levels.hysteresis_eco2, 0, 65535, "ppm, 0 à 65535"},
+        {"hysteresis_tvoc", &a.levels.hysteresis_tvoc, 0, 65535, "ppb, 0 à 65535"},
+        {"confirmation_s", &a.levels.confirmation_s, 0, air_quality::kConfirmationMaxS, "de 0 à 3600 s"},
+    };
+    for (const U16Field& f : u16) {
+        if ((r = fetch(body, len, f.name, v, sizeof(v))) < 0) {
+            return fail(err, f.name, kBadEncoding);
+        }
+        if (r > 0) {
+            if (!parse_int(v, f.lo, f.hi, i)) {
+                return fail(err, f.name, f.reason);
+            }
+            *f.target = static_cast<uint16_t>(i);
+        }
+    }
+    if ((r = fetch(body, len, "logo_air", v, sizeof(v))) < 0) {
+        return fail(err, "logo_air", kBadEncoding);
+    }
+    if ((r > 0) && !air_logo_from_name(v, a.logo)) {
+        return fail(err, "logo_air", "Aucun, ZoneIcone ou Scene");
+    }
+    if ((r = fetch(body, len, "decalage_temperature", v, sizeof(v))) < 0) {
+        return fail(err, "decalage_temperature", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, -air_quality::kOffsetMaxCenti, air_quality::kOffsetMaxCenti, i)) {
+            return fail(err, "decalage_temperature", "centièmes de degré, -1000 à 1000");
+        }
+        a.temperature_offset_centi = static_cast<int16_t>(i);
+    }
+    if (!air_quality::is_valid(a.levels)) {
+        return fail(err, "seuil_eco2_bon", "seuils strictement croissants, hystérésis plus petite que l'écart entre deux seuils");
+    }
+    if (!is_valid(a)) {
+        return fail(err, "", "réglages incohérents");
+    }
+    out = a;
     return true;
 }
 

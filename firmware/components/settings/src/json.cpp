@@ -69,7 +69,7 @@ std::size_t display_model_json(char* out, std::size_t out_size) noexcept {
     const char* const axes[] = {"Colonne", "Ligne"};
     const char* const origins[] = {"HautGauche", "HautDroite", "BasGauche", "BasDroite"};
     const char* const widths[] = {"0", "8"};
-    const char* const kinds[] = {"Heure", "Date", "Valeur", "DeuxLignes", "Defilement", "Nuit", "Test"};
+    const char* const kinds[] = {"Heure", "Date", "Valeur", "DeuxLignes", "Defilement", "Nuit", "Test", "Air"};
     bool ok = w.begin_object() && w.key("champs") && w.begin_object();
     ok = ok && choice_field(w, "axe_premier", "Premier axe du ruban", axes, 2U, axis_name(d.map.first_axis),
                             "Sens du ruban depuis l'origine : colonnes de 8 ou rangées de 32.");
@@ -174,6 +174,76 @@ std::size_t system_json(const SystemSettings& s, char* out, std::size_t out_size
     JsonWriter w(out, out_size);
     const bool ok = w.begin_object() && w.field("fuseau", s.timezone) && w.field("serveur_ntp", s.ntp_server) && w.end_object();
     (void)ok;
+    return finish(w);
+}
+
+
+std::size_t air_model_json(char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    const AirSettings a = default_air_settings();
+    const char* const addresses[] = {"0x53", "0x52"};
+    const char* const pilots[] = {"Aqi", "Eco2", "Tvoc"};
+    const char* const logos[] = {"Aucun", "ZoneIcone", "Scene"};
+    bool ok = w.begin_object() && w.key("champs") && w.begin_object();
+    ok = ok && bool_field(w, "actif", "Capteur d'air actif", a.enabled,
+                          "Décoché : le module est ignoré même s'il est branché.");
+    ok = ok && choice_field(w, "adresse", "Adresse I²C de l'ENS160", addresses, 2U,
+                            (a.ens160_address == air_quality::kEns160AddressHigh) ? "0x53" : "0x52",
+                            "0x53 avec la broche ADDR en l'air (module courant), 0x52 sinon.");
+    ok = ok && choice_field(w, "grandeur_pilote", "Grandeur qui décide du niveau", pilots, 3U,
+                            air_quality::pilot_name(a.levels.pilot),
+                            "Aqi : indice UBA 1 à 5 du capteur. Eco2 et Tvoc : seuils ci-dessous.");
+    const char* const eco2_names[] = {"seuil_eco2_bon", "seuil_eco2_moyen", "seuil_eco2_mauvais", "seuil_eco2_tres_mauvais"};
+    const char* const eco2_labels[] = {"eCO2 : passage à Bon", "eCO2 : passage à Moyen", "eCO2 : passage à Mauvais",
+                                       "eCO2 : passage à Très mauvais"};
+    const char* const tvoc_names[] = {"seuil_tvoc_bon", "seuil_tvoc_moyen", "seuil_tvoc_mauvais", "seuil_tvoc_tres_mauvais"};
+    const char* const tvoc_labels[] = {"TVOC : passage à Bon", "TVOC : passage à Moyen", "TVOC : passage à Mauvais",
+                                       "TVOC : passage à Très mauvais"};
+    for (std::size_t i = 0U; ok && (i < air_quality::kThresholdCount); ++i) {
+        ok = int_field(w, eco2_names[i], eco2_labels[i], "ppm", 1, 65535, a.levels.eco2_thresholds[i],
+                       "Seuils strictement croissants.");
+    }
+    for (std::size_t i = 0U; ok && (i < air_quality::kThresholdCount); ++i) {
+        ok = int_field(w, tvoc_names[i], tvoc_labels[i], "ppb", 1, 65535, a.levels.tvoc_thresholds[i],
+                       "Seuils strictement croissants.");
+    }
+    ok = ok && int_field(w, "hysteresis_eco2", "Hystérésis eCO2", "ppm", 0, 65535, a.levels.hysteresis_eco2,
+                         "Écart à repasser sous un seuil pour redescendre d'un niveau.");
+    ok = ok && int_field(w, "hysteresis_tvoc", "Hystérésis TVOC", "ppb", 0, 65535, a.levels.hysteresis_tvoc,
+                         "Écart à repasser sous un seuil pour redescendre d'un niveau.");
+    ok = ok && int_field(w, "confirmation_s", "Confirmation d'un nouveau niveau", "s", 0, air_quality::kConfirmationMaxS,
+                         a.levels.confirmation_s, "Un niveau doit tenir ce temps sans interruption avant d'être affiché.");
+    ok = ok && choice_field(w, "logo_air", "Logo air sur la dalle", logos, 3U, air_logo_name(a.logo),
+                            "Aucun ; ZoneIcone : petit logo à côté de l'heure ; Scene : scène dédiée avec la valeur.");
+    ok = ok && head(w, "decalage_temperature", "temperature", "Décalage de température (auto-échauffement)") &&
+         w.field("unite", "°C") && w.field("min", static_cast<int64_t>(-air_quality::kOffsetMaxCenti)) &&
+         w.field("max", static_cast<int64_t>(air_quality::kOffsetMaxCenti)) &&
+         w.field("defaut", static_cast<int64_t>(a.temperature_offset_centi)) &&
+         w.field("aide", "Retiré à la mesure du capteur, qui chauffe à côté de la dalle. Le wizard le mesure.") &&
+         w.end_object();
+    ok = ok && w.end_object() && w.end_object();
+    return finish(w);
+}
+
+std::size_t air_json(const AirSettings& s, char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    bool ok = w.begin_object();
+    ok = ok && w.field("actif", s.enabled) &&
+         w.field("adresse", (s.ens160_address == air_quality::kEns160AddressHigh) ? "0x53" : "0x52") &&
+         w.field("grandeur_pilote", air_quality::pilot_name(s.levels.pilot)) &&
+         w.field("seuil_eco2_bon", static_cast<int64_t>(s.levels.eco2_thresholds[0])) &&
+         w.field("seuil_eco2_moyen", static_cast<int64_t>(s.levels.eco2_thresholds[1])) &&
+         w.field("seuil_eco2_mauvais", static_cast<int64_t>(s.levels.eco2_thresholds[2])) &&
+         w.field("seuil_eco2_tres_mauvais", static_cast<int64_t>(s.levels.eco2_thresholds[3])) &&
+         w.field("seuil_tvoc_bon", static_cast<int64_t>(s.levels.tvoc_thresholds[0])) &&
+         w.field("seuil_tvoc_moyen", static_cast<int64_t>(s.levels.tvoc_thresholds[1])) &&
+         w.field("seuil_tvoc_mauvais", static_cast<int64_t>(s.levels.tvoc_thresholds[2])) &&
+         w.field("seuil_tvoc_tres_mauvais", static_cast<int64_t>(s.levels.tvoc_thresholds[3])) &&
+         w.field("hysteresis_eco2", static_cast<int64_t>(s.levels.hysteresis_eco2)) &&
+         w.field("hysteresis_tvoc", static_cast<int64_t>(s.levels.hysteresis_tvoc)) &&
+         w.field("confirmation_s", static_cast<int64_t>(s.levels.confirmation_s)) &&
+         w.field("logo_air", air_logo_name(s.logo)) &&
+         w.field("decalage_temperature", static_cast<int64_t>(s.temperature_offset_centi)) && w.end_object();
     return finish(w);
 }
 

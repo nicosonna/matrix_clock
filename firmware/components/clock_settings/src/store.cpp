@@ -21,12 +21,14 @@ constexpr char kNamespace[] = "clk_cfg";
 constexpr char kKeyDisplay[] = "display";
 constexpr char kKeyBrightness[] = "bright";
 constexpr char kKeySystem[] = "system";
+constexpr char kKeyAir[] = "air";
 /// Wi-Fi credentials live in their own namespace (clock_web); erased by the factory reset too.
 constexpr char kWifiNamespace[] = "clk_wifi";
 
 constexpr uint8_t kDisplayVersion = 1U;
 constexpr uint8_t kBrightnessVersion = 1U;
 constexpr uint8_t kSystemVersion = 1U;
+constexpr uint8_t kAirVersion = 1U;
 
 SemaphoreHandle_t s_mutex = nullptr;
 settings::Settings s_current{};
@@ -117,6 +119,15 @@ esp_err_t init() noexcept {
                 replaced = true;
             }
         }
+        settings::AirSettings a{};
+        if (read_blob(h, kKeyAir, kAirVersion, a)) {
+            if (settings::is_valid(a)) {
+                loaded.air = a;
+            } else {
+                ESP_LOGW(kTag, "air settings invalid: defaults");
+                replaced = true;
+            }
+        }
         nvs_close(h);
     } else if (open != ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGW(kTag, "NVS open: %s (defaults)", esp_err_to_name(open));
@@ -198,6 +209,19 @@ bool save_system(const settings::SystemSettings& s) noexcept {
         unlock();
     }
     ESP_LOGI(kTag, "system settings saved");
+    return true;
+}
+
+bool save_air(const settings::AirSettings& s) noexcept {
+    if (!settings::is_valid(s) || !write_blob(kKeyAir, kAirVersion, s)) {
+        return false;
+    }
+    if (lock()) {
+        s_current.air = s;
+        ++s_version;
+        unlock();
+    }
+    ESP_LOGI(kTag, "air settings saved");
     return true;
 }
 

@@ -32,6 +32,7 @@ bool replaced_on_boot() noexcept;
 bool save_display(const settings::DisplaySettings& s) noexcept;
 bool save_brightness(const brightness::Config& c) noexcept;
 bool save_system(const settings::SystemSettings& s) noexcept;
+bool save_air(const settings::AirSettings& s) noexcept;
 
 /// Erases every stored setting (Wi-Fi credentials included). The caller reboots.
 bool factory_reset() noexcept;

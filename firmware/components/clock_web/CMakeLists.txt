@@ -6,7 +6,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     EMBED_TXTFILES "www/wifi.html" "www/app.html"
     REQUIRES alerts
-    PRIV_REQUIRES network settings clock_settings brightness clock_board esp_wifi esp_netif esp_event esp_http_server
+    PRIV_REQUIRES network settings clock_settings brightness air_quality clock_board esp_wifi esp_netif esp_event esp_http_server
                   esp_timer nvs_flash esp_app_format app_update lwip log espressif__mdns
 )
 

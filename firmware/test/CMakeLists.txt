@@ -15,6 +15,7 @@ set(NET ${CMAKE_CURRENT_SOURCE_DIR}/../components/network)
 set(ALERTS ${CMAKE_CURRENT_SOURCE_DIR}/../components/alerts)
 set(TIME ${CMAKE_CURRENT_SOURCE_DIR}/../components/timekeeping)
 set(SET ${CMAKE_CURRENT_SOURCE_DIR}/../components/settings)
+set(AIR ${CMAKE_CURRENT_SOURCE_DIR}/../components/air_quality)
 
 add_executable(test_clock
     test_main.cpp
@@ -26,6 +27,12 @@ add_executable(test_clock
     test_alerts.cpp
     test_timekeeping.cpp
     test_settings.cpp
+    test_air_quality.cpp
+    ${AIR}/src/aht21.cpp
+    ${AIR}/src/ens160.cpp
+    ${AIR}/src/sensor.cpp
+    ${AIR}/src/levels.cpp
+    ${DISPLAY}/src/air_logo.cpp
     ${SET}/src/json_writer.cpp
     ${SET}/src/model.cpp
     ${SET}/src/forms.cpp
@@ -57,6 +64,7 @@ target_include_directories(test_clock PRIVATE
     ${ALERTS}/include
     ${TIME}/include
     ${SET}/include
+    ${AIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(test_clock PRIVATE
     CLOCK_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"

@@ -21,6 +21,7 @@ namespace {
 using settings::DisplaySettings;
 using settings::FormError;
 using settings::SystemSettings;
+using settings::AirSettings;
 
 std::size_t slen(const char* s) { return std::strlen(s); }
 
@@ -240,6 +241,69 @@ void test_system_form() {
     CHECK(!settings::is_valid_host(nullptr));
 }
 
+// ----------------------------------------------------------------- WEB-02/03 (air)
+
+void test_air_form() {
+    const AirSettings cur = settings::default_air_settings();
+    CHECK(settings::is_valid(cur));
+    AirSettings out = cur;
+    FormError err{};
+    const char* ok = "actif=0&adresse=0x52&grandeur_pilote=Eco2&seuil_eco2_bon=500&seuil_eco2_moyen=700&seuil_eco2_mauvais=900"
+                     "&seuil_eco2_tres_mauvais=1400&hysteresis_eco2=40&confirmation_s=120&logo_air=Scene&decalage_temperature=-150";
+    CHECK(settings::apply_air_form(ok, slen(ok), cur, out, err));
+    CHECK(!out.enabled);
+    CHECK_EQ(out.ens160_address, air_quality::kEns160AddressLow);
+    CHECK(out.levels.pilot == air_quality::PilotQuantity::Eco2);
+    CHECK_EQ(out.levels.eco2_thresholds[0], 500U);
+    CHECK_EQ(out.levels.eco2_thresholds[3], 1400U);
+    CHECK_EQ(out.levels.hysteresis_eco2, 40U);
+    CHECK_EQ(out.levels.confirmation_s, 120U);
+    CHECK(out.logo == settings::AirLogoMode::Scene);
+    CHECK_EQ(out.temperature_offset_centi, -150);
+    CHECK_EQ(out.levels.tvoc_thresholds[1], 660U);  // untouched
+    const air_quality::SensorConfig sc = settings::sensor_config(out);
+    CHECK_EQ(sc.ens160_address, air_quality::kEns160AddressLow);
+    CHECK_EQ(sc.temperature_offset_centi, -150);
+    // All or nothing: a bad field leaves `keep` untouched.
+    AirSettings keep = cur;
+    const char* bads[] = {"adresse=0x50", "grandeur_pilote=Co2", "seuil_eco2_moyen=500", "seuil_tvoc_bon=0",
+                          "hysteresis_tvoc=500", "confirmation_s=3601", "logo_air=Grand", "decalage_temperature=1001",
+                          "actif=peut-etre", "seuil_eco2_bon=%ZZ", "logo_air=%ZZ", "decalage_temperature=%ZZ",
+                          "actif=%ZZ", "adresse=%ZZ", "grandeur_pilote=%ZZ"};
+    for (const char* b : bads) {
+        CHECK(!settings::apply_air_form(b, slen(b), cur, keep, err));
+        CHECK(err.field[0] != '\0');
+        CHECK(keep.enabled == cur.enabled);
+        CHECK_EQ(keep.levels.eco2_thresholds[1], cur.levels.eco2_thresholds[1]);
+    }
+    CHECK(settings::apply_air_form("", 0U, cur, keep, err));
+    AirSettings inv = cur;
+    inv.logo = static_cast<settings::AirLogoMode>(9U);
+    CHECK(!settings::is_valid(inv));
+    settings::AirLogoMode m{};
+    CHECK(settings::air_logo_from_name("Aucun", m) && (m == settings::AirLogoMode::None));
+    CHECK(settings::air_logo_from_name("ZoneIcone", m) && (m == settings::AirLogoMode::IconZone));
+    CHECK(!settings::air_logo_from_name(nullptr, m));
+    CHECK(std::strcmp(settings::air_logo_name(static_cast<settings::AirLogoMode>(9U)), "ZoneIcone") == 0);
+    // Model and values JSON.
+    static char json[settings::kJsonMax];
+    CHECK(settings::air_model_json(json, sizeof(json)) > 0U);
+    for (std::size_t i = 0U; i < settings::kAirFieldCount; ++i) {
+        char needle[96];
+        (void)std::snprintf(needle, sizeof(needle), "\"%s\":{\"type\":\"", settings::kAirFields[i]);
+        const char* f = std::strstr(json, needle);
+        CHECK(f != nullptr);
+        CHECK((f != nullptr) && (std::strstr(f, "\"libelle\":\"") != nullptr));
+    }
+    CHECK(std::strstr(json, "\"decalage_temperature\":{\"type\":\"temperature\"") != nullptr);
+    CHECK(settings::air_json(out, json, sizeof(json)) > 0U);
+    CHECK(std::strstr(json, "\"adresse\":\"0x52\"") != nullptr);
+    CHECK(std::strstr(json, "\"logo_air\":\"Scene\"") != nullptr);
+    CHECK(std::strstr(json, "\"decalage_temperature\":-150") != nullptr);
+    char small[64];
+    CHECK_EQ(settings::air_model_json(small, sizeof(small)), 0);
+}
+
 // --------------------------------------------------------------------- WEB-04
 
 /// Reads the embedded page into a static buffer (host only).
@@ -285,11 +349,13 @@ struct PageLiteral {
 };
 
 bool is_model_field(const char* name) {
-    const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kSystemFields};
-    const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kSystemFieldCount};
+    const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kSystemFields,
+                                  settings::kAirFields};
+    const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kSystemFieldCount,
+                                  settings::kAirFieldCount};
     const char* const extra[] = {"ssid", "password", "cle", "texte", "priorite", "duree_s", "confirme", "motif",
-                                 "brut_nuit", "brut_nuit_allume", "brut_soir", "brut_jour", "firmware"};
-    for (std::size_t l = 0U; l < 3U; ++l) {
+                                 "brut_nuit", "brut_nuit_allume", "brut_soir", "brut_jour", "firmware", "reference"};
+    for (std::size_t l = 0U; l < 4U; ++l) {
         for (std::size_t i = 0U; i < counts[l]; ++i) {
             if (std::strcmp(lists[l][i], name) == 0) {
                 return true;
@@ -314,6 +380,7 @@ void test_page_orphans() {
     check_domain_dynamic(page, settings::kDisplayFields, settings::kDisplayFieldCount, "affichage");
     check_domain_dynamic(page, settings::kBrightnessFields, settings::kBrightnessFieldCount, "luminosite");
     check_domain_dynamic(page, settings::kSystemFields, settings::kSystemFieldCount, "systeme");
+    check_domain_dynamic(page, settings::kAirFields, settings::kAirFieldCount, "air");
 
     // Every name="..." left in the page (uploads, portal) is a known field.
     const char* p = page;
@@ -335,13 +402,13 @@ void test_page_orphans() {
 
     // The page distributes the fields over its forms by name: every model field of the three domains
     // must appear in exactly one group list, and every listed name must be a model field.
-    const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields};
-    const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount};
+    const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kAirFields};
+    const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kAirFieldCount};
     const char* groups = std::strstr(page, "var groupes = {");
     CHECK(groups != nullptr);
     const char* groups_end = (groups != nullptr) ? std::strstr(groups, "};") : nullptr;
     CHECK(groups_end != nullptr);
-    for (std::size_t l = 0U; l < 2U; ++l) {
+    for (std::size_t l = 0U; l < 3U; ++l) {
         for (std::size_t i = 0U; i < counts[l]; ++i) {
             char needle[64];
             (void)std::snprintf(needle, sizeof(needle), "'%s'", lists[l][i]);
@@ -359,7 +426,7 @@ void test_page_orphans() {
     }
     // Every type the model emits has a widget in the page, and every field carries a label.
     const char* const types[] = {"m.type === 'booleen'", "m.type === 'choix'", "m.type === 'heure'", "m.type === 'entier'",
-                                 "m.type === 'scenes'", "m.type === 'courbe'"};
+                                 "m.type === 'scenes'", "m.type === 'courbe'", "m.type === 'temperature'"};
     for (const char* t : types) {
         CHECK(std::strstr(page, t) != nullptr);
     }
@@ -466,5 +533,6 @@ void run_settings_tests() {
     test_display_form();
     test_brightness_form();
     test_system_form();
+    test_air_form();
     test_page_orphans();
 }

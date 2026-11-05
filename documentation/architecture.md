@@ -77,7 +77,7 @@ volontaire.
 |---|---|---|
 | `clock_board` | brochage `constexpr`, Kconfig | oui (constantes) |
 | `clock_display` | `espressif/led_strip`, SPI/DMA | oui (matériel) |
-| `clock_hal` | ADC1 oneshot + étalonnage, bus I²C (réinitialisation d'un bus bloqué), NVS | oui (matériel) |
+| `clock_hal` | ADC1 oneshot + étalonnage ; bus I²C `i2c_master` derrière `air_quality::I2cBus` (délai 50 ms, réinitialisation d'un bus bloqué par 9 coups d'horloge) | oui (matériel) |
 | `clock_time` | SNTP ; la conversion et la validité sont dans `timekeeping` (pur) | oui (transport) |
 | `clock_homeassistant` | `esp_websocket_client`, `esp-mqtt`, HTTPS Open-Meteo | oui (transport) |
 | `clock_web` | `esp_http_server`, page embarquée, DNS captif, mDNS | oui (transport) |

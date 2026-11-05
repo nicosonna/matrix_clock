@@ -63,6 +63,7 @@ table.liste select { max-width:11rem; }
   <a href="/" data-page="tableau">Tableau de bord</a>
   <a href="/affichage" data-page="affichage">Affichage</a>
   <a href="/luminosite" data-page="luminosite">Luminosité</a>
+  <a href="/air" data-page="air">Air</a>
   <a href="/systeme" data-page="systeme">Système</a>
   <a href="/wifi">WiFi</a>
 </nav>
@@ -110,6 +111,27 @@ table.liste select { max-width:11rem; }
   </div>
 </section>
 
+<section id="air">
+  <div class="carte">
+    <h2>Qualité de l'air</h2>
+    <div class="grille" id="tuiles-air"></div>
+    <p class="aide" id="air-etat"></p>
+  </div>
+  <div class="carte">
+    <h2>Mise en service du capteur — wizard</h2>
+    <p class="aide">Détection du module, préchauffage, mesure de l'auto-échauffement avec un thermomètre de référence, choix du logo.</p>
+    <div id="wiz-air"></div>
+  </div>
+  <div class="carte">
+    <h2>Réglages du capteur</h2>
+    <form id="form-air" data-domaine="air" data-groupe="air"></form>
+  </div>
+  <div class="carte">
+    <h2>Seuils et stabilité</h2>
+    <form id="form-air-2" data-domaine="air" data-groupe="air_seuils"></form>
+  </div>
+</section>
+
 <section id="systeme">
   <div class="carte">
     <h2>Heure</h2>
@@ -138,16 +160,18 @@ table.liste select { max-width:11rem; }
 <script>
 (function () {
   'use strict';
-  var pages = ['tableau', 'affichage', 'luminosite', 'systeme'];
-  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/systeme': 'systeme' };
+  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'systeme'];
+  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/systeme': 'systeme' };
   // Which fields each form shows (the model stays the single source of truth for everything else).
   var groupes = {
     scenes: ['scenes', 'vitesse_defilement', 'clignotement', 'barre_secondes'],
     dalle: ['axe_premier', 'serpentin', 'origine', 'largeur_module', 'budget_ma'],
     reglage: ['mode', 'lum_manuelle', 'lum_min', 'lum_max', 'extinction_active', 'extinction_debut', 'extinction_fin'],
-    avance: ['pas_lum', 'montee_s', 'descente_s', 'compensation_counts', 'courbe']
+    avance: ['pas_lum', 'montee_s', 'descente_s', 'compensation_counts', 'courbe'],
+    air: ['actif', 'adresse', 'logo_air', 'decalage_temperature'],
+    air_seuils: ['grandeur_pilote', 'seuil_eco2_bon', 'seuil_eco2_moyen', 'seuil_eco2_mauvais', 'seuil_eco2_tres_mauvais', 'seuil_tvoc_bon', 'seuil_tvoc_moyen', 'seuil_tvoc_mauvais', 'seuil_tvoc_tres_mauvais', 'hysteresis_eco2', 'hysteresis_tvoc', 'confirmation_s']
   };
-  var libelleScene = { Heure: 'Heure', Date: 'Date', Valeur: 'Valeur Home Assistant', DeuxLignes: 'Heure + valeur (deux lignes)', Defilement: 'Texte défilant', Nuit: 'Nuit (dalle sombre)', Test: 'Motif de test' };
+  var libelleScene = { Heure: 'Heure', Date: 'Date', Valeur: 'Valeur Home Assistant', DeuxLignes: 'Heure + valeur (deux lignes)', Defilement: 'Texte défilant', Nuit: 'Nuit (dalle sombre)', Test: 'Motif de test', Air: 'Qualité de l\u2019air (logo + valeur)' };
   var ICONE_HAUT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
   var ICONE_BAS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>';
   var ICONE_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -308,6 +332,13 @@ table.liste select { max-width:11rem; }
         form.lecteurs.push(function () { return nom + '=' + heureVersMinutes(ctrl.value); });
         if (m.aide) { boite.appendChild(el('p', { class: 'aide' }, m.aide)); }
         return boite;
+      } else if (m.type === 'temperature') {
+        ctrl = el('input', { type: 'number', id: id, min: m.min / 100, max: m.max / 100, step: 0.1, value: (parseInt(valeur, 10) || 0) / 100 });
+        boite.appendChild(ctrl);
+        boite.appendChild(el('span', { class: 'unite' }, m.unite || '°C'));
+        form.lecteurs.push(function () { return nom + '=' + Math.round(parseFloat(ctrl.value || '0') * 100); });
+        if (m.aide) { boite.appendChild(el('p', { class: 'aide' }, m.aide)); }
+        return boite;
       } else if (m.type === 'entier') {
         ctrl = el('input', { type: 'number', id: id, min: m.min, max: m.max, step: 1, value: valeur });
       } else {
@@ -459,6 +490,76 @@ table.liste select { max-width:11rem; }
     box.appendChild(ok); box.appendChild(non); boite.appendChild(box);
   }
 
+  // ---- air: live status and commissioning wizard
+  var airTimer = null;
+  var airEtat = null;
+  function lireAir() {
+    fetch('/api/etat').then(function (r) { return r.json(); }).then(function (e) {
+      var a = e.air; airEtat = a;
+      var g = document.getElementById('tuiles-air'); g.innerHTML = '';
+      if (!a || !a.present) {
+        g.appendChild(tuile('Capteur', a && a.actif === false ? 'désactivé' : 'absent'));
+        document.getElementById('air-etat').textContent = a && a.actif === false ? 'Le capteur est désactivé dans les réglages.' : 'Aucun ENS160 détecté sur le bus I²C (adresse ' + (a ? a.adresse : '?') + ').';
+        return;
+      }
+      g.appendChild(tuile('Niveau', a.niveau));
+      g.appendChild(tuile('Indice (AQI)', a.air_valide ? a.aqi : '--'));
+      g.appendChild(tuile('eCO2', a.air_valide ? a.eco2 + ' ppm' : '--'));
+      g.appendChild(tuile('TVOC', a.air_valide ? a.tvoc + ' ppb' : '--'));
+      g.appendChild(tuile('Température', a.climat_valide ? (a.temperature_centi / 100).toFixed(1) + ' °C' : '--'));
+      g.appendChild(tuile('Humidité', a.climat_valide ? (a.humidite_pct10 / 10).toFixed(0) + ' %' : '--'));
+      var t = [];
+      if (a.defaut) { t.push('Capteur en défaut (' + a.etat + ', ' + a.reinit_bus + ' réinitialisation(s) du bus).'); }
+      if (a.prechauffage) { t.push('Préchauffage : valeurs invalides pendant 3 minutes après la mise sous tension.'); }
+      if (a.premiere_mise_en_service) { t.push('Première mise en service : le capteur se stabilise pendant environ une heure.'); }
+      if (a.compensation_par_defaut) { t.push('AHT21 indisponible : compensation 25 °C / 50 % par défaut, précision réduite.'); }
+      document.getElementById('air-etat').textContent = t.join(' ');
+    }).catch(function () {});
+  }
+  function wizardAir(i) {
+    var boite = document.getElementById('wiz-air');
+    boite.innerHTML = '';
+    var box = el('div', { class: 'etapes' });
+    if (i === 0) {
+      var a = airEtat;
+      var texte = !a || !a.present ? 'Aucun capteur détecté. Vérifiez le câblage (SDA/SCL) et l\u2019adresse, puis réessayez.'
+        : (a.prechauffage ? 'Capteur détecté, en préchauffage. Attendez que les valeurs apparaissent (3 min).' : 'Capteur détecté, mesures valides.');
+      boite.appendChild(el('p', {}, '1/3 — ' + texte));
+      var suivant = el('button', { type: 'button', class: 'second', disabled: !a || !a.present }, 'Continuer');
+      suivant.onclick = function () { wizardAir(1); };
+      var re = el('button', { type: 'button', class: 'second' }, 'Réessayer'); re.onclick = function () { lireAir(); setTimeout(function () { wizardAir(0); }, 500); };
+      box.appendChild(suivant); box.appendChild(re);
+    } else if (i === 1) {
+      boite.appendChild(el('p', {}, '2/3 — Placez un thermomètre fiable à côté du module, dalle allumée depuis au moins 30 minutes. Saisissez sa température :'));
+      var ref = el('input', { type: 'number', step: 0.1, min: -40, max: 85, value: airEtat && airEtat.climat_valide ? (airEtat.temperature_centi / 100).toFixed(1) : '' });
+      boite.appendChild(ref); boite.appendChild(el('span', { class: 'unite' }, '°C'));
+      var ok = el('button', { type: 'button', class: 'second' }, 'Mesurer le décalage');
+      ok.onclick = function () {
+        post('/api/air/wizard', 'reference=' + Math.round(parseFloat(ref.value || '0') * 100)).then(function (r) {
+          var t = erreurTexte(r.texte);
+          try { var j = JSON.parse(r.texte); if (j.ok) { t = 'Décalage enregistré : ' + (j.decalage_centi / 100).toFixed(2) + ' °C.' + (j.deporter ? ' Plus de 2 °C : déplacez le capteur loin de la dalle.' : ''); } } catch (e) {}
+          boite.appendChild(el('p', { class: 'msg ' + (r.ok ? 'ok' : 'ko') }, t));
+          if (r.ok) { setTimeout(function () { wizardAir(2); }, 1500); }
+        });
+      };
+      var saut = el('button', { type: 'button', class: 'second' }, 'Passer'); saut.onclick = function () { wizardAir(2); };
+      box.appendChild(ok); box.appendChild(saut);
+    } else {
+      boite.appendChild(el('p', {}, '3/3 — Comment afficher la qualité de l\u2019air sur la dalle ?'));
+      [['Petit logo à côté de l\u2019heure', 'ZoneIcone'], ['Scène dédiée avec la valeur', 'Scene'], ['Rien sur la dalle', 'Aucun']].forEach(function (c) {
+        var b = el('button', { type: 'button', class: 'second' }, c[0]);
+        b.onclick = function () {
+          post('/api/air', 'logo_air=' + c[1]).then(function (r) {
+            boutonWizard('wiz-air', 'Relancer le wizard', function () { wizardAir(0); }, r.ok ? 'Logo : ' + c[0] + '. Mise en service terminée.' : erreurTexte(r.texte), r.ok);
+            chargerDomaine('air');
+          });
+        };
+        box.appendChild(b);
+      });
+    }
+    boite.appendChild(box);
+  }
+
   // ---- system: OTA and maintenance
   document.getElementById('ota').onclick = function () {
     var f = document.getElementById('fichier').files[0];
@@ -485,9 +586,11 @@ table.liste select { max-width:11rem; }
   function charger(page) {
     if (etatTimer) { clearInterval(etatTimer); etatTimer = null; }
     if (brutTimer) { clearInterval(brutTimer); brutTimer = null; }
+    if (airTimer) { clearInterval(airTimer); airTimer = null; }
     if (page === 'tableau') { lireEtat(); etatTimer = setInterval(lireEtat, 2000); }
     if (page === 'affichage') { chargerDomaine('affichage'); boutonWizard('wiz-map', 'Lancer le wizard', function () { wizardMap(0); }); }
     if (page === 'luminosite') { chargerDomaine('luminosite'); lireBrut(); brutTimer = setInterval(lireBrut, 1000); boutonWizard('wiz-lum', 'Lancer le wizard', function () { wizardLum(0); }); }
+    if (page === 'air') { chargerDomaine('air'); lireAir(); airTimer = setInterval(lireAir, 2000); boutonWizard('wiz-air', 'Lancer le wizard', function () { wizardAir(0); }); }
     if (page === 'systeme') { chargerDomaine('systeme'); }
   }
   var initiale = chemins[location.pathname] || 'tableau';

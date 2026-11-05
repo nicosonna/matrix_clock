@@ -137,28 +137,28 @@ bus bloqué).
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| AIR-01 | `Ens160::detecter()` | `PART_ID` `0x0160` ⇒ présent ; autre / NACK ⇒ absent, grandeurs invalides, pas de message répété | À ÉCRIRE |
-| AIR-02 | `Ens160::lire()` | `VALIDITY_FLAG` 1, 2 ⇒ invalides + préchauffage ; 3 ⇒ défaut ; 0 ⇒ publiées | À ÉCRIRE |
-| AIR-03 | idem | `NEWDAT` à 0 ⇒ pas de republication comme fraîche | À ÉCRIRE |
-| AIR-04 | `Ens160::decoder()` | AQI / TVOC / eCO2, LE, extrêmes | À ÉCRIRE |
-| AIR-05 | `Ens160::compenser()` | `TEMP_IN` K×64, `RH_IN` %×512, bornes, arrondi | À ÉCRIRE |
-| AIR-06 | `Aht21::decoder()` | Trames réelles (`test/fixtures/`), bornes | À ÉCRIRE |
-| AIR-07 | `Aht21::lire()` | CRC8 bon accepté, faux **rejeté** ; 3 rejets ⇒ défaut ; 1 bonne lecture rétablit | À ÉCRIRE |
-| AIR-08 | `Aht21::initialiser()` | Non calibré au status ⇒ relance | À ÉCRIRE |
-| AIR-09 | `Air::step()` | AHT21 en défaut ⇒ compensation de repli 25 °C / 50 %, drapeau, ENS160 toujours exploité | À ÉCRIRE |
-| AIR-10 | `Air::step()` | Compensation écrite **avant** la lecture des données | À ÉCRIRE |
-| AIR-11 | `Niveau::calculer()` | 5 paliers × 3 grandeurs pilotes, seuils exacts | À ÉCRIRE |
-| AIR-12 | `Niveau::step()` | Hystérésis : oscillation ⇒ **un seul** changement | À ÉCRIRE |
-| AIR-13 | `Niveau::step()` | Confirmation 59 s ⇒ rien ; 60 s ⇒ changement ; coupure ⇒ zéro | À ÉCRIRE |
-| AIR-14 | `Niveau::step()` | Montée immédiate / descente freinée | À ÉCRIRE |
-| AIR-15 | `valider_air()` | Seuils non monotones, couleurs mal formées ⇒ repli | À ÉCRIRE |
-| AIR-16 | `Air::step()` | `offset_temperature_centi` appliqué à la mesure **et** à la compensation | À ÉCRIRE |
-| AIR-17 | `construire_offset()` | Décalage du wizard ; avertissement à 2,0 °C | À ÉCRIRE |
-| AIR-18 | `couleur_logo()` | Grise en préchauffage et en défaut, **jamais verte** | À ÉCRIRE |
-| AIR-19 | `display::logo_air()` | `Aucun` / `ZoneIcone` / `Scene` ⇒ tampon attendu | À ÉCRIRE |
-| AIR-20 | `MoteurAlertes::step()` | Source air en préchauffage / défaut ⇒ aucune levée ; `AirCapteurDefaut` lève | À ÉCRIRE |
-| AIR-21 | `BusI2c` (doublure) | NACK / bus bloqué ⇒ réinitialisation, compteur, aucune attente bloquante | À ÉCRIRE |
-| AIR-22 | modèle ⇄ wizard `/air` | Aucun paramètre orphelin | À ÉCRIRE |
+| AIR-01 | `AirSensor::step()` (état `Probe`) | `PART_ID` `0x0160` ⇒ présent ; autre valeur ou NACK au premier contact ⇒ absent, grandeurs invalides, nouvelle sonde après 60 s ; NACK **après** avoir été vu ⇒ panne de bus, pas absence | **PASSE** 2026-11-05 |
+| AIR-02 | `AirSensor::step()` (`EnsStatus`) | `VALIDITY_FLAG` 1 ⇒ `warming_up`, 2 ⇒ `initial_start`, grandeurs **invalides**, climat toujours valide ; 3 ou STATER ⇒ `fault` ; 0 ⇒ publiées | **PASSE** 2026-11-05 |
+| AIR-03 | idem | `NEWDAT` à 0 ⇒ aucune relecture, l'AQI précédent reste, rien de republié comme frais | **PASSE** 2026-11-05 |
+| AIR-04 | `ens160_decode_data()`, `ens160_decode_status()` | AQI masqué sur 3 bits, TVOC / eCO2 LE, extrêmes 0 et 65535, bits STATER / NEWDAT / validité | **PASSE** 2026-11-05 |
+| AIR-05 | `ens160_encode_compensation()` | `TEMP_IN` K×64 (25,00 °C ⇒ 19082), `RH_IN` %×512 (50,0 % ⇒ 25600), écrêtage -40..85 °C / 0..100 %, arrondi | **PASSE** 2026-11-05 |
+| AIR-06 | `aht21_decode()` | Trames synthétisées à ±1 centi / ±1 dixième : 23,45 °C / 45,6 %, -40 °C / 0 %, 85 °C / 100 % ; **trames réelles encore à capturer** dans `test/fixtures/` | **PASSE** 2026-11-05 (synthétique) |
+| AIR-07 | `aht21_crc8()`, `AirSensor::step()` | CRC8 (poly 0x31, init 0xFF : vide ⇒ 0xFF, {0} ⇒ 0xAC) ; CRC faux ⇒ rejeté, sortie intacte ; dès 1 rejet le climat n'est plus déclaré valide, 3 rejets ⇒ compensation de repli ; une bonne trame rétablit | **PASSE** 2026-11-05 |
+| AIR-08 | `AirSensor::step()` (`AhtCheck`, `AhtRead`) | Bit calibré absent au status ⇒ `0xBE 0x08 0x00` envoyé ; trame `Busy` ⇒ 3 relances à 10 ms puis cycle sans climat | **PASSE** 2026-11-05 |
+| AIR-09 | `AirSensor::step()` (`EnsCompensate`) | AHT21 en défaut ou absent ⇒ 25,00 °C / 50,0 % écrits (`19082` / `25600`), `compensation_default`, ENS160 toujours lu | **PASSE** 2026-11-05 |
+| AIR-10 | idem | Ordre vérifié sur le journal du faux bus : écriture `TEMP_IN` **avant** lecture `DATA_AQI` | **PASSE** 2026-11-05 |
+| AIR-11 | `raw_level()` | 5 paliers pour `Aqi` (écrêté 1..5), `Eco2` (600/800/1000/1500) et `Tvoc` (220/660/1430/2200) aux seuils exacts ; invalide ⇒ `Unknown` | **PASSE** 2026-11-05 |
+| AIR-12 | `LevelTracker::step()` | Oscillation 990/1010 ppm autour de 1000 avec hystérésis 50 ⇒ **zéro** changement ; descente à 949 seulement | **PASSE** 2026-11-05 |
+| AIR-13 | idem | Niveau tenu 0..59 s ⇒ rien ; 60 s révolues ⇒ changement ; interruption ⇒ compteur à zéro ; lecture invalide ⇒ `Unknown` immédiat, première lecture valide ⇒ immédiate | **PASSE** 2026-11-05 |
+| AIR-14 | idem | Montée au seuil sans marge, descente sous seuil − hystérésis ; TVOC avec sa propre hystérésis ; saut de deux niveaux d'un coup | **PASSE** 2026-11-05 |
+| AIR-15 | `air_quality::is_valid(LevelConfig)`, `settings::apply_air_form()` | Seuils non croissants, seuil 0, hystérésis ≥ écart entre seuils, confirmation > 3600, pilote inconnu ⇒ refus ; formulaire tout-ou-rien (15 corps fautifs) | **PASSE** 2026-11-05 |
+| AIR-16 | `AirSensor` (`temperature_offset_centi`) | Offset 3,50 °C : 26,00 mesuré ⇒ 22,50 publié **et** compensation 18922 ; changement d'adresse à chaud ⇒ nouvelle sonde | **PASSE** 2026-11-05 |
+| AIR-17 | `build_offset()` | mesuré − référence ; > 2,00 °C ⇒ avertissement « déporter » ; > 10 °C ⇒ refus | **PASSE** 2026-11-05 |
+| AIR-18 | `level_color()` | Gris neutre pour `Unknown` (r = g = b), vert seulement pour `Excellent`, rouge pour `Tres mauvais` | **PASSE** 2026-11-05 |
+| AIR-19 | `display::draw_air_logo_6/8()` | Glyphes 6×6 (15 px) et 8×8 (23 px) dans la couleur donnée, découpage hors dalle sans écriture hors bornes ; modes `Aucun` / `ZoneIcone` / `Scene` câblés dans `app_main` (vérification visuelle HW) | **PASSE** 2026-11-05 (glyphes) |
+| AIR-20 | `alerts` (moteur) | Source air en préchauffage / défaut ⇒ aucune levée ; `AirCapteurDefaut` lève | À ÉCRIRE (moteur de règles) |
+| AIR-21 | `AirSensor::step()` (`Recover`) | Bus bloqué ⇒ 3 échecs consécutifs ⇒ `fault`, `recover()` appelé, compteur `bus_resets`, nouvelle sonde ; aucune attente : une transaction par `step()` | **PASSE** 2026-11-05 |
+| AIR-22 | modèle ⇄ page `/air` | Les 16 champs de `kAirFields` dans exactement un groupe de la page, modèle avec `libelle` et type `temperature`, clé `reference` du wizard connue | **PASSE** 2026-11-05 (dans WEB-04) |
 
 ### 1.7 `homeassistant::mqtt` — `dev/spec-home-assistant.md` §6 bis et §9
 
@@ -253,13 +253,13 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-ALR-03 | Une nuit complète en heures silencieuses | Aucun clignotement, alerte conservée et visible au réveil | À FAIRE |
 | HW-ALR-04 | `POST /api/notification` depuis le PC (`cle=test`, priorité 2, 15 s) | 200, le texte interrompt l'heure, défile dans la couleur de la priorité, l'heure reprend | **PASSE** 2026-11-05 (canal local ; le hub y passera par `commande notifier` en phase 2) |
 | HW-AIR-01 | Mise sous tension, chronomètre | `--` + préchauffage ~3 min, puis valeurs ; **aucune** alerte « AERER » pendant ce temps | À FAIRE |
-| HW-AIR-02 | Premier usage du capteur neuf | Drapeau 2 pendant ~1 h, signalé sur la page | À FAIRE |
+| HW-AIR-02 | Premier usage du capteur neuf | Drapeau 2 pendant ~1 h, signalé sur la page | **OBSERVÉ** 2026-11-05 : `DEVICE_STATUS` = 0x8B (validité 2, NEWDAT), `premiere_mise_en_service:true`, AQI `--`, niveau `Inconnu` ; à confirmer : passage à 0 après ~1 h cumulée |
 | HW-AIR-03 | Solvant vaporisé à proximité | AQI, TVOC, eCO2 montent ; niveau confirmé après 60 s | À FAIRE |
 | HW-AIR-04 | Pièce fermée plusieurs heures puis fenêtre ouverte | Montée puis retour, logo qui change **sans clignoter** entre deux niveaux | À FAIRE |
-| HW-AIR-05 | Wizard étape 3 : dalle éteinte 10 min, puis 255 pendant 20 min | Écart chiffré ; > 2 °C ⇒ avertissement de déport | À FAIRE |
+| HW-AIR-05 | Wizard étape 2 : thermomètre de référence à côté du module, dalle allumée 30 min | Écart chiffré ; > 2 °C ⇒ avertissement de déport | **MÉCANIQUE VÉRIFIÉE** 2026-11-05 (`reference=2100` avec 24,80 °C mesuré ⇒ `decalage_centi:380, deporter:true`, puis remis à 0) ; écart réel à mesurer par Nicolas |
 | HW-AIR-06 | Température / humidité confrontées à une référence | Après compensation : < 1 °C, < 5 % HR | À FAIRE |
 | HW-AIR-07 | Capteur débranché à chaud puis rebranché | Grandeurs invalides, logo gris, `CAPTEUR AIR HS` ; bus rétabli **sans redémarrage** | À FAIRE |
-| HW-AIR-08 | Lecture de `PART_ID` et des registres sur le module réel | Table de `spec-qualite-air.md` §2 confirmée ou **corrigée** (dette D11) | À FAIRE |
+| HW-AIR-08 | Lecture de `PART_ID` et des registres sur le module réel | Table de `spec-qualite-air.md` §2 confirmée ou **corrigée** (dette D11) | **PASSE** 2026-11-05 : `PART_ID` 0x0160 à 0x53, `OPMODE` relu 0x02, `DEVICE_STATUS` cohérent (STATAS, validité, NEWDAT), AHT21 à 0x38 calibré, 24,9 °C / 37,6 % plausibles. Restent à confronter : `DATA_*` (après la première heure) |
 | HW-MQ-01 | Home Assistant **de test en Docker** + Mosquitto, liaison activée | Appareil « Horloge » et ses 10 entités découverts sans YAML ; valeurs = page `/air` | À FAIRE |
 | HW-MQ-02 | Mise sous tension de l'horloge, pendant les 3 min de préchauffage | Entités d'air *inconnues* (`null`), puis valeurs ; `prechauffage` à `on` puis `off` | À FAIRE |
 | HW-MQ-03 | Horloge débranchée ; puis Home Assistant redémarré | `disponible` passe `offline` (testament) ; après redémarrage de HA, entités retrouvées (découverte renvoyée) | À FAIRE |

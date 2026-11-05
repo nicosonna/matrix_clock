@@ -44,6 +44,8 @@ struct Hooks {
     bool (*ldr_raw)(uint16_t& raw, bool& valid, int& millivolts);
     /// OTA progress for the panel (0..100, active false when done or failed).
     void (*ota_progress)(uint8_t percent, bool active);
+    /// Raw AHT21 temperature (before the offset) for the self-heating wizard; false if invalid.
+    bool (*air_raw_temperature)(int16_t& centi);
 };
 
 /// Snapshot of the network state for the display and `/api/info`.

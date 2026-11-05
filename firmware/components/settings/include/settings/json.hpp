@@ -21,9 +21,11 @@ inline constexpr std::size_t kJsonMax = 4096U;
 std::size_t display_model_json(char* out, std::size_t out_size) noexcept;
 std::size_t brightness_model_json(char* out, std::size_t out_size) noexcept;
 std::size_t system_model_json(char* out, std::size_t out_size) noexcept;
+std::size_t air_model_json(char* out, std::size_t out_size) noexcept;
 
 std::size_t display_json(const DisplaySettings& s, char* out, std::size_t out_size) noexcept;
 std::size_t brightness_json(const brightness::Config& c, char* out, std::size_t out_size) noexcept;
 std::size_t system_json(const SystemSettings& s, char* out, std::size_t out_size) noexcept;
+std::size_t air_json(const AirSettings& s, char* out, std::size_t out_size) noexcept;
 
 }  // namespace settings

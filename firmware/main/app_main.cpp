@@ -22,14 +22,18 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "air_quality/levels.hpp"
+#include "air_quality/sensor.hpp"
 #include "alerts/notification.hpp"
 #include "brightness/brightness.hpp"
 #include "clock_board/board.hpp"
 #include "clock_display/led_panel.hpp"
+#include "clock_hal/i2c_bus.hpp"
 #include "clock_hal/ldr_adc.hpp"
 #include "clock_settings/store.hpp"
 #include "clock_time/time_source.hpp"
 #include "clock_web/web.hpp"
+#include "display/air_logo.hpp"
 #include "display/clock_scene.hpp"
 #include "display/color.hpp"
 #include "display/current_limit.hpp"
@@ -65,6 +69,13 @@ constexpr uint32_t kChaserStepMs = 40U;
 constexpr UBaseType_t kDisplayTaskPriority = 6U;
 constexpr uint32_t kDisplayTaskStack = 8192U;
 constexpr BaseType_t kDisplayCore = 1;
+constexpr UBaseType_t kAirTaskPriority = 3U;
+constexpr uint32_t kAirTaskStack = 4096U;
+constexpr BaseType_t kAirCore = 0;
+constexpr uint32_t kAirStepMs = 20U;          ///< The sensor state machine is polled this often.
+constexpr uint32_t kAirLevelPeriodMs = 1000U; ///< The level tracker runs at 1 Hz.
+constexpr uint8_t kAirLogoX = 26U;            ///< 6x6 logo next to a left-aligned clock (25 px).
+constexpr uint8_t kAirLogoY = 1U;
 
 // Colours (a theme, until the page lets the user choose them).
 constexpr display::ClockColors kClockColors{display::Rgb{255U, 255U, 255U}, display::Rgb{255U, 160U, 40U},
@@ -128,6 +139,24 @@ struct Shared {
     brightness::Mode mode;
 };
 Shared s_shared{};
+/// Air-quality snapshot published by the air task.
+struct AirShared {
+    bool enabled;
+    air_quality::AirReading reading;
+    air_quality::AirLevel level;
+    int16_t raw_temperature_centi;  ///< Before the offset, for the wizard.
+    bool raw_temperature_valid;
+    char state[16];
+};
+AirShared s_air{};
+
+bool on_air_raw_temperature(int16_t& centi) {
+    taskENTER_CRITICAL(&s_mux);
+    const bool valid = s_air.raw_temperature_valid;
+    centi = s_air.raw_temperature_centi;
+    taskEXIT_CRITICAL(&s_mux);
+    return valid;
+}
 
 bool on_notification(const alerts::Notification& n) {
     taskENTER_CRITICAL(&s_mux);
@@ -201,6 +230,25 @@ std::size_t status_json(char* out, std::size_t size) {
          w.field("budget_ma", static_cast<int64_t>(sh.budget_ma)) && w.field("ecretage", sh.limited) && w.end_object();
     ok = ok && w.key("reseau") && w.begin_object() && w.field("etat", net.state) && w.field("ip", net.ip) &&
          w.field("portail", net.portal) && w.field("ap", net.ap_ssid) && w.end_object();
+    AirShared air{};
+    taskENTER_CRITICAL(&s_mux);
+    air = s_air;
+    taskEXIT_CRITICAL(&s_mux);
+    const air_quality::AirReading& r = air.reading;
+    const settings::AirSettings air_cfg = clock_settings::get().air;
+    ok = ok && w.key("air") && w.begin_object() && w.field("actif", air.enabled) && w.field("present", r.present) &&
+         w.field("defaut", r.fault) && w.field("prechauffage", r.warming_up) &&
+         w.field("premiere_mise_en_service", r.initial_start) && w.field("air_valide", r.air_valid) &&
+         w.field("aqi", static_cast<int64_t>(r.aqi)) && w.field("eco2", static_cast<int64_t>(r.eco2_ppm)) &&
+         w.field("tvoc", static_cast<int64_t>(r.tvoc_ppb)) && w.field("climat_valide", r.climate_valid) &&
+         w.field("temperature_centi", static_cast<int64_t>(r.temperature_centi)) &&
+         w.field("humidite_pct10", static_cast<int64_t>(r.humidity_pct10)) &&
+         w.field("compensation_par_defaut", r.compensation_default) &&
+         w.field("niveau", air_quality::level_name(air.level)) && w.field("etat", air.state) &&
+         w.field("reinit_bus", static_cast<int64_t>(r.bus_resets)) &&
+         w.field("statut_brut", static_cast<int64_t>(r.status_raw)) && w.field("opmode_brut", static_cast<int64_t>(r.opmode_raw)) &&
+         w.field("adresse", (air_cfg.ens160_address == air_quality::kEns160AddressHigh) ? "0x53" : "0x52") &&
+         w.field("age_s", r.present ? static_cast<int64_t>((now_ms() - r.updated_ms) / 1000U) : static_cast<int64_t>(-1)) && w.end_object();
     ok = ok && w.field("scene", sh.scene) && w.field("reglages_remplaces", clock_settings::replaced_on_boot()) &&
          w.field("fonctionnement_s", static_cast<int64_t>(esp_timer_get_time() / 1000000)) && w.end_object();
     return ok ? w.length() : 0U;
@@ -238,6 +286,66 @@ display::TestPattern pattern_from_name(const char* name) {
         return display::TestPattern::Full;
     }
     return display::TestPattern::None;
+}
+
+/// Air-quality task: polls the sensor state machine, tracks the level, publishes.
+void air_task(void* /*arg*/) {
+    static clock_hal::I2cBus bus;
+    if (bus.init() != ESP_OK) {
+        ESP_LOGE(kTag, "I2C bus unavailable: no air quality");
+    }
+    settings::AirSettings cfg = clock_settings::get().air;
+    static air_quality::AirSensor sensor(bus, settings::sensor_config(cfg));
+    static air_quality::LevelTracker tracker;
+    uint32_t applied_version = clock_settings::version();
+    uint32_t last_level = now_ms();
+    bool last_present = false;
+    bool last_fault = false;
+    bool last_air_valid = false;
+    air_quality::AirLevel last_level_value = air_quality::AirLevel::Unknown;
+    for (;;) {
+        const uint32_t now = now_ms();
+        const uint32_t version = clock_settings::version();
+        if (version != applied_version) {
+            applied_version = version;
+            cfg = clock_settings::get().air;
+            sensor.configure(settings::sensor_config(cfg));
+        }
+        air_quality::AirReading reading{};
+        if (cfg.enabled) {
+            sensor.step(now);
+            reading = sensor.reading();
+        }
+        air_quality::AirLevel level = tracker.current();
+        if ((now - last_level) >= kAirLevelPeriodMs) {
+            last_level = now;
+            level = tracker.step(cfg.levels, reading, now);
+            if ((reading.present != last_present) || (reading.fault != last_fault) ||
+                (reading.air_valid != last_air_valid) || (level != last_level_value)) {
+                ESP_LOGI(kTag, "air: %s%s%s%s | AQI %u, eCO2 %u ppm, TVOC %u ppb | %d.%02d C, %u.%u %% | level %s (%s)",
+                         reading.present ? "present" : "absent", reading.fault ? ", FAULT" : "",
+                         reading.warming_up ? ", warming up" : "", reading.air_valid ? "" : ", air invalid",
+                         static_cast<unsigned>(reading.aqi), static_cast<unsigned>(reading.eco2_ppm),
+                         static_cast<unsigned>(reading.tvoc_ppb), static_cast<int>(reading.temperature_centi / 100),
+                         static_cast<int>((reading.temperature_centi < 0 ? -reading.temperature_centi : reading.temperature_centi) % 100),
+                         static_cast<unsigned>(reading.humidity_pct10 / 10U), static_cast<unsigned>(reading.humidity_pct10 % 10U),
+                         air_quality::level_name(level), sensor.state_name());
+                last_present = reading.present;
+                last_fault = reading.fault;
+                last_air_valid = reading.air_valid;
+                last_level_value = level;
+            }
+        }
+        taskENTER_CRITICAL(&s_mux);
+        s_air.enabled = cfg.enabled;
+        s_air.reading = reading;
+        s_air.level = level;
+        s_air.raw_temperature_valid = reading.climate_valid;
+        s_air.raw_temperature_centi = static_cast<int16_t>(reading.temperature_centi + cfg.temperature_offset_centi);
+        std::strncpy(s_air.state, sensor.state_name(), sizeof(s_air.state) - 1U);
+        taskEXIT_CRITICAL(&s_mux);
+        vTaskDelay(ticks_from_ms(kAirStepMs));
+    }
 }
 
 void display_task(void* /*arg*/) {
@@ -402,9 +510,17 @@ void display_task(void* /*arg*/) {
         ota_active = s_ota_active;
         taskEXIT_CRITICAL(&s_mux);
 
+        AirShared air{};
+        taskENTER_CRITICAL(&s_mux);
+        air = s_air;
+        taskEXIT_CRITICAL(&s_mux);
+        const air_quality::LevelColor lc = air_quality::level_color(air.level);
+        const display::Rgb air_color{lc.r, lc.g, lc.b};
+        const bool air_shown = air.enabled && air.reading.present;
         display::SceneAvailability avail{};
         avail.date = time_info.sure;
         avail.scroll = false;
+        avail.air = air_shown && (cfg.air.logo == settings::AirLogoMode::Scene);
         const display::Shown shown = scheduler.step(now, avail, false);
 
         const char* scene_name = "Heure";
@@ -462,11 +578,31 @@ void display_task(void* /*arg*/) {
                 case display::SceneKind::Date:
                     display::draw_date(fb, time_info, 1U, 1U, kDateColors);
                     break;
+                case display::SceneKind::Air: {
+                    // 8x8 logo in the colour of the level, then the pilot value (or -- while invalid).
+                    display::draw_air_logo_8(fb, 0, 0, air_color);
+                    const air_quality::PilotValue pv = air_quality::pilot_value(cfg.air.levels, air.reading);
+                    char text[16];
+                    if (!pv.valid) {
+                        (void)std::snprintf(text, sizeof(text), "--");
+                    } else if (cfg.air.levels.pilot == air_quality::PilotQuantity::Aqi) {
+                        (void)std::snprintf(text, sizeof(text), "AQI %u", static_cast<unsigned>(pv.value));
+                    } else {
+                        (void)std::snprintf(text, sizeof(text), "%u", static_cast<unsigned>(pv.value));
+                    }
+                    const display::Font& font = (display::text_width(display::kFont5x7, text) <= 22U) ? display::kFont5x7 : display::kFont3x5;
+                    display::draw_text(fb, font, 10, (&font == &display::kFont5x7) ? 0 : 1, text, pv.valid ? kClockColors.digits : air_color);
+                    break;
+                }
                 case display::SceneKind::Clock:
                 default: {
                     const bool colon_on = !cfg.display.colon_blink || (((now / kColonHalfPeriodMs) % 2U) == 0U);
-                    display::draw_clock(fb, time_info, display::kClockCentredX, colon_on, cfg.display.seconds_bar,
+                    const bool icon = air_shown && (cfg.air.logo == settings::AirLogoMode::IconZone);
+                    display::draw_clock(fb, time_info, icon ? 0U : display::kClockCentredX, colon_on, cfg.display.seconds_bar,
                                         kClockColors);
+                    if (icon) {
+                        display::draw_air_logo_6(fb, kAirLogoX, kAirLogoY, air_color);
+                    }
                     break;
                 }
             }
@@ -524,6 +660,7 @@ extern "C" void app_main(void) {
     hooks.test_pattern = on_test_pattern;
     hooks.ldr_raw = on_ldr_raw;
     hooks.ota_progress = on_ota_progress;
+    hooks.air_raw_temperature = on_air_raw_temperature;
     const clock_web::WebStatus web = clock_web::start(hooks);
     switch (web) {
         case clock_web::WebStatus::Ok:
@@ -539,6 +676,10 @@ extern "C" void app_main(void) {
         default:
             ESP_LOGE(kTag, "HTTP server failed");
             break;
+    }
+
+    if (xTaskCreatePinnedToCore(air_task, "air", kAirTaskStack, nullptr, kAirTaskPriority, nullptr, kAirCore) != pdPASS) {
+        ESP_LOGE(kTag, "air task not created");
     }
 
     if ((web != clock_web::WebStatus::NvsError) && (web != clock_web::WebStatus::NetError)) {

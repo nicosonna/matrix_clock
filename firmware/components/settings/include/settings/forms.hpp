@@ -28,6 +28,8 @@ extern const char* const kBrightnessFields[];
 extern const std::size_t kBrightnessFieldCount;
 extern const char* const kSystemFields[];
 extern const std::size_t kSystemFieldCount;
+extern const char* const kAirFields[];
+extern const std::size_t kAirFieldCount;
 
 /**
  * @brief Applies a form to a copy of @p current; writes @p out only if everything is valid.
@@ -39,6 +41,8 @@ bool apply_brightness_form(const char* body, std::size_t len, const brightness::
                            brightness::Config& out, FormError& err) noexcept;
 bool apply_system_form(const char* body, std::size_t len, const SystemSettings& current, SystemSettings& out,
                        FormError& err) noexcept;
+bool apply_air_form(const char* body, std::size_t len, const AirSettings& current, AirSettings& out,
+                    FormError& err) noexcept;
 
 /// Enumerations, as the page shows them (French labels are the API values).
 const char* axis_name(display::FirstAxis a) noexcept;
@@ -49,6 +53,8 @@ bool axis_from_name(const char* s, display::FirstAxis& a) noexcept;
 bool origin_from_name(const char* s, display::Origin& o) noexcept;
 bool scene_kind_from_name(const char* s, display::SceneKind& k) noexcept;
 bool brightness_mode_from_name(const char* s, brightness::Mode& m) noexcept;
+const char* air_logo_name(AirLogoMode m) noexcept;
+bool air_logo_from_name(const char* s, AirLogoMode& m) noexcept;
 
 /**
  * @brief Scene list as text: `Heure:20:1,Date:5:1,Valeur0:8:1` (kind[index]:seconds:enabled).

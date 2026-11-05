@@ -28,11 +28,22 @@ SystemSettings default_system_settings() noexcept {
     return s;
 }
 
+AirSettings default_air_settings() noexcept {
+    AirSettings a{};
+    a.enabled = true;
+    a.ens160_address = air_quality::kEns160AddressHigh;
+    a.levels = air_quality::default_level_config();
+    a.logo = AirLogoMode::IconZone;
+    a.temperature_offset_centi = 0;
+    return a;
+}
+
 Settings default_settings() noexcept {
     Settings s{};
     s.display = default_display_settings();
     s.brightness = brightness::default_config();
     s.system = default_system_settings();
+    s.air = default_air_settings();
     return s;
 }
 
@@ -64,6 +75,18 @@ bool is_valid_host(const char* host) noexcept {
 
 bool is_valid(const SystemSettings& s) noexcept {
     return (timekeeping::posix_for_zone(s.timezone) != nullptr) && is_valid_host(s.ntp_server);
+}
+
+bool is_valid(const AirSettings& s) noexcept {
+    const bool logo_ok = (s.logo == AirLogoMode::None) || (s.logo == AirLogoMode::IconZone) || (s.logo == AirLogoMode::Scene);
+    return logo_ok && air_quality::is_valid(s.levels) && air_quality::is_valid(sensor_config(s));
+}
+
+air_quality::SensorConfig sensor_config(const AirSettings& s) noexcept {
+    air_quality::SensorConfig c = air_quality::default_sensor_config();
+    c.ens160_address = s.ens160_address;
+    c.temperature_offset_centi = s.temperature_offset_centi;
+    return c;
 }
 
 }  // namespace settings

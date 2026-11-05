@@ -1,6 +1,7 @@
 # Pure display logic — NO ESP-IDF dependency (host-testable).
 idf_component_register(
     SRCS
+        "src/air_logo.cpp"
         "src/frame_buffer.cpp"
         "src/panel_map.cpp"
         "src/current_limit.cpp"

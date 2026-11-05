@@ -20,6 +20,7 @@
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#include "air_quality/levels.hpp"
 #include "alerts/notification.hpp"
 #include "brightness/brightness.hpp"
 #include "clock_board/board.hpp"
@@ -342,6 +343,67 @@ esp_err_t handle_system_post(httpd_req_t* req) {
     return send_text(req, "200 OK", "{\"ok\":true}");
 }
 
+esp_err_t handle_air_model(httpd_req_t* req) {
+    static char body[settings::kJsonMax];
+    return send_json(req, body, settings::air_model_json(body, sizeof(body)));
+}
+
+esp_err_t handle_air_get(httpd_req_t* req) {
+    static char body[settings::kJsonMax];
+    return send_json(req, body, settings::air_json(clock_settings::get().air, body, sizeof(body)));
+}
+
+esp_err_t handle_air_post(httpd_req_t* req) {
+    static char body[kSettingsFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kSettingsFormMax, got)) {
+        return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+    }
+    const settings::AirSettings current = clock_settings::get().air;
+    settings::AirSettings next = current;
+    settings::FormError err{};
+    if (!settings::apply_air_form(body, got, current, next, err)) {
+        return send_form_error(req, err);
+    }
+    if (!clock_settings::save_air(next)) {
+        return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
+/// POST /api/air/wizard: reference=<centi-degrees of a trusted thermometer> -> offset saved.
+esp_err_t handle_air_wizard(httpd_req_t* req) {
+    char body[kFormMax + 1U];
+    size_t got = 0U;
+    char v[12];
+    size_t n = 0U;
+    if (!read_body(req, body, kFormMax, got) || !network::form_field(body, got, "reference", v, sizeof(v), n) || (n == 0U)) {
+        return send_text(req, "400 Bad Request", "reference=<centièmes de degré> attendu.");
+    }
+    int reference = 0;
+    if ((std::sscanf(v, "%d", &reference) != 1) || (reference < -4000) || (reference > 8500)) {
+        return send_text(req, "400 Bad Request", "Référence hors de -40,00 à 85,00 °C.");
+    }
+    int16_t measured = 0;
+    if ((s_hooks.air_raw_temperature == nullptr) || !s_hooks.air_raw_temperature(measured)) {
+        return send_text(req, "409 Conflict", "Le capteur ne fournit pas de température valide pour l'instant.");
+    }
+    settings::AirSettings cfg = clock_settings::get().air;
+    int16_t offset = 0;
+    if (!air_quality::build_offset(static_cast<int16_t>(reference), measured, offset)) {
+        return send_text(req, "400 Bad Request", "Écart de plus de 10 °C : référence ou capteur douteux.");
+    }
+    cfg.temperature_offset_centi = offset;
+    if (!clock_settings::save_air(cfg)) {
+        return send_text(req, "500 Internal Server Error", "Enregistrement impossible.");
+    }
+    char reply[128];
+    const bool warn = (offset > air_quality::kOffsetWarnCenti) || (offset < -air_quality::kOffsetWarnCenti);
+    (void)std::snprintf(reply, sizeof(reply), "{\"ok\":true,\"decalage_centi\":%d,\"mesure_centi\":%d,\"deporter\":%s}",
+                        static_cast<int>(offset), static_cast<int>(measured), warn ? "true" : "false");
+    return send_text(req, "200 OK", reply);
+}
+
 void reboot_task(void* /*arg*/) {
     vTaskDelay(pdMS_TO_TICKS(kRebootDelayMs));  // let the response leave
     esp_restart();
@@ -516,6 +578,7 @@ bool start_http() {
         {"/affichage", HTTP_GET, handle_app_page, nullptr},
         {"/luminosite", HTTP_GET, handle_app_page, nullptr},
         {"/systeme", HTTP_GET, handle_app_page, nullptr},
+        {"/air", HTTP_GET, handle_app_page, nullptr},
         {"/wifi", HTTP_GET, handle_wifi_page, nullptr},
         {"/api/info", HTTP_GET, handle_info, nullptr},
         {"/api/etat", HTTP_GET, handle_status, nullptr},
@@ -532,6 +595,10 @@ bool start_http() {
         {"/api/luminosite", HTTP_POST, handle_brightness_post, nullptr},
         {"/api/luminosite/brut", HTTP_GET, handle_brightness_raw, nullptr},
         {"/api/luminosite/wizard", HTTP_POST, handle_brightness_wizard, nullptr},
+        {"/api/air/modele", HTTP_GET, handle_air_model, nullptr},
+        {"/api/air", HTTP_GET, handle_air_get, nullptr},
+        {"/api/air", HTTP_POST, handle_air_post, nullptr},
+        {"/api/air/wizard", HTTP_POST, handle_air_wizard, nullptr},
         {"/api/systeme/modele", HTTP_GET, handle_system_model, nullptr},
         {"/api/systeme", HTTP_GET, handle_system_get, nullptr},
         {"/api/systeme", HTTP_POST, handle_system_post, nullptr},

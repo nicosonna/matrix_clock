@@ -48,16 +48,19 @@
       étalonnage ; asservissement~~ (2026-11-05, câblage (a) confirmé). Reste :
       relevés nuit/soir/jour en conditions stables (HW-LUM-01) et le wizard
       quand la page web existera.
-- [ ] **Lire `PART_ID` sur le module ENS160 + AHT21 réel** et confronter la
-      table des registres de `spec-qualite-air.md` §2 à la fiche technique
-      (dette D11) — **avant** d'écrire le décodage.
-- [ ] `air_quality` pur : `BusI2c` injecté, ENS160 (validité, compensation, décodage),
-      AHT21 (CRC8), niveaux (hystérésis, confirmation), décalages
-      (`AIR-01` → `AIR-22`) ; trames réelles en `test/fixtures/`.
-- [ ] `clock_hal` I²C : pilote, réinitialisation d'un bus bloqué, aucune
-      attente bloquante ; boucle de mesure dans la tâche `periodique`.
-- [ ] Logo air (glyphes 6×6 et 8×8) + scène `Air` + alternance de la zone
-      d'icônes (`AFF-16`).
+- [x] ~~Lire `PART_ID` sur le module réel~~ : 0x0160 à 0x53, OPMODE / STATUS
+      conformes, AHT21 calibré (HW-AIR-08, 2026-11-05). Reste à confronter les
+      registres `DATA_*` quand le capteur sort de sa première heure.
+- [x] ~~`air_quality` pur : `I2cBus` injecté, ENS160, AHT21 (CRC8), machine
+      d'état non bloquante, niveaux, décalage~~ (`AIR-01` → `AIR-19`, `AIR-21`,
+      `AIR-22`, 2026-11-05). Reste : trames AHT21 **réelles** en
+      `test/fixtures/` (AIR-06 est synthétique), AIR-20 avec le moteur de règles.
+- [x] ~~`clock_hal` I²C : `i2c_master`, délai 50 ms par transaction,
+      réinitialisation d'un bus bloqué (9 coups d'horloge) ; tâche `air`
+      (cœur 0, 20 ms)~~ (2026-11-05).
+- [x] ~~Logo air (glyphes 6×6 et 8×8) + scène `Air` + logo dans la zone
+      d'icônes~~ (2026-11-05). Reste : alternance de la zone d'icônes avec
+      d'autres icônes (`AFF-16`), couleurs par niveau réglables.
 - [x] ~~`network` : repris de ThermoSync, traduit, extension coupure
       (`LinkStatus`, `FailCause`, `BootGrace`, `WaitingLease`,
       `LeaseDesperate`, redémarrage)~~ — `RES-01` → `RES-12`, `RES-20` → `RES-29`

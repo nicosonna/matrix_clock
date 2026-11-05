@@ -27,6 +27,7 @@ enum class SceneKind : uint8_t {
     Scroll,      ///< Scrolling text.
     Night,       ///< Dim clock, no blink.
     Test,        ///< Commissioning pattern.
+    Air,         ///< Air-quality logo 8x8 + pilot value.
 };
 
 /// One entry of the rotation.
@@ -53,6 +54,7 @@ struct SceneList {
 struct SceneAvailability {
     bool date;
     bool scroll;
+    bool air;   ///< Air sensor present (even warming up: the grey logo is honest).
     std::array<bool, kValueMax> values;
 };
 

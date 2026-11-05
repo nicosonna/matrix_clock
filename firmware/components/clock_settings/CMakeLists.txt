@@ -4,7 +4,7 @@
 idf_component_register(
     SRCS "src/store.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES settings
+    REQUIRES settings air_quality
     PRIV_REQUIRES nvs_flash log
 )
 

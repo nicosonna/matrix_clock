@@ -9,7 +9,7 @@ idf_component_register(
         "src/forms.cpp"
         "src/json.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES display brightness network timekeeping
+    REQUIRES display brightness network timekeeping air_quality
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE

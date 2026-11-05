@@ -34,6 +34,17 @@ cmake --build "$BUILD"
 find "$BUILD" -name '*.gcda' -delete
 ctest --test-dir "$BUILD" --output-on-failure
 
+# EX-52: the settings page is served gzipped; its compressed size must stay under the 60 KB budget
+# (the raw file is embedded nowhere any more). Checked at every run, like a test.
+PAGE="$HERE/../components/clock_web/www/app.html"
+PAGE_GZ=$(gzip -9 -c "$PAGE" | wc -c)
+PAGE_RAW=$(wc -c < "$PAGE")
+echo "page app.html: $PAGE_RAW bytes raw, $PAGE_GZ bytes gzipped (budget 61440)"
+if [ "$PAGE_GZ" -gt 61440 ]; then
+    echo "FAIL: the gzipped page exceeds the 60 KB budget (EX-52)" >&2
+    exit 1
+fi
+
 if [ "$COVERAGE" = "ON" ]; then
     # Home-made gcov aggregation (no gcovr needed): target >= 95 % on the pure
     # components; non-zero exit code otherwise.

@@ -52,6 +52,7 @@ table.liste select { max-width:11rem; }
 .actions { white-space:nowrap; }
 .actions button { margin-left:.2rem; }
 .actions svg { width:1rem; height:1rem; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-2px; }
+  pre { white-space: pre; overflow-x: auto; font-size: .8rem; }
 </style>
 </head>
 <body>
@@ -237,6 +238,12 @@ table.liste select { max-width:11rem; }
     </div>
     <p class="aide">Les réglages d'usine effacent tout, réseau WiFi compris : l'horloge revient en portail captif.</p>
     <p class="msg" id="maint-msg"></p>
+  </div>
+  <div class="carte">
+    <h2>Diagnostics</h2>
+    <div class="grille" id="tuiles-diag"></div>
+    <div class="boutons"><button class="second" type="button" id="taches">Charge des tâches</button></div>
+    <pre id="taches-texte" class="aide"></pre>
   </div>
 </section>
 
@@ -805,6 +812,23 @@ table.liste select { max-width:11rem; }
     boite.appendChild(box);
   }
 
+  // ---- diagnostics (Système)
+  function lireDiag() {
+    fetch('/api/info').then(function (r) { return r.json(); }).then(function (i) {
+      var g = document.getElementById('tuiles-diag'); g.innerHTML = '';
+      g.appendChild(tuile('Version', i.version + ' (' + i.emplacement + ')'));
+      g.appendChild(tuile('Dernier redémarrage', i.redemarrage));
+      g.appendChild(tuile('Tas libre / minimum', Math.round(i.tas_libre / 1024) + ' / ' + Math.round(i.tas_min / 1024) + ' Ko'));
+      g.appendChild(tuile('Plus grand bloc', Math.round(i.bloc_max / 1024) + ' Ko'));
+      g.appendChild(tuile('Processeur', i.cpu_mhz + ' MHz'));
+      g.appendChild(tuile('Page (compressée)', Math.round(i.page_octets / 1024) + ' Ko'));
+      g.appendChild(tuile('En marche depuis', Math.floor(i.fonctionnement_s / 60) + ' min'));
+    }).catch(function () {});
+  }
+  document.getElementById('taches').onclick = function () {
+    fetch('/api/systeme/taches').then(function (r) { return r.text(); }).then(function (t) { document.getElementById('taches-texte').textContent = t; });
+  };
+
   // ---- dashboard
   var etatTimer = null;
   function tuile(titre, valeur) { var t = el('div', { class: 'tuile' }); t.appendChild(el('b', {}, valeur)); t.appendChild(el('span', {}, titre)); return t; }
@@ -1018,7 +1042,7 @@ table.liste select { max-width:11rem; }
     if (page === 'ha') { chargerDomaine('ha'); chargerValeursHa(); lireHa(); haTimer = setInterval(lireHa, 2000); boutonWizard('wiz-ha', 'Lancer le wizard', function () { wizardHa(0); }); }
     if (page === 'mqtt') { chargerDomaine('mqtt'); lireMqtt(); mqttTimer = setInterval(lireMqtt, 2000); boutonWizard('wiz-mqtt', 'Lancer le wizard', function () { wizardMqtt(0); }); }
     if (page === 'alertes') { chargerDomaine('alertes'); chargerReglesAlertes(); lireAlertes(); alertesTimer = setInterval(lireAlertes, 2000); boutonWizard('wiz-alerte', 'Lancer le wizard', function () { wizardAlerte(0); }); }
-    if (page === 'systeme') { chargerDomaine('systeme'); }
+    if (page === 'systeme') { chargerDomaine('systeme'); lireDiag(); }
   }
   var initiale = chemins[location.pathname] || 'tableau';
   montrer(initiale);

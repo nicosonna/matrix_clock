@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-11-06 — Diagnostics, page gzippée, rollback OTA et chien de garde vérifiés, charge mesurée
+
+**Quoi.**
+
+- `/api/info` : cause du dernier redémarrage (`esp_reset_reason`, noms
+  français comme ThermoSync), tas libre / minimum / plus grand bloc,
+  fréquence CPU, emplacement OTA courant, taille de la page ;
+  `GET /api/systeme/taches` : statistiques d'exécution FreeRTOS
+  (`CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS`) et liste des tâches ; carte
+  **Diagnostics** de l'onglet Système.
+- Page `app.html` **servie gzippée** : compressée au build par le Python
+  d'ESP-IDF (`add_custom_command` + `target_add_binary_data`), envoyée avec
+  `Content-Encoding: gzip` — 67 Ko bruts, **17 Ko** sur le fil ; le budget de
+  60 Ko (EX-52) est vérifié par `run_host_tests.sh` à chaque exécution.
+- Deux **interrupteurs de build de test**, jamais pour une version :
+  `-DCLOCK_OTA_NEVER_CONFIRM=1` (l'image ne se confirme pas ⇒ rollback au
+  redémarrage suivant, HW-WEB-03) et `-DCLOCK_TEST_LOCKUP_S=<s>` (la tâche
+  `display` se bloque ⇒ chien de garde, HW-SYS-02) ; `PROJECT_VER`
+  surchargeable pour les distinguer sur `/api/info`.
+
+**Résultats sur la carte.**
+
+- HW-SYS-01 : fuseau `UTC` appliqué à chaud (23:58 → 22:58), retour idem,
+  aucun redémarrage.
+- HW-WEB-03 : image **corrompue** (64 octets inversés au milieu) ⇒
+  `400 Image invalide`, l'horloge continue ; **PASSE** 2026-11-06 : image de test `0.1.0-norollback` (ne se confirme pas) ⇒ démarre sur `ota_1`, 45 s plus tard toujours là ; `POST /api/systeme/redemarrer` ⇒ le bootloader **revient** à `0.1.0` sur `ota_0` (rollback), réglages conservés
+- HW-SYS-02 (chien de garde) : **PASSE** 2026-11-06 : image `0.1.0-wdt`, blocage de `display` à 120 s ⇒ `Task watchdog got triggered` (IDLE1 affamé), panique, redémarrage ; `/api/info` : `redemarrage: chien_de_garde_tache`, uptime 33 s ; image de production restaurée par OTA
+- HW-SYS-03 (charge) : **PASSE** 2026-11-06 : `display` 3 %, `wifi` 4 %, `httpd`/`mqtt`/`ha`/`air` < 1 % chacun, IDLE0 93 % / IDLE1 95 % à 160 MHz, dalle allumée, WiFi, MQTT et HA actifs ; 240 MHz inutile
+- Page gzippée reçue et décodée par `curl --compressed` (11 onglets
+  trouvés), `page_octets` 17 158.
+
+**Reste.** La campagne du plan final §4 (ce qui demande Nicolas ou du temps).
+
+---
+
 ## 2026-11-05 (suite 15) — Zone d'icône testable (AFF-16) et plan de test final
 
 **Quoi.**

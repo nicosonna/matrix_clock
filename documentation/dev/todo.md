@@ -41,8 +41,9 @@
       (2026-11-05).
 - [x] ~~`clock_display`~~ : `led_strip` 2.5.5, SPI/DMA, chenillard et motifs
       vérifiés sur la dalle (HW-AFF-01, 2026-11-05).
-- [ ] **Mesurer** la charge processeur SPI vs RMT (les deux dorsales marchent ;
-      overlay `sdkconfig.defaults.rmt`) et consigner au journal.
+- [x] ~~**Mesurer** la charge processeur~~ : SPI/DMA mesuré le 2026-11-06
+      (HW-SYS-03, `/api/systeme/taches` : `display` ~3 %, `wifi` ~4 %, IDLE
+      ~94 % à 160 MHz). RMT non mesuré : inutile tant que SPI tient.
 - [ ] HW-AFF-02/03 : courant à la pince et tension à la dalle sur blanc plein.
 - [x] ~~Polices 5×7, 3×5, 3×4 + translittération + scènes Heure/Date +
       défilement + ordonnanceur~~ (`AFF-08` → `AFF-15`, `AFF-18`, 2026-11-05).
@@ -154,10 +155,11 @@
 - [ ] Constante `kCourantCanalPleinUa` (20 mA) à **confronter à la pince** sur le
       lot de LEDs réel (vérification 2 de la fiche carte). Un écart > 20 % se
       corrige dans la constante, pas dans le budget.
-- [ ] Taille de la page gzippée à relever **à chaque build** (budget 60 Ko).
-- [ ] CPU à **160 MHz** par défaut (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ`) : passer
-      à 240 MHz si le rendu + WiFi + HTTP le demandent ; à mesurer, pas à
-      supposer.
+- [x] ~~Taille de la page gzippée à relever à chaque build (budget 60 Ko)~~ :
+      page servie **gzippée** (17 Ko), budget vérifié par `run_host_tests.sh`
+      à chaque exécution (2026-11-06).
+- [x] ~~CPU à 160 MHz : passer à 240 MHz si nécessaire~~ : mesuré, 160 MHz
+      suffit largement (HW-SYS-03, 2026-11-06).
 - [ ] **D10** — auto-échauffement du module air : décider du déport (Q10) et
       relever l'écart réel (HW-AIR-05). Un décalage qui dépend de la scène
       affichée ne se corrige pas en logiciel.

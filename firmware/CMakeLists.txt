@@ -4,8 +4,10 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Firmware version (semver). Published to Home Assistant and, in phase 2, to the hub.
-# Bump before each release.
-set(PROJECT_VER "0.1.0")
+# Bump before each release. Overridable (-DPROJECT_VER=...) for test builds.
+if(NOT DEFINED PROJECT_VER)
+    set(PROJECT_VER "0.1.0")
+endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(matrix_clock)

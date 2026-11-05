@@ -26,6 +26,8 @@
 | **Journal série** | `System.IO.Ports.SerialPort` sur le port, 115200 8N1, `DtrEnable`/`RtsEnable` à **false** (sinon reset) | lignes `I (…) main: …` |
 | **Broker MQTT de banc** | `python -I firmware/test/bench/mini_broker.py 1883 broker.log inject.txt 240` puis `/mqtt` ou `POST /api/mqtt` vers l'IP du PC | `CONNECT`, `SUBSCRIBE homeassistant/status`, 10 `…/config` retenus, `…/etat` périodique ; `echo "homeassistant/status\|online" >> inject.txt` ⇒ découverte renvoyée |
 | **Canal d'alerte entrant** | `curl.exe -d "cle=test&titre=T&texte=Bonjour&priorite=1&duree_s=12" http://<ip>/api/notification` ; `-d "cle=test&effacer=1"` pour retirer une tenue | `Notification acceptée`, scène `Alerte` dans `/api/etat`, retour à `Heure` |
+| **Diagnostics** | `GET /api/info` (version, emplacement OTA, cause du redémarrage, tas libre / minimum, taille de la page), `GET /api/systeme/taches` (charge par tâche) ; onglet Système → Diagnostics | cause `volontaire` après un redémarrage demandé, `chien_de_garde_tache` après HW-SYS-02 |
+| **Rollback OTA** (HW-WEB-03) | image corrompue ⇒ `400 Image invalide`, rien ne redémarre ; image de test `build-norollback` (`-DCLOCK_OTA_NEVER_CONFIRM=1`) ⇒ démarre, ne se confirme pas, le redémarrage suivant **revient** à l'image précédente | `/api/info` : `version` et `emplacement` reviennent |
 | **État en direct** | `GET /api/etat` (heure, luminosité, courant, réseau, air, ha, mqtt, alertes, météo, scène) | JSON ; toute grandeur invalide est `false`/`--`/absente, jamais inventée |
 
 Le Home Assistant **de la maison** n'est jamais piloté par un test : les
@@ -90,11 +92,10 @@ Cocher et dater dans la matrice, pas ici.
 3. **HW-AFF-02 → 05** — wizard de correspondance sur la dalle **finale**,
    chenillard, lisibilité à 3 m, motif plein avec le plafond de courant
    (mesurer le courant à la pince).
-4. **HW-SYS-01** — fuseau `Europe/Zurich` → `UTC` sur `/systeme` : décalage
-   sans redémarrage, puis retour.
-5. **HW-WEB-03** — OTA d'une image **volontairement cassée** (un `.bin`
-   tronqué) : rollback automatique. *(Observé une fois par accident le
-   2026-11-05 avec l'image qui débordait la pile : le mécanisme marche.)*
+4. ~~**HW-SYS-01**~~ — joué le 2026-11-05 par l'API (décalage sans
+   redémarrage) ; à refaire d'un clic sur la page si tu veux.
+5. ~~**HW-WEB-03**~~ — joué le 2026-11-06 (image corrompue refusée, image
+   de test non confirmée ⇒ retour à la précédente).
 6. **HW-AIR-07** — capteur débranché à chaud : `--`, logo gris, alerte
    `CAPTEUR AIR HS` après 300 s ; rebranché : bus rétabli **sans redémarrage**.
 7. **HW-AIR-01** — mise sous tension chronométrée : `--` pendant ~3 min,
@@ -135,8 +136,8 @@ Cocher et dater dans la matrice, pas ici.
 
 | Exigence | Manque | Proposition |
 |---|---|---|
-| EX-60 (watchdog) | Aucune vérification matérielle | Tâche bloquée volontairement (build de test) ⇒ redémarrage par le chien de garde, cause lue au démarrage |
-| EX-61 (charge processeur) | Mesure SPI vs RMT non faite | `vTaskGetRunTimeStats` sur 60 s avec la dalle en blanc plein |
+| EX-60 (watchdog) | *couvert le 2026-11-06* : HW-SYS-02, build de test `CLOCK_TEST_LOCKUP_S` | — |
+| EX-61 (charge processeur) | *couvert le 2026-11-06* : HW-SYS-03, `/api/systeme/taches` | — |
 | EX-03 (heure d'été réelle) | HW-TIME-02 en mars | couvert à la seconde sur host (TIME-02) |
 
 ---

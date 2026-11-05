@@ -103,6 +103,10 @@ uint32_t now_ms() noexcept {
 }
 
 void confirm_ota_image() noexcept {
+#ifdef CLOCK_OTA_NEVER_CONFIRM
+    ESP_LOGW(kTag, "TEST BUILD: the OTA image is deliberately NOT confirmed (rollback test, HW-WEB-03)");
+    return;
+#endif
     const esp_partition_t* running = esp_ota_get_running_partition();
     esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
     if ((running != nullptr) && (esp_ota_get_state_partition(running, &state) == ESP_OK) &&
@@ -525,6 +529,15 @@ void display_task(void* /*arg*/) {
         const uint32_t now = now_ms();
         const uint32_t dt = now - last_frame;
         last_frame = now;
+#ifdef CLOCK_TEST_LOCKUP_S
+        // Watchdog test build (EX-60): a deliberate lock-up of the display task.
+        if (now >= (static_cast<uint32_t>(CLOCK_TEST_LOCKUP_S) * 1000U)) {
+            ESP_LOGE(kTag, "TEST BUILD: locking up the display task now (watchdog test)");
+            for (;;) {
+                // busy loop, no yield: the idle task of this core starves, the task watchdog must fire
+            }
+        }
+#endif
 
         // Settings changed (page): re-apply without reboot.
         const uint32_t version = clock_settings::version();

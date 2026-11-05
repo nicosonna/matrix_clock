@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -33,8 +34,8 @@
 // Embedded pages (EMBED_TXTFILES adds a trailing NUL).
 extern const char kWifiStart[] asm("_binary_wifi_html_start");
 extern const char kWifiEnd[] asm("_binary_wifi_html_end");
-extern const char kAppStart[] asm("_binary_app_html_start");
-extern const char kAppEnd[] asm("_binary_app_html_end");
+extern const char kAppStart[] asm("_binary_app_html_gz_start");
+extern const char kAppEnd[] asm("_binary_app_html_gz_end");
 
 namespace clock_web {
 
@@ -119,6 +120,7 @@ esp_err_t handle_app_page(httpd_req_t* req) {
     }
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");  // compressed at build time (CMakeLists.txt)
     return httpd_resp_send(req, kAppStart, static_cast<ssize_t>(embedded_size(kAppStart, kAppEnd)));
 }
 
@@ -705,17 +707,60 @@ esp_err_t handle_notification(httpd_req_t* req) {
 
 // ------------------------------------------------------------------ status
 
+/// Why the board last started (diagnostics; a watchdog or a panic must be visible, EX-60).
+const char* reset_reason_name(esp_reset_reason_t r) {
+    switch (r) {
+        case ESP_RST_POWERON: return "mise_sous_tension";
+        case ESP_RST_EXT: return "broche_reset";
+        case ESP_RST_SW: return "volontaire";
+        case ESP_RST_PANIC: return "panique";
+        case ESP_RST_INT_WDT: return "chien_de_garde_interruption";
+        case ESP_RST_TASK_WDT: return "chien_de_garde_tache";
+        case ESP_RST_WDT: return "chien_de_garde_autre";
+        case ESP_RST_DEEPSLEEP: return "sortie_sommeil";
+        case ESP_RST_BROWNOUT: return "baisse_tension";
+        case ESP_RST_SDIO: return "sdio";
+        case ESP_RST_UNKNOWN:
+        default: return "inconnue";
+    }
+}
+
 esp_err_t handle_info(httpd_req_t* req) {
     const esp_app_desc_t* app = esp_app_get_description();
     const NetworkInfo net = info();
-    char body[320];
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    char body[512];
     const int n = std::snprintf(body, sizeof(body),
                                 "{\"projet\":\"%s\",\"version\":\"%s\",\"carte\":\"%s\",\"reseau\":\"%s\","
-                                "\"portail\":%s,\"connecte\":%s,\"ip\":\"%s\",\"ap\":\"%s\",\"fonctionnement_s\":%lu}",
+                                "\"portail\":%s,\"connecte\":%s,\"ip\":\"%s\",\"ap\":\"%s\",\"fonctionnement_s\":%lu,"
+                                "\"redemarrage\":\"%s\",\"tas_libre\":%lu,\"tas_min\":%lu,\"bloc_max\":%lu,\"cpu_mhz\":%u,"
+                                "\"emplacement\":\"%s\",\"page_octets\":%lu}",
                                 app->project_name, app->version, clock_board::kName, net.state,
                                 net.portal ? "true" : "false", net.connected ? "true" : "false", net.ip, net.ap_ssid,
-                                static_cast<unsigned long>(esp_timer_get_time() / 1000000));
+                                static_cast<unsigned long>(esp_timer_get_time() / 1000000),
+                                reset_reason_name(esp_reset_reason()), static_cast<unsigned long>(esp_get_free_heap_size()),
+                                static_cast<unsigned long>(esp_get_minimum_free_heap_size()),
+                                static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+                                static_cast<unsigned>(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ), (running != nullptr) ? running->label : "?",
+                                static_cast<unsigned long>(embedded_size(kAppStart, kAppEnd)));
     return send_json(req, body, ((n > 0) && (static_cast<size_t>(n) < sizeof(body))) ? static_cast<size_t>(n) : 0U);
+}
+
+/// GET /api/systeme/taches: FreeRTOS run-time statistics (CPU share per task) and task list, as text.
+esp_err_t handle_tasks(httpd_req_t* req) {
+    static char text[2048];
+    text[0] = '\0';
+    const std::size_t half = sizeof(text) / 2U;
+    (void)std::snprintf(text, half, "Tache            Temps(us)    %%\n");
+    vTaskGetRunTimeStats(text + std::strlen(text));
+    const std::size_t used = std::strlen(text);
+    if (used + 64U < sizeof(text)) {
+        (void)std::snprintf(text + used, sizeof(text) - used, "\nTache            Etat Prio Pile Num\n");
+        vTaskList(text + std::strlen(text));
+    }
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, text, static_cast<ssize_t>(std::strlen(text)));
 }
 
 esp_err_t handle_status(httpd_req_t* req) {
@@ -739,7 +784,7 @@ bool init_nvs() {
 
 bool start_http() {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 58;
+    cfg.max_uri_handlers = 59;
     cfg.max_open_sockets = kHttpClientsMax;
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
@@ -792,6 +837,7 @@ bool start_http() {
         {"/api/systeme", HTTP_GET, handle_system_get, nullptr},
         {"/api/systeme", HTTP_POST, handle_system_post, nullptr},
         {"/api/systeme/redemarrer", HTTP_POST, handle_reboot, nullptr},
+        {"/api/systeme/taches", HTTP_GET, handle_tasks, nullptr},
         {"/api/systeme/usine", HTTP_POST, handle_factory, nullptr},
         {"/api/ota", HTTP_POST, handle_ota, nullptr},
         {"/api/notification", HTTP_POST, handle_notification, nullptr},

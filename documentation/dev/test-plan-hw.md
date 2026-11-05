@@ -252,7 +252,9 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-HA-04 | Automatisation réelle qui déclenche `horloge_notification` | Notification affichée au bon rendu | À FAIRE |
 | HW-ALR-01 | Sonde refroidie sous le seuil de la règle `GEL` | Alerte après la durée de confirmation, pas avant | À FAIRE |
 | HW-ALR-02 | Règle `AERER` levée, puis fenêtre ouverte | Passages toutes les `rappel_s` tant que l'air est mauvais ; disparition **seule** quand le niveau retombe ; aucun bouton sur la page | **MÉCANIQUE VÉRIFIÉE** 2026-11-05 : `AERER` en `confirmation` à AQI 4 puis retour `surveille` à AQI 3 ; règle `CO2 >= 900` posée par l'API ⇒ `levee`, texte `CO2 906 ppm`, notification `regle_12` tenue (`!` dans la zone d'icône) ; notification externe tenue retirée **seulement** par `effacer` de sa source ; `seuil=0.55` sur une source à 1 décimale ⇒ 400 nommé. Reste : fenêtre ouverte réelle, passages comptés sur une heure |
-| HW-SYS-01 | Fuseau changé sur `/systeme` (`Europe/Zurich` → `UTC`) | Heure décalée **sans redémarrage** ; défaut `Europe/Zurich` après réglages d'usine | À FAIRE (page écrite, à jouer sur la carte) |
+| HW-SYS-01 | Fuseau changé sur `/systeme` (`Europe/Zurich` → `UTC`) | Heure décalée **sans redémarrage** ; défaut `Europe/Zurich` après réglages d'usine | **PASSE** 2026-11-05 : `POST fuseau=UTC` ⇒ 23:58 → 22:58 trois secondes plus tard, `fonctionnement_s` continu (pas de redémarrage), retour `Europe/Zurich` idem ; défaut après usine : couvert par le modèle (WEB-04) |
+| HW-SYS-02 | Build de test `-DCLOCK_TEST_LOCKUP_S=120` : la tâche `display` se bloque après 120 s | Le chien de garde de tâche redémarre la carte (panique), `/api/info` dit `chien_de_garde_tache`, l'horloge revient | **PASSE** 2026-11-06 : image `0.1.0-wdt`, blocage de `display` à 120 s ⇒ `Task watchdog got triggered` (IDLE1 affamé), panique, redémarrage ; `/api/info` : `redemarrage: chien_de_garde_tache`, uptime 33 s ; image de production restaurée par OTA |
+| HW-SYS-03 | `GET /api/systeme/taches` après 60 s de fonctionnement, dalle allumée, WiFi actif | Charge par tâche ; `display` (rendu + SPI/DMA à 25 Hz) sous 10 % à 160 MHz, IDLE > 80 % | **PASSE** 2026-11-06 : `display` 3 %, `wifi` 4 %, `httpd`/`mqtt`/`ha`/`air` < 1 % chacun, IDLE0 93 % / IDLE1 95 % à 160 MHz, dalle allumée, WiFi, MQTT et HA actifs ; 240 MHz inutile |
 | HW-TIME-01 | Mise sous tension, box jointe, SNTP `pool.ntp.org` | `--:--` jusqu'à la synchro, puis l'heure locale de Zurich ; date en 3×5 | **PASSE** 2026-11-05 : `boot_grace` → `connected` à 23 s, `SNTP synchronised` à 31 s, `time is now SURE (2026-11-05 03:33:24)`, heure et date sur la dalle |
 | HW-TIME-02 | Changement d'heure réel (29 mars 2026 à 02:00 → 03:00, 25 octobre 03:00 → 02:00) | La dalle bascule d'elle-même, sans redémarrage ni resynchro | À FAIRE (en mars) — couvert sur host à la seconde par TIME-02 |
 | HW-ALR-03 | Une nuit complète en heures silencieuses | Aucun clignotement, alerte conservée et visible au réveil | À FAIRE |
@@ -270,7 +272,7 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-MQ-03 | Horloge débranchée ; puis Home Assistant redémarré | `disponible` passe `offline` (testament) ; après redémarrage de HA, entités retrouvées (découverte renvoyée) | **MÉCANIQUE VÉRIFIÉE** 2026-11-05 : `homeassistant/status` = `online` injecté ⇒ les 10 découvertes + l'état renvoyés ; bouton « renvoyer la découverte » idem ; désactivation ⇒ `offline` retenu **puis** `DISCONNECT` propre. Testament par coupure brutale : à faire sur Mosquitto |
 | HW-WEB-01 | Page sur iPhone, Android, PC, thèmes clair et sombre | Lisible, utilisable au doigt | À FAIRE |
 | HW-WEB-02 | OTA d'une image valide (`curl --data-binary @matrix_clock.bin /api/ota`) | Barre de progression sur la dalle, redémarrage sur la nouvelle image, `OTA image confirmed` | **PASSE** 2026-11-05 : 998 Ko en 5,6 s, redémarrage sur l'autre emplacement, image confirmée, réglages conservés (budget 2500 relu) |
-| HW-WEB-03 | OTA d'une image **volontairement cassée** | **Rollback** automatique sur l'ancienne image | À FAIRE |
+| HW-WEB-03 | OTA d'une image **volontairement cassée** | **Rollback** automatique sur l'ancienne image | **PASSE** 2026-11-06 : image de test `0.1.0-norollback` (ne se confirme pas) ⇒ démarre sur `ota_1`, 45 s plus tard toujours là ; `POST /api/systeme/redemarrer` ⇒ le bootloader **revient** à `0.1.0` sur `ota_0` (rollback), réglages conservés |
 | HW-WEB-04 | `GET /api/affichage`, `POST budget_ma=99999` puis `budget_ma=2500` ; `GET /api/luminosite/brut` ; `POST extinction_debut=1380` ; `POST scenes=Date:5:1,Heure:20:1` | 400 `{"ok":false,"champ":"budget_ma","raison":…}` puis 200 ; lecture brute vivante ; heures relues ; **ordre des scènes** appliqué sans redémarrage (log `Date` puis `Heure`) | **PASSE** 2026-11-05 |
 | HW-WEB-05 | Texte d'état (IP) à la connexion | Une **seule** passe `http://<ip>  horloge.local` en bleu clair à l'obtention de l'IP, jamais dans la rotation ; en portail : SSID + mot de passe toutes les 60 s | À OBSERVER (logique en place ; passe trop courte pour le log de 5 s) |
 | HW-WEB-06 | Couleurs : chiffres blancs, deux-points ambre, barre des secondes bleue, jour ambre + date blanche | Lisibilité à l'œil | À CONFIRMER par Nicolas |
@@ -322,11 +324,11 @@ Chaque `EX-nn` de `dev/cadrage-fonctionnel.md` doit avoir **au moins un** test.
 | EX-76 | AIR-20, ALR-05 (sources air), HW-AIR-03 |
 | EX-77 | AIR-16, AIR-17, HW-AIR-05, HW-AIR-06 |
 | EX-50, EX-51 | WEB-02, WEB-03, WEB-04, ALR-18, AIR-22, MQ-09 |
-| EX-52 | HW-WEB-01 *(+ relevé de la taille gzippée à chaque build)* |
+| EX-52 | HW-WEB-01, `run_host_tests.sh` (taille gzippée de la page relevée **à chaque exécution**, échec au-delà de 60 Ko : 17 Ko le 2026-11-06) |
 | EX-53 | HW-WEB-02, HW-WEB-03 |
-| EX-60 | *(watchdog : vérification matérielle à ajouter)* |
-| EX-61 | AFF-15, et vérification matérielle de charge à ajouter après la mesure SPI/RMT |
+| EX-60 | HW-SYS-02 (build de test `CLOCK_TEST_LOCKUP_S`), cause du redémarrage sur `/api/info` et `/systeme` |
+| EX-61 | AFF-15, HW-SYS-03 (charge par tâche sur `/api/systeme/taches`) |
 | EX-62 | GEN-04, ALR-16 |
 
-**Trous connus à combler** : EX-03 (changement d'heure), EX-60 (watchdog),
-EX-61 (charge processeur mesurée). Notés dans `dev/todo.md`.
+**Trou connu** : EX-03 (changement d'heure réel, en mars). EX-60 et EX-61 sont
+couverts depuis le 2026-11-06 (HW-SYS-02/03).

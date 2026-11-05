@@ -37,3 +37,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 # app_main copies settings structures: keep a margin over the 3.5 KB default.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+# Task run-time statistics for /api/systeme/taches (CPU load per task, EX-61).
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y

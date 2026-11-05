@@ -5,6 +5,44 @@
 
 ---
 
+## 2026-11-05 (suite 9) — L'heure : règles POSIX en logique pure, SNTP, `--:--` devient l'heure
+
+**Quoi.** Étape 6 de la phase 1 :
+
+- `components/timekeeping/` (pur) : `parse_posix_tz()` (`STD offset DST[offset],Mm.w.d[/time],…`,
+  offsets en minutes **est** de l'UTC, demi-heures, secondes, heures de
+  bascule négatives ou > 24), `days_from_civil` / `civil_from_days` (Hinnant,
+  64 bits : pas de falaise 2038), `transition_epoch()` (semaine 5 = dernier
+  jour-de-semaine du mois), `is_dst()` (hémisphère nord **et** sud),
+  `to_local()`, `SyncValidity` (48 h), et une table de **18 zones** IANA →
+  POSIX pour la future page `/systeme`, `Europe/Zurich` par défaut.
+  **Choix** : ne pas utiliser le `TZ` de la libc — celui de MinGW ne comprend
+  pas les règles `M3.5.0`, donc impossible à tester sur host ; la logique
+  maison est testée **à la seconde** sur les deux bascules suisses de 2026,
+  celle des États-Unis et celle de Sydney (avertissement de Nicolas :
+  « attention au changement d'heure été/hiver »).
+- `components/clock_time/` : `esp_netif_sntp` (`pool.ntp.org`, sans attente),
+  rappel de synchro → `SyncValidity::mark_synced()` sous section critique,
+  `now()` = epoch UTC de `time()` converti par la règle courante ;
+  `set_timezone()` à chaud pour la page de réglages.
+- `app_main` : lit la source de temps à chaque trame, log au basculement
+  `sure`, scène **Date** ajoutée à la rotation (Heure 6 s, Date 4 s, texte
+  d'état), minute du jour fournie au contrôleur de luminosité pour la fenêtre
+  d'extinction.
+
+**Résultats.** Tests host : **9108 vérifications, 0 échec, couverture 99,1 %**
+(1280 lignes). Build propre, image 907 Ko. Sur la carte : `boot_grace` →
+`connected` à 23 s (la grâce en action : la box a mis 20 s), `SNTP synchronised`
+à 31 s, **`time is now SURE (2026-11-05 03:33:24)`**, heure de Zurich sur la
+dalle, puis `JEU 05.11` en 3×5.
+
+**Vérifié par Nicolas** : heure juste, date en 3×5 lisible. **Non vérifié** :
+la bascule réelle du 29 mars 2026 (HW-TIME-02), le réglage du fuseau sur la
+page (HW-SYS-01, page à écrire). Serveur NTP et fuseau encore constants dans `app_main` (réglages
+NVS à venir avec `settings`).
+
+---
+
 ## 2026-11-05 (suite 8) — Réseau : portail captif, reprise après coupure, canal de notification
 
 **Quoi.** Étape 5 de la phase 1, à la demande de Nicolas « rien de ThermoSync

@@ -25,7 +25,9 @@
 #include "clock_board/board.hpp"
 #include "clock_display/led_panel.hpp"
 #include "clock_hal/ldr_adc.hpp"
+#include "clock_time/time_source.hpp"
 #include "clock_web/web.hpp"
+#include "timekeeping/tz.hpp"
 #include "display/clock_scene.hpp"
 #include "display/color.hpp"
 #include "display/current_limit.hpp"
@@ -83,13 +85,30 @@ void confirm_ota_image() noexcept {
     }
 }
 
-/// Demo rotation until settings exist: the clock for 6 s, then one pass of the status text.
+/// NTP server until the settings page exists.
+constexpr char kNtpServer[] = "pool.ntp.org";
+
+/// Demo rotation until settings exist: clock 6 s, date 4 s, one pass of the status text.
 display::SceneList demo_scene_list() noexcept {
     display::SceneList l{};
     l.entries[0] = display::SceneEntry{display::SceneKind::Clock, 0U, 6U, true};
-    l.entries[1] = display::SceneEntry{display::SceneKind::Scroll, 0U, 0U, true};
-    l.count = 2U;
+    l.entries[1] = display::SceneEntry{display::SceneKind::Date, 0U, 4U, true};
+    l.entries[2] = display::SceneEntry{display::SceneKind::Scroll, 0U, 0U, true};
+    l.count = 3U;
     return l;
+}
+
+/// Maps the time source's snapshot onto the display's model.
+display::TimeInfo time_info_from(const clock_time::Snapshot& s) noexcept {
+    display::TimeInfo t{};
+    t.sure = s.sure;
+    t.hour = s.local.hour;
+    t.minute = s.local.minute;
+    t.second = s.local.second;
+    t.day = s.local.day;
+    t.month = s.local.month;
+    t.weekday = s.local.weekday;
+    return t;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +185,8 @@ void display_task(void* /*arg*/) {
     const display::PanelMapConfig map = display::default_panel_map();
     const display::SceneList scenes = demo_scene_list();
     display::Scheduler scheduler(scenes, now_ms());
-    const display::TimeInfo time_info{false, 0U, 0U, 0U, 1U, 1U, 0U};  // no time source yet
+    display::TimeInfo time_info{false, 0U, 0U, 0U, 1U, 1U, 0U};
+    bool was_sure = false;
 
     uint8_t last_scene = display::kSyntheticClock;
     bool scroll_started = false;
@@ -183,10 +203,22 @@ void display_task(void* /*arg*/) {
         const uint32_t dt = now - last_frame;
         last_frame = now;
 
+        const clock_time::Snapshot ts = clock_time::now();
+        time_info = time_info_from(ts);
+        if (ts.sure != was_sure) {
+            was_sure = ts.sure;
+            ESP_LOGI(kTag, "time is now %s (%04ld-%02u-%02u %02u:%02u:%02u%s)", ts.sure ? "SURE" : "NOT sure",
+                     static_cast<long>(ts.local.year), static_cast<unsigned>(ts.local.month),
+                     static_cast<unsigned>(ts.local.day), static_cast<unsigned>(ts.local.hour),
+                     static_cast<unsigned>(ts.local.minute), static_cast<unsigned>(ts.local.second),
+                     ts.local.is_dst ? " DST" : "");
+        }
+
         if ((now - last_sensor) >= kSensorPeriodMs) {
             last_sensor = now;
             sample = ldr.read();
-            lum = brightness_ctl.step(sample, applied, time_info.sure, 0U);
+            const uint16_t minute_of_day = static_cast<uint16_t>(ts.local.hour * 60U + ts.local.minute);
+            lum = brightness_ctl.step(sample, applied, time_info.sure, minute_of_day);
             applied = lum.level;
         }
 
@@ -233,6 +265,9 @@ void display_task(void* /*arg*/) {
                     }
                     scroller.draw(fb, 0, kScrollColor);
                     break;
+                case display::SceneKind::Date:
+                    display::draw_date(fb, time_info, 1U, 1U, kClockColor);
+                    break;
                 case display::SceneKind::Clock:
                 default: {
                     const bool colon_on = ((now / kColonHalfPeriodMs) % 2U) == 0U;
@@ -250,11 +285,12 @@ void display_task(void* /*arg*/) {
         }
         if ((now - last_status) >= kStatusPeriodMs) {
             last_status = now;
-            ESP_LOGI(kTag, "estimated %lu mA, limited=%d, oob=%lu | ldr raw=%u filtered=%u -> level %u fault=%d | net %s",
+            ESP_LOGI(kTag, "estimated %lu mA, limited=%d, oob=%lu | ldr raw=%u filtered=%u -> level %u fault=%d | net %s | time %s %02u:%02u:%02u",
                      static_cast<unsigned long>(stats.estimated_ua / 1000U), stats.limited ? 1 : 0,
                      static_cast<unsigned long>(fb.out_of_bounds_count()), static_cast<unsigned>(sample.raw),
                      static_cast<unsigned>(lum.filtered_raw), static_cast<unsigned>(applied), lum.sensor_fault ? 1 : 0,
-                     clock_web::info().state);
+                     clock_web::info().state, ts.sure ? "sure" : "unsure", static_cast<unsigned>(ts.local.hour),
+                     static_cast<unsigned>(ts.local.minute), static_cast<unsigned>(ts.local.second));
         }
         vTaskDelay(ticks_from_ms(kFramePeriodMs));
     }
@@ -287,5 +323,13 @@ extern "C" void app_main(void) {
         default:
             ESP_LOGE(kTag, "HTTP server failed");
             break;
+    }
+
+    // SNTP needs the network interfaces; without them the clock keeps showing --:--.
+    if (web != clock_web::WebStatus::NvsError && web != clock_web::WebStatus::NetError) {
+        const esp_err_t time_err = clock_time::start(kNtpServer, timekeeping::kEuropeZurich);
+        if (time_err != ESP_OK) {
+            ESP_LOGW(kTag, "time source: %s", esp_err_to_name(time_err));
+        }
     }
 }

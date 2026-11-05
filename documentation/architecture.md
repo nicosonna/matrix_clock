@@ -5,9 +5,11 @@
 > scènes Heure/Date, défilement, ordonnanceur, motifs), `brightness` (pur :
 > filtres, courbe, contrôleur, wizard), `network` (pur : identifiants, DNS
 > captif, superviseur avec grâce et bail), `alerts` (pur, décodeur de
-> notification seulement — 99,1 % couvert ensemble), `clock_display` (vérifié sur
-> la dalle), `clock_hal` (ADC1 de la LDR) et `clock_web` (Wi-Fi, portail, HTTP,
-> mDNS, canal de notification) existent ; **le reste est spécifié, pas écrit**. Ce document décrit la
+> notification seulement), `timekeeping` (pur : règles POSIX, heure locale avec
+> DST, validité — 99,1 % couvert ensemble), `clock_display` (vérifié sur la
+> dalle), `clock_hal` (ADC1 de la LDR), `clock_web` (Wi-Fi, portail, HTTP,
+> mDNS, canal de notification) et `clock_time` (SNTP) existent ; **le reste est
+> spécifié, pas écrit**. Ce document décrit la
 > cible et les choix arrêtés. Il se met à jour dès que la structure du dépôt bouge.
 
 ---
@@ -76,7 +78,7 @@ volontaire.
 | `clock_board` | brochage `constexpr`, Kconfig | oui (constantes) |
 | `clock_display` | `espressif/led_strip`, SPI/DMA | oui (matériel) |
 | `clock_hal` | ADC1 oneshot + étalonnage, bus I²C (réinitialisation d'un bus bloqué), NVS | oui (matériel) |
-| `clock_time` | SNTP, fuseau, validité | non (la validité est testable, à extraire) |
+| `clock_time` | SNTP ; la conversion et la validité sont dans `timekeeping` (pur) | oui (transport) |
 | `clock_homeassistant` | `esp_websocket_client`, `esp-mqtt`, HTTPS Open-Meteo | oui (transport) |
 | `clock_web` | `esp_http_server`, page embarquée, DNS captif, mDNS | oui (transport) |
 | `main/app_main.cpp` | câblage | oui |

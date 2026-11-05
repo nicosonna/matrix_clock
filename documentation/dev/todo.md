@@ -71,8 +71,10 @@
       règles, file bornée, heures silencieuses, rendu par priorité à écrire
       (`ALR-01` → `ALR-14`, `ALR-16` → `ALR-18`). En attendant, `app_main` ne
       garde qu'**une** notification en attente et ignore `effacer`.
-- [ ] `clock_time` : SNTP, fuseau, **validité** de l'heure (extraire la partie
-      testable de la validité).
+- [x] ~~`timekeeping` pur (règles POSIX, heure locale + DST, validité) +
+      `clock_time` (SNTP)~~ — `TIME-01` → `TIME-08`, HW-TIME-01 (2026-11-05).
+      Reste : serveur NTP et fuseau en **NVS** via la page `/systeme` (liste
+      `named_zones()`), bascule réelle à observer le 29 mars 2026 (HW-TIME-02).
 - [ ] `settings` pur + `/api/<domaine>/modele` + `POST` tout-ou-rien
       (`WEB-01` → `WEB-08`), puis les pages et les wizards.
 - [ ] OTA + **rollback** (`esp_ota_mark_app_valid_cancel_rollback` après dalle

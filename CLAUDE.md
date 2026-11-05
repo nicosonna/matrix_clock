@@ -32,11 +32,12 @@ Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
 > courant, rendu, polices, scènes, défilement, ordonnanceur) et
 > **`brightness`** (filtres, courbe, contrôleur, wizard), **`network`**
 > (identifiants, DNS captif, superviseur avec grâce au démarrage et attente de
-> bail), **`alerts`** (décodeur de notification seulement), pilote
+> bail), **`alerts`** (décodeur de notification seulement), **`timekeeping`**
+> (règles POSIX, heure locale avec heure d'été, validité 48 h), pilote
 > `clock_display` vérifié sur la dalle, `clock_hal` (ADC1 de la LDR),
 > **`clock_web`** (Wi-Fi APSTA, portail captif, HTTP `/wifi` + `/api/*`, mDNS,
-> `POST /api/notification`). **Tout le reste** des composants décrits ci-dessous
-> est la **cible**, pas l'existant.
+> `POST /api/notification`), **`clock_time`** (SNTP). **Tout le reste** des
+> composants décrits ci-dessous est la **cible**, pas l'existant.
 > `dev/journal.md` et `dev/todo.md` disent où on en est.
 
 ## Structure du dépôt
@@ -85,7 +86,13 @@ Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
     - `components/clock_hal/` — ADC de la photorésistance (ADC1, oneshot +
       étalonnage), **bus I²C** (ENS160 + AHT21, réinitialisation du bus bloqué),
       NVS.
-    - `components/clock_time/` — SNTP, fuseau horaire, **validité de l'heure**.
+    - `components/timekeeping/` — **pur** : règle POSIX (`CET-1CEST,M3.5.0,M10.5.0/3`),
+      epoch UTC → heure locale avec heure d'été (nord et sud), validité 48 h,
+      table de zones IANA → POSIX. ⚠️ Le `TZ` de la libc n'est **pas** utilisé :
+      celui de MinGW ignore les règles `M…`, la logique maison est testée à la
+      seconde sur les bascules.
+    - `components/clock_time/` — SNTP (`esp_netif_sntp`), rappel de synchro →
+      validité, `set_timezone()` à chaud.
     - `components/clock_homeassistant/` — transport WebSocket
       (`esp_websocket_client`) vers Home Assistant, client **`esp-mqtt`**
       (testament, découverte QoS 1 retenue, état QoS 0), client HTTP de la météo
@@ -139,7 +146,7 @@ automatiquement**, sans attendre qu'on le demande.
 **Tout se teste.** Le **plan de test doit rester à jour EN PERMANENCE** et
 couvrir **tous** les tests à tout moment :
 - Tests host : `firmware/test/` — composants purs `display`, `brightness`,
-  `network`, `homeassistant`, `alerts`, `air_quality`, `settings`.
+  `network`, `homeassistant`, `alerts`, `air_quality`, `timekeeping`, `settings`.
   Lancer : `bash firmware/test/run_host_tests.sh` ; couverture (objectif ≥ 95 %,
   échec en dessous) : `bash firmware/test/run_host_tests.sh --coverage`.
 - Plan de test : `documentation/dev/test-plan-hw.md` (matrice test ↔ code

@@ -191,7 +191,24 @@ l'horloge.
 | WEB-07 | `usine()` | Refus sans `confirme=OUI` | À ÉCRIRE |
 | WEB-08 | `motif_test()` | Chaque motif produit le tampon attendu | À ÉCRIRE |
 
-### 1.9 Garde-fous transverses
+### 1.9 `timekeeping` — heure locale, règles POSIX, validité
+
+Logique pure : le `TZ` de la libc n'est pas utilisé (celui de MinGW ne
+comprend pas les règles `M3.5.0`, donc intestable sur host). Epochs de
+référence calculés avec Python (`datetime`, UTC).
+
+| Id | Code couvert | Attendu | Statut |
+|---|---|---|---|
+| TIME-01 | `parse_posix_tz()` | Zurich, UTC0, New York, Londres, Sydney, demi-heures (`IST-5:30`, Terre-Neuve), secondes acceptées, heures de bascule négatives / > 24 ; 20 chaînes invalides refusées sans toucher la sortie | **PASSE** 2026-11-05 |
+| TIME-02 | `to_local()` | Zurich : 2026-11-05 12:00 UTC = 13:00 jeudi ; **bascules à la seconde** : 29 mars 00:59:59 UTC → 01:59:59, 01:00:00 UTC → 03:00:00 ; 25 octobre 00:59:59 UTC → 02:59:59, 01:00:00 UTC → 02:00:00 | **PASSE** 2026-11-05 |
+| TIME-03 | `to_local()` | New York, 2ᵉ dimanche de mars à 02:00 local : 06:59:59 UTC → 01:59:59 EST, 07:00:00 UTC → 03:00:00 EDT | **PASSE** 2026-11-05 |
+| TIME-04 | `civil_from_days()`, `is_leap()` | 29 février 2028 23:30 UTC = 1ᵉʳ mars 00:30 CET mercredi ; 2000 / 2100 / 2026 ; aller-retour sur ±200 000 jours | **PASSE** 2026-11-05 |
+| TIME-05 | `to_local()` UTC | 2000-01-01 samedi, 2038-01-19 03:14:07 (pas de falaise 32 bits), 2100-03-01 lundi, epoch 0 jeudi, epoch −1 = 1969-12-31 23:59:59 | **PASSE** 2026-11-05 |
+| TIME-06 | `is_dst()` | Hémisphère sud (Sydney) : été à cheval sur le nouvel an, janvier et novembre en DST, juin hors DST | **PASSE** 2026-11-05 |
+| TIME-07 | `SyncValidity` | Jamais synchronisé ⇒ faux ; synchronisé ⇒ vrai ; 48 h ⇒ faux ; resynchro ⇒ vrai ; débordement 32 bits ; 0 = défaut | **PASSE** 2026-11-05 |
+| TIME-08 | `named_zones()`, `posix_for_zone()` | 18 zones, toutes analysables, défaut `Europe/Zurich` présent, inconnue ⇒ `nullptr` ; aucune allocation | **PASSE** 2026-11-05 |
+
+### 1.10 Garde-fous transverses
 
 | Id | Vérifie | Statut |
 |---|---|---|
@@ -223,15 +240,18 @@ l'horloge.
 | HW-RES-04 | Phrase de passe changée sur la box | Portail en moins de 2 min | À FAIRE |
 | HW-RES-05 | Portail ouvert, iPhone / Android / Windows | Fenêtre captive qui s'ouvre seule ; SSID et phrase de passe **lisibles sur la dalle** | **EN COURS** 2026-11-05 : AP `Horloge-XXXX` WPA2, DNS captif, sondes et page `/wifi` en place, SSID + mot de passe défilent sur la dalle — **essai au téléphone en attente** |
 | HW-RES-06 | Identifiants saisis au portail | Connexion **sans redémarrage** | **PASSE** 2026-11-05 : box jointe depuis le portail au téléphone, état `connected` sans reset (2 min de fonctionnement dans les logs), point d'accès éteint (absent du scan Wi-Fi du PC) |
-| HW-RES-07 | `horloge.local` depuis PC et téléphone | Résolu | À FAIRE |
+| HW-RES-07 | `horloge.local` depuis PC et téléphone | Résolu | **PASSE (PC)** 2026-11-05 : `http://horloge.local/api/info` répond depuis le PC Windows (`"ip":"10.10.0.85"`, `"reseau":"connected"`). Téléphone non testé. |
 | HW-HA-01 | Liaison au Home Assistant **de la maison**, en lecture | Valeur affichée = valeur de l'interface | À FAIRE |
 | HW-HA-02 | Home Assistant redémarré | Reconnexion seule, valeurs retrouvées | À FAIRE |
 | HW-HA-03 | Jeton révoqué | `JetonRefuse` visible sur la page, pas de martèlement | À FAIRE |
 | HW-HA-04 | Automatisation réelle qui déclenche `horloge_notification` | Notification affichée au bon rendu | À FAIRE |
 | HW-ALR-01 | Sonde refroidie sous le seuil de la règle `GEL` | Alerte après la durée de confirmation, pas avant | À FAIRE |
 | HW-ALR-02 | Règle `AERER` levée, puis fenêtre ouverte | Passages toutes les `rappel_s` tant que l'air est mauvais ; disparition **seule** quand le niveau retombe ; aucun bouton sur la page | À FAIRE |
-| HW-SYS-01 | Fuseau changé sur `/systeme` (`Europe/Zurich` → `UTC`) | Heure décalée **sans redémarrage** ; défaut `Europe/Zurich` après réglages d'usine | À FAIRE |
+| HW-SYS-01 | Fuseau changé sur `/systeme` (`Europe/Zurich` → `UTC`) | Heure décalée **sans redémarrage** ; défaut `Europe/Zurich` après réglages d'usine | À FAIRE (page `/systeme` pas encore écrite ; `set_timezone()` à chaud existe) |
+| HW-TIME-01 | Mise sous tension, box jointe, SNTP `pool.ntp.org` | `--:--` jusqu'à la synchro, puis l'heure locale de Zurich ; date en 3×5 | **PASSE** 2026-11-05 : `boot_grace` → `connected` à 23 s, `SNTP synchronised` à 31 s, `time is now SURE (2026-11-05 03:33:24)`, heure et date sur la dalle |
+| HW-TIME-02 | Changement d'heure réel (29 mars 2026 à 02:00 → 03:00, 25 octobre 03:00 → 02:00) | La dalle bascule d'elle-même, sans redémarrage ni resynchro | À FAIRE (en mars) — couvert sur host à la seconde par TIME-02 |
 | HW-ALR-03 | Une nuit complète en heures silencieuses | Aucun clignotement, alerte conservée et visible au réveil | À FAIRE |
+| HW-ALR-04 | `POST /api/notification` depuis le PC (`cle=test`, priorité 2, 15 s) | 200, le texte interrompt l'heure, défile dans la couleur de la priorité, l'heure reprend | **PASSE** 2026-11-05 (canal local ; le hub y passera par `commande notifier` en phase 2) |
 | HW-AIR-01 | Mise sous tension, chronomètre | `--` + préchauffage ~3 min, puis valeurs ; **aucune** alerte « AERER » pendant ce temps | À FAIRE |
 | HW-AIR-02 | Premier usage du capteur neuf | Drapeau 2 pendant ~1 h, signalé sur la page | À FAIRE |
 | HW-AIR-03 | Solvant vaporisé à proximité | AQI, TVOC, eCO2 montent ; niveau confirmé après 60 s | À FAIRE |
@@ -257,8 +277,8 @@ Chaque `EX-nn` de `dev/cadrage-fonctionnel.md` doit avoir **au moins un** test.
 | Exigence | Tests |
 |---|---|
 | EX-01, EX-04 | AFF-10, AFF-12, HW-AFF-04 |
-| EX-02 | AFF-11 |
-| EX-03 | HW-SYS-01, WEB-04 (le fuseau est dans le modèle `systeme`) ; changement d'heure réel à vérifier en mars |
+| EX-02 | AFF-11, TIME-07, HW-TIME-01 |
+| EX-03 | TIME-01, TIME-02, TIME-03, TIME-06, HW-TIME-01 ; HW-SYS-01 (réglage sur la page) et HW-TIME-02 (bascule réelle, en mars) à faire |
 | EX-05 | AFF-05, AFF-06, AFF-07, HW-AFF-02 |
 | EX-06 | AFF-01, AFF-02, HW-AFF-01 |
 | EX-07 | AFF-04 |

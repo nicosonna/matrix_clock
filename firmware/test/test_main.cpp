@@ -65,6 +65,8 @@ int main() {
     run_network_tests();
     std::printf("-- alerts: inbound notification decoder\n");
     run_alerts_tests();
+    std::printf("-- timekeeping: POSIX rules, local time with DST, calendar, validity\n");
+    run_timekeeping_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

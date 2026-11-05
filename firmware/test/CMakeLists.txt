@@ -13,6 +13,7 @@ set(DISPLAY ${CMAKE_CURRENT_SOURCE_DIR}/../components/display)
 set(BRIGHT ${CMAKE_CURRENT_SOURCE_DIR}/../components/brightness)
 set(NET ${CMAKE_CURRENT_SOURCE_DIR}/../components/network)
 set(ALERTS ${CMAKE_CURRENT_SOURCE_DIR}/../components/alerts)
+set(TIME ${CMAKE_CURRENT_SOURCE_DIR}/../components/timekeeping)
 
 add_executable(test_clock
     test_main.cpp
@@ -22,6 +23,10 @@ add_executable(test_clock
     test_brightness.cpp
     test_network.cpp
     test_alerts.cpp
+    test_timekeeping.cpp
+    ${TIME}/src/tz.cpp
+    ${TIME}/src/local_time.cpp
+    ${TIME}/src/validity.cpp
     ${ALERTS}/src/notification.cpp
     ${BRIGHT}/src/filters.cpp
     ${BRIGHT}/src/brightness.cpp
@@ -44,6 +49,7 @@ target_include_directories(test_clock PRIVATE
     ${BRIGHT}/include
     ${NET}/include
     ${ALERTS}/include
+    ${TIME}/include
     ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(test_clock PRIVATE
     CLOCK_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

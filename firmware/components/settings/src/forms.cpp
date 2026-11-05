@@ -34,6 +34,9 @@ const std::size_t kHaFieldCount = sizeof(kHaFields) / sizeof(kHaFields[0]);
 const char* const kHaValueFields[] = {"actif", "nom", "mode", "entite", "attribut", "gabarit", "type", "decimales",
                                       "unite", "icone", "peremption_s"};
 const std::size_t kHaValueFieldCount = sizeof(kHaValueFields) / sizeof(kHaValueFields[0]);
+const char* const kMqttFields[] = {"actif", "hote", "port", "utilisateur", "mot_de_passe", "effacer_mdp", "prefixe",
+                                   "periode_s"};
+const std::size_t kMqttFieldCount = sizeof(kMqttFields) / sizeof(kMqttFields[0]);
 const std::size_t kSystemFieldCount = sizeof(kSystemFields) / sizeof(kSystemFields[0]);
 
 namespace {
@@ -947,6 +950,97 @@ bool apply_ha_value_form(const char* body, std::size_t len, std::size_t index, c
         return fail(err, "", "réglages incohérents");
     }
     out = h;
+    return true;
+}
+
+// ------------------------------------------------------------------ MQTT form
+
+bool apply_mqtt_form(const char* body, std::size_t len, const homeassistant::MqttConfig& current,
+                     homeassistant::MqttConfig& out, FormError& err) noexcept {
+    homeassistant::MqttConfig m = current;
+    char v[kFieldMax];
+    int8_t r = 0;
+    int32_t i = 0;
+    bool present = false;
+
+    if ((r = fetch(body, len, kMqttFields[0], v, sizeof(v))) < 0) {
+        return fail(err, kMqttFields[0], kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, m.enabled)) {
+        return fail(err, kMqttFields[0], "0 ou 1");
+    }
+    if (!text_field(body, len, kMqttFields[1], m.host, sizeof(m.host), present, err)) {
+        return false;
+    }
+    if ((r = fetch(body, len, kMqttFields[2], v, sizeof(v))) < 0) {
+        return fail(err, kMqttFields[2], kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 1, 65535, i)) {
+            return fail(err, kMqttFields[2], "de 1 à 65535");
+        }
+        m.port = static_cast<uint16_t>(i);
+    }
+    if (!text_field(body, len, kMqttFields[3], m.user, sizeof(m.user), present, err)) {
+        return false;
+    }
+    // Password: empty = keep the current one.
+    char password[homeassistant::kMqttPasswordMax + 1U];
+    password[0] = '\0';
+    if (!text_field(body, len, kMqttFields[4], password, sizeof(password), present, err)) {
+        return false;
+    }
+    if (present && (password[0] != '\0')) {
+        std::strncpy(m.password, password, sizeof(m.password) - 1U);
+        m.password[sizeof(m.password) - 1U] = '\0';
+    }
+    if ((r = fetch(body, len, kMqttFields[5], v, sizeof(v))) < 0) {
+        return fail(err, kMqttFields[5], kBadEncoding);
+    }
+    bool clear_password = false;
+    if ((r > 0) && !parse_bool(v, clear_password)) {
+        return fail(err, kMqttFields[5], "0 ou 1");
+    }
+    if (clear_password) {
+        m.password[0] = '\0';
+    }
+    char prefix[homeassistant::kMqttPrefixMax + 1U];
+    prefix[0] = '\0';
+    if (!text_field(body, len, kMqttFields[6], prefix, sizeof(prefix), present, err)) {
+        return false;
+    }
+    if (present) {
+        std::strncpy(m.prefix, (prefix[0] != '\0') ? prefix : homeassistant::kMqttPrefixDefault, sizeof(m.prefix) - 1U);
+        m.prefix[sizeof(m.prefix) - 1U] = '\0';
+    }
+    if ((r = fetch(body, len, kMqttFields[7], v, sizeof(v))) < 0) {
+        return fail(err, kMqttFields[7], kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, homeassistant::kMqttPeriodMinS, homeassistant::kMqttPeriodMaxS, i)) {
+            return fail(err, kMqttFields[7], "de 5 à 600 s");
+        }
+        m.period_s = static_cast<uint16_t>(i);
+    }
+    // One validation, one reason, named after the field at fault.
+    const homeassistant::MqttConfigStatus st = homeassistant::validate(m);
+    if (st != homeassistant::MqttConfigStatus::Ok) {
+        const char* field = "";
+        switch (st) {
+            case homeassistant::MqttConfigStatus::HostEmpty:
+            case homeassistant::MqttConfigStatus::HostInvalid: field = kMqttFields[1]; break;
+            case homeassistant::MqttConfigStatus::PortInvalid: field = kMqttFields[2]; break;
+            case homeassistant::MqttConfigStatus::UserInvalid: field = kMqttFields[3]; break;
+            case homeassistant::MqttConfigStatus::PasswordInvalid:
+            case homeassistant::MqttConfigStatus::PasswordWithoutUser: field = kMqttFields[4]; break;
+            case homeassistant::MqttConfigStatus::PrefixInvalid: field = kMqttFields[6]; break;
+            case homeassistant::MqttConfigStatus::PeriodInvalid: field = kMqttFields[7]; break;
+            case homeassistant::MqttConfigStatus::Ok:
+            default: break;
+        }
+        return fail(err, field, homeassistant::mqtt_status_reason(st));
+    }
+    out = m;
     return true;
 }
 

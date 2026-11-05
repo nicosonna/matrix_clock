@@ -494,12 +494,13 @@ struct PageLiteral {
 
 bool is_model_field(const char* name) {
     const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kSystemFields,
-                                  settings::kAirFields, settings::kHaFields, settings::kHaValueFields};
+                                  settings::kAirFields, settings::kHaFields, settings::kHaValueFields, settings::kMqttFields};
     const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kSystemFieldCount,
-                                  settings::kAirFieldCount, settings::kHaFieldCount, settings::kHaValueFieldCount};
+                                  settings::kAirFieldCount, settings::kHaFieldCount, settings::kHaValueFieldCount,
+                                  settings::kMqttFieldCount};
     const char* const extra[] = {"ssid", "password", "cle", "texte", "priorite", "duree_s", "confirme", "motif",
                                  "brut_nuit", "brut_nuit_allume", "brut_soir", "brut_jour", "firmware", "reference"};
-    for (std::size_t l = 0U; l < 6U; ++l) {
+    for (std::size_t l = 0U; l < 7U; ++l) {
         for (std::size_t i = 0U; i < counts[l]; ++i) {
             if (std::strcmp(lists[l][i], name) == 0) {
                 return true;
@@ -526,6 +527,7 @@ void test_page_orphans() {
     check_domain_dynamic(page, settings::kSystemFields, settings::kSystemFieldCount, "systeme");
     check_domain_dynamic(page, settings::kAirFields, settings::kAirFieldCount, "air");
     check_domain_dynamic(page, settings::kHaFields, settings::kHaFieldCount, "ha");
+    check_domain_dynamic(page, settings::kMqttFields, settings::kMqttFieldCount, "mqtt");
 
     // Every name="..." left in the page (uploads, portal) is a known field.
     const char* p = page;
@@ -558,6 +560,7 @@ void test_page_orphans() {
         {settings::kBrightnessFields, settings::kBrightnessFieldCount, {"reglage:", "avance:", nullptr}},
         {settings::kAirFields, settings::kAirFieldCount, {"air:", "air_seuils:", nullptr}},
         {settings::kHaFields, settings::kHaFieldCount, {"ha:", "ha_avance:", "meteo:"}},
+        {settings::kMqttFields, settings::kMqttFieldCount, {"mqtt:", "mqtt_avance:", nullptr}},
     };
     const char* groups = std::strstr(page, "var groupes = {");
     CHECK(groups != nullptr);

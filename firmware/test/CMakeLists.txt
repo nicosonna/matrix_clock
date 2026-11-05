@@ -30,11 +30,13 @@ add_executable(test_clock
     test_settings.cpp
     test_air_quality.cpp
     test_homeassistant.cpp
+    test_mqtt.cpp
     ${HA}/src/json_reader.cpp
     ${HA}/src/values.cpp
     ${HA}/src/reassembler.cpp
     ${HA}/src/ws_client.cpp
     ${HA}/src/weather.cpp
+    ${HA}/src/mqtt.cpp
     ${AIR}/src/aht21.cpp
     ${AIR}/src/ens160.cpp
     ${AIR}/src/sensor.cpp

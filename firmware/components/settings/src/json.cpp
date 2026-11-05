@@ -340,4 +340,37 @@ std::size_t ha_json(const HaSettings& s, char* out, std::size_t out_size) noexce
     return finish(w);
 }
 
+std::size_t mqtt_model_json(char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    const homeassistant::MqttConfig m = homeassistant::default_mqtt_config();
+    bool ok = w.begin_object() && w.key("champs") && w.begin_object();
+    ok = ok && bool_field(w, kMqttFields[0], "Publication MQTT active", m.enabled,
+                          "Les capteurs de l'horloge apparaissent dans Home Assistant comme un appareil, sans YAML (découverte MQTT).");
+    ok = ok && text_field(w, kMqttFields[1], "texte", "Adresse du broker", static_cast<int64_t>(homeassistant::kMqttHostMax), m.host,
+                          "Adresse IP ou nom DNS du broker (module Mosquitto de Home Assistant en général). Les noms .local ne sont pas résolus.");
+    ok = ok && int_field(w, kMqttFields[2], "Port", "", 1, 65535, m.port, "1883 par défaut, sans TLS (réseau local).");
+    ok = ok && text_field(w, kMqttFields[3], "texte", "Utilisateur", static_cast<int64_t>(homeassistant::kMqttUserMax), m.user,
+                          "Utilisateur dédié à l'horloge dans Mosquitto. Vide : connexion anonyme.");
+    ok = ok && text_field(w, kMqttFields[4], "secret", "Mot de passe", static_cast<int64_t>(homeassistant::kMqttPasswordMax), "",
+                          "S'écrit mais ne se relit pas. Vide : le mot de passe enregistré est gardé.");
+    ok = ok && bool_field(w, kMqttFields[5], "Effacer le mot de passe enregistré", false, "Coché : le mot de passe est supprimé.");
+    ok = ok && text_field(w, kMqttFields[6], "texte", "Préfixe de découverte", static_cast<int64_t>(homeassistant::kMqttPrefixMax),
+                          m.prefix, "Celui de l'intégration MQTT de Home Assistant (homeassistant sauf réglage contraire).");
+    ok = ok && int_field(w, kMqttFields[7], "Période de publication", "s", homeassistant::kMqttPeriodMinS,
+                         homeassistant::kMqttPeriodMaxS, m.period_s,
+                         "Un état toutes les N secondes, plus un à chaque changement de niveau d'air.");
+    ok = ok && w.end_object() && w.field("entites", static_cast<int64_t>(homeassistant::mqtt_entity_count())) && w.end_object();
+    return finish(w);
+}
+
+std::size_t mqtt_json(const homeassistant::MqttConfig& c, char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    const bool ok = w.begin_object() && w.field(kMqttFields[0], c.enabled) && w.field(kMqttFields[1], c.host) &&
+                    w.field(kMqttFields[2], static_cast<int64_t>(c.port)) && w.field(kMqttFields[3], c.user) &&
+                    w.field(kMqttFields[4], "") && w.field("mot_de_passe_defini", c.password[0] != '\0') &&
+                    w.field(kMqttFields[5], false) && w.field(kMqttFields[6], c.prefix) &&
+                    w.field(kMqttFields[7], static_cast<int64_t>(c.period_s)) && w.end_object();
+    return ok ? finish(w) : 0U;
+}
+
 }  // namespace settings

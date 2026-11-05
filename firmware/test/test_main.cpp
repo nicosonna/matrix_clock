@@ -73,6 +73,7 @@ int main() {
     run_air_quality_tests();
     std::printf("-- home assistant: JSON reader, values, reassembly, WebSocket client, weather\n");
     run_homeassistant_tests();
+    run_mqtt_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

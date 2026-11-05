@@ -70,3 +70,4 @@ void run_timekeeping_tests();
 void run_settings_tests();
 void run_air_quality_tests();
 void run_homeassistant_tests();
+void run_mqtt_tests();

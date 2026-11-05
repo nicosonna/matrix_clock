@@ -95,13 +95,14 @@
       HW-HA-01..04 avec le Home Assistant de la maison (jeton à créer par
       Nicolas), aperçu « en direct » d'une entité dans le wizard (étape 3 :
       pour l'instant on enregistre puis on lit la tuile).
-- [ ] `homeassistant::mqtt` : **copier** `home_assistant.hpp/.cpp` et
-      `mqtt_config.hpp/.cpp` de ThermoSync, remplacer `thermosync` par
-      `horloge`, remplacer les entités par les 10 de `spec-home-assistant.md`
-      §6 bis, générer la liste depuis le modèle (`MQ-01` → `MQ-10`).
-- [ ] `clock_homeassistant` : client `esp-mqtt` (testament, découverte QoS 1
-      retenue, état QoS 0, renvoi sur `<prefixe>/status`) ; page `/mqtt` reprise
-      de ThermoSync avec son wizard.
+- [x] ~~`homeassistant::mqtt` : repris de ThermoSync, 10 entités, `null` pour
+      l'invalide, `MqttPublisher` pur~~ (`MQ-01` → `MQ-10`, 2026-11-05).
+- [x] ~~`clock_homeassistant` : tâche `mqtt` sur `esp-mqtt` (testament,
+      découverte QoS 1 retenue, état QoS 0, renvoi sur `<prefixe>/status`) ;
+      page `/mqtt` avec wizard~~ (2026-11-05, vérifié sur le broker de banc
+      `test/bench/mini_broker.py`). Reste : HW-MQ-01..03 sur le **vrai**
+      Home Assistant + Mosquitto (utilisateur dédié à créer par Nicolas),
+      HW-MQ-02 au démarrage à froid.
 - [ ] `campagne_ha_docker.py` + `ha_docker/` : Home Assistant de **test** en
       Docker **avec Mosquitto** (WebSocket **et** MQTT). **On ne pilote jamais
       celui de la maison depuis les tests.**

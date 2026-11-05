@@ -276,10 +276,13 @@ découverte, mêmes conventions, même page `/mqtt`.
 | Lumière ambiante | `sensor` | — (diagnostic) | —, `measurement` | `luminosite_brute` |
 | Heure synchronisée | `binary_sensor` | `connectivity` (diagnostic) | — | `heure_sure` |
 
-Dix messages de découverte, un message d'état. La liste est **générée depuis le
-modèle** (`homeassistant::mqtt::entites`), pas recopiée : ajouter une grandeur =
-une ligne dans la table, et le test MQ-03 vérifie que découverte et état
-restent cohérents.
+Dix messages de découverte, un message d'état. La liste est **générée depuis la
+table** `kEntities` de `homeassistant/mqtt.cpp` (`mqtt_entity_count()`,
+`mqtt_discovery()`), pas recopiée : ajouter une grandeur = une ligne dans la
+table **et** sa clé dans `mqtt_state_json()`, et le test MQ-03 vérifie que
+découverte et état restent cohérents. La politique de publication (période,
+changement de niveau, renvoi, `offline` avant arrêt) est le `MqttPublisher`
+pur, que la tâche `mqtt` de `clock_homeassistant` ne fait qu'exécuter.
 
 ### Valeurs invalides
 

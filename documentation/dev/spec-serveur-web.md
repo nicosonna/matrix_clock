@@ -58,7 +58,9 @@ allocation**, dans un tampon statique.
 | `GET` | `/api/wifi/reseaux` | Résultat du dernier balayage (SSID, puissance, chiffré ou non). |
 | `GET` | `/api/luminosite/brut` | Mesure brute en direct, pour le wizard d'étalonnage. |
 | `POST` | `/api/affichage/test` | Motif de test : `pixel`, `ligne`, `diagonale`, `plein`, `aucun`. |
-| `POST` | `/api/ha/test` | Teste la liaison : `auth_ok`, `auth_invalid`, `injoignable`, avec la version de Home Assistant. |
+| `POST` | `/api/ha/test` | Teste la liaison : `auth_ok`, `auth_invalid`, `injoignable`, avec la version de Home Assistant. *(Réalisé autrement : le wizard active la liaison et suit `/api/etat.ha.etat` — `running`, `token_rejected`, autre.)* |
+| `POST` | `/api/ha/valeur/<0..7>` | Écrit une valeur suivie (tout ou rien). |
+| `POST` | `/api/mqtt/decouverte` | Renvoie la découverte MQTT (bouton de `/mqtt`). |
 | `POST` | `/api/notification` | **Canal d'alerte entrant** (mêmes champs que l'événement Home Assistant, `spec-home-assistant.md` §4). |
 | `POST` | `/api/notification/effacer` | Retire une notification **externe** par `cle` — réservé à la **source** qui l'a levée (Node-RED, hub, script). Une alerte de règle ne se retire pas par ici : elle tombe quand sa condition retombe (EX-46). |
 | `GET` | `/api/journal` | Les 64 dernières lignes de log (tampon circulaire en RAM). |

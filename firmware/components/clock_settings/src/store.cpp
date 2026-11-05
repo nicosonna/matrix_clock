@@ -23,6 +23,7 @@ constexpr char kKeyBrightness[] = "bright";
 constexpr char kKeySystem[] = "system";
 constexpr char kKeyAir[] = "air";
 constexpr char kKeyHa[] = "ha";
+constexpr char kKeyMqtt[] = "mqtt";
 /// Wi-Fi credentials live in their own namespace (clock_web); erased by the factory reset too.
 constexpr char kWifiNamespace[] = "clk_wifi";
 
@@ -31,6 +32,7 @@ constexpr uint8_t kBrightnessVersion = 1U;
 constexpr uint8_t kSystemVersion = 1U;
 constexpr uint8_t kAirVersion = 1U;
 constexpr uint8_t kHaVersion = 1U;
+constexpr uint8_t kMqttVersion = 1U;
 
 SemaphoreHandle_t s_mutex = nullptr;
 settings::Settings s_current{};
@@ -140,6 +142,15 @@ esp_err_t init() noexcept {
                 replaced = true;
             }
         }
+        homeassistant::MqttConfig m{};
+        if (read_blob(h, kKeyMqtt, kMqttVersion, m)) {
+            if (homeassistant::is_valid(m)) {
+                loaded.mqtt = m;
+            } else {
+                ESP_LOGW(kTag, "mqtt settings invalid: defaults");
+                replaced = true;
+            }
+        }
         nvs_close(h);
     } else if (open != ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGW(kTag, "NVS open: %s (defaults)", esp_err_to_name(open));
@@ -206,6 +217,15 @@ void ha(settings::HaSettings& out) noexcept {
         out = s_current.ha;
         unlock();
     }
+}
+
+homeassistant::MqttConfig mqtt() noexcept {
+    homeassistant::MqttConfig m = homeassistant::default_mqtt_config();
+    if (lock()) {
+        m = s_current.mqtt;
+        unlock();
+    }
+    return m;
 }
 
 uint32_t version() noexcept {
@@ -288,6 +308,19 @@ bool save_ha(const settings::HaSettings& s) noexcept {
         unlock();
     }
     ESP_LOGI(kTag, "home assistant settings saved");
+    return true;
+}
+
+bool save_mqtt(const homeassistant::MqttConfig& c) noexcept {
+    if (!homeassistant::is_valid(c) || !write_blob(kKeyMqtt, kMqttVersion, c)) {
+        return false;
+    }
+    if (lock()) {
+        s_current.mqtt = c;
+        ++s_version;
+        unlock();
+    }
+    ESP_LOGI(kTag, "mqtt settings saved");
     return true;
 }
 

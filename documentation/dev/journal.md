@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-11-05 (suite 13) — Publication MQTT vers Home Assistant : découverte, état `null`, page `/mqtt`, broker de banc
+
+**Quoi.** Étape 9 bis de la phase 1 (`spec-home-assistant.md` §6 bis) :
+
+- `homeassistant/mqtt.hpp/.cpp` (pur, repris de ThermoSync
+  `domotique/home_assistant.hpp` + `mqtt_config.hpp`, traduit) :
+  `MqttConfig` + `validate()` (9 statuts, raisons pour la page),
+  `DeviceIdentity` (MAC, version, carte, URL locale), topics
+  `horloge/<id>/disponible` et `/etat`, **10 entités** générées depuis une
+  table (température, humidité, eCO2, TVOC, AQI, niveau `enum`, capteur en
+  défaut, préchauffage, lumière brute, heure sûre), **un seul** état JSON où
+  tout ce qui est invalide (préchauffage, première heure, défaut, absent,
+  capteur désactivé, LDR, CRC) est **`null`** — un niveau confirmé mais
+  dont l'air est invalide est `null` aussi. `MqttPublisher` : machine de
+  décision (connect / online / découverte / état / offline / disconnect)
+  avec période, publication immédiate sur changement de niveau, renvoi sur
+  `<prefixe>/status` = `online` ou sur bouton, `offline` **avant** tout arrêt.
+- `settings` : domaine **mqtt** (8 champs, mot de passe écrit seulement,
+  `effacer_mdp`, préfixe vide = défaut), modèle `/api/mqtt/modele`, blob NVS
+  `mqtt` v1 dans `clk_cfg`.
+- `clock_homeassistant/mqtt_link` : tâche `mqtt` (cœur 0, 250 ms, 4 Ko) sur
+  `esp-mqtt` — testament `offline` retenu QoS 1, keepalive 30 s, reconnexion
+  par le client, découverte QoS 1 retenue, état QoS 0 retenu, abonnement
+  unique à `<prefixe>/status`. `app_main` fournit l'état (air, LDR, heure)
+  et `/api/etat.mqtt` ; hook `mqtt_discovery` pour `POST /api/mqtt/decouverte`.
+- Page : onglet **MQTT** (tuiles, bouton « renvoyer la découverte »,
+  formulaires broker / avancés) et **wizard** en 3 étapes (broker →
+  utilisateur et mot de passe avec test de connexion qui suit
+  `/api/etat.mqtt.etat` → découverte).
+- Banc : `test/bench/mini_broker.py`, broker MQTT 3.1.1 minimal (CONNACK,
+  SUBACK, PUBACK, PINGRESP, journal, injection de messages) pour vérifier
+  l'horloge **sans toucher au Home Assistant de la maison**.
+
+**Résultats.** Tests host : **11 395 vérifications, 0 échec, couverture
+96,7 %** (4 121 lignes ; `mqtt.cpp` 97,4 %). Image 1 302 Ko (34 % libre). Sur
+la carte, OTA puis broker de banc sur le PC : `CONNECT` avec utilisateur,
+testament, abonnement `homeassistant/status`, `online`, 10 découvertes (JSON
+valides, relus par Python), état toutes les 10 s avec les vraies valeurs
+(28,5 °C, eCO2 1000 ppm, TVOC 992 ppb, niveau `mauvais` — la pièce était à
+aérer), `status` = `online` injecté ⇒ tout renvoyé, bouton idem,
+désactivation ⇒ `offline` retenu **puis** `DISCONNECT` propre,
+`/api/etat.mqtt` cohérent (1 connexion, 1 coupure, 3 découvertes, 5 états).
+
+**Reste.** HW-MQ-01/03 sur le vrai Home Assistant + Mosquitto (Nicolas),
+HW-MQ-02 (préchauffage `null`) au prochain démarrage à froid. Suite :
+moteur de règles d'alerte (étape 10), plan de test final.
+
+---
+
 ## 2026-11-05 (suite 12) — Home Assistant : lecteur JSON, client WebSocket pur, liaison, page `/ha`, scènes Valeur
 
 **Quoi.** Étape 8 de la phase 1 :

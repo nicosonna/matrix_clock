@@ -462,6 +462,44 @@ esp_err_t handle_ha_value_post(httpd_req_t* req) {
     return send_text(req, "200 OK", "{\"ok\":true}");
 }
 
+esp_err_t handle_mqtt_model(httpd_req_t* req) {
+    static char body[settings::kJsonMax];
+    return send_json(req, body, settings::mqtt_model_json(body, sizeof(body)));
+}
+
+esp_err_t handle_mqtt_get(httpd_req_t* req) {
+    static char body[settings::kJsonMax];
+    const homeassistant::MqttConfig m = clock_settings::mqtt();
+    return send_json(req, body, settings::mqtt_json(m, body, sizeof(body)));
+}
+
+esp_err_t handle_mqtt_post(httpd_req_t* req) {
+    char body[kFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kFormMax, got)) {
+        return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+    }
+    const homeassistant::MqttConfig current = clock_settings::mqtt();
+    homeassistant::MqttConfig next = current;
+    settings::FormError err{};
+    if (!settings::apply_mqtt_form(body, got, current, next, err)) {
+        return send_form_error(req, err);
+    }
+    if (!clock_settings::save_mqtt(next)) {
+        return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
+/// POST /api/mqtt/decouverte: publish the discovery again (Home Assistant restarted, entities deleted...).
+esp_err_t handle_mqtt_discovery(httpd_req_t* req) {
+    if (s_hooks.mqtt_discovery == nullptr) {
+        return send_text(req, "503 Service Unavailable", "Liaison MQTT non démarrée.");
+    }
+    s_hooks.mqtt_discovery();
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
 void reboot_task(void* /*arg*/) {
     vTaskDelay(pdMS_TO_TICKS(kRebootDelayMs));  // let the response leave
     esp_restart();
@@ -624,7 +662,7 @@ bool init_nvs() {
 
 bool start_http() {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 48;
+    cfg.max_uri_handlers = 53;
     cfg.max_open_sockets = kHttpClientsMax;
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
@@ -639,6 +677,7 @@ bool start_http() {
         {"/systeme", HTTP_GET, handle_app_page, nullptr},
         {"/air", HTTP_GET, handle_app_page, nullptr},
         {"/ha", HTTP_GET, handle_app_page, nullptr},
+        {"/mqtt", HTTP_GET, handle_app_page, nullptr},
         {"/wifi", HTTP_GET, handle_wifi_page, nullptr},
         {"/api/info", HTTP_GET, handle_info, nullptr},
         {"/api/etat", HTTP_GET, handle_status, nullptr},
@@ -663,6 +702,10 @@ bool start_http() {
         {"/api/ha", HTTP_GET, handle_ha_get, nullptr},
         {"/api/ha", HTTP_POST, handle_ha_post, nullptr},
         {"/api/ha/valeur/*", HTTP_POST, handle_ha_value_post, nullptr},
+        {"/api/mqtt/modele", HTTP_GET, handle_mqtt_model, nullptr},
+        {"/api/mqtt", HTTP_GET, handle_mqtt_get, nullptr},
+        {"/api/mqtt", HTTP_POST, handle_mqtt_post, nullptr},
+        {"/api/mqtt/decouverte", HTTP_POST, handle_mqtt_discovery, nullptr},
         {"/api/systeme/modele", HTTP_GET, handle_system_model, nullptr},
         {"/api/systeme", HTTP_GET, handle_system_get, nullptr},
         {"/api/systeme", HTTP_POST, handle_system_post, nullptr},

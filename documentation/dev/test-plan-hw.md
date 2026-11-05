@@ -162,21 +162,23 @@ bus bloqué).
 
 ### 1.7 `homeassistant::mqtt` — `dev/spec-home-assistant.md` §6 bis et §9
 
-Repris de ThermoSync (ses HA-01..12 du banc MQTT), adapté aux entités de
-l'horloge.
+Repris de ThermoSync (`domotique/home_assistant.hpp` + `mqtt_config.hpp`),
+adapté aux entités de l'horloge. Test host : `firmware/test/test_mqtt.cpp`.
+Banc : `firmware/test/bench/mini_broker.py` (broker MQTT 3.1.1 minimal qui
+journalise ce que l'horloge publie et peut injecter `<prefixe>/status`).
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| MQ-01 | `mqtt_ha::topic()` | `disponible`, `etat`, `config` par entité, `<prefixe>/status`, `id` MAC ; débordement refusé | À ÉCRIRE |
-| MQ-02 | `mqtt_ha::decouverte()` | Chaque entité : plateforme, classe, unité, `state_class`, `value_template`, `availability`, bloc `device` ; JSON valide | À ÉCRIRE |
-| MQ-03 | `mqtt_ha::entites` ⇄ `etat()` | Chaque `value_template` lit une clé publiée, chaque clé publiée est lue | À ÉCRIRE |
-| MQ-04 | `mqtt_ha::etat()` | Décimales correctes ; invalide / préchauffage / absent ⇒ **`null`** | À ÉCRIRE |
-| MQ-05 | `mqtt_ha::etat()` | `niveau` : 5 valeurs énumérées, `null` en préchauffage | À ÉCRIRE |
-| MQ-06 | `mqtt_ha::doit_publier()` | À `periode_s` **et** sur changement de niveau, pas à chaque mesure | À ÉCRIRE |
-| MQ-07 | `mqtt_ha::sur_status()` | `online` ⇒ découverte renvoyée | À ÉCRIRE |
-| MQ-08 | `MqttConfig::valider()` | Tous les `MqttStatus`, repli sur les défauts | À ÉCRIRE |
-| MQ-09 | modèle ⇄ `MqttConfig` | Aucun champ orphelin | À ÉCRIRE |
-| MQ-10 | `mqtt_ha::desactiver()` | `offline` publié avant la déconnexion | À ÉCRIRE |
+| MQ-01 | `build_identity()`, `mqtt_topic()`, `ha_status_topic()` | `horloge/<id>/disponible`, `horloge/<id>/etat`, `<prefixe>/status`, `id` = MAC hexadécimale, `url` depuis l'IP ; débordement ⇒ 0 et tampon vidé ; chaînes trop longues refusées | **PASSE** 2026-11-05 |
+| MQ-02 | `mqtt_discovery()` | 10 entités : topic `<prefixe>/<plateforme>/horloge_<id>/<objet>/config`, JSON **analysé** (`name`, `unique_id`, `state_topic`, `value_template`, `availability`, bloc `device` avec `identifiers` et `connections`, `origin`, `configuration_url`), classes / unités / `state_class` de la table du §6 bis ; `enum` avec `options` sans unité ; binaires sans `state_class` ; autre préfixe ; index hors liste et tampons trop petits ⇒ 0 | **PASSE** 2026-11-05 |
+| MQ-03 | `mqtt_entity_key()` ⇄ `mqtt_state_json()` | Chaque `value_template` lit une clé **publiée** ; chaque clé publiée est **lue** par une entité ; `object_id` uniques ; 10 clés | **PASSE** 2026-11-05 |
+| MQ-04 | `mqtt_state_json()` | Température à 1 décimale arrondie (21,49 ⇒ 21.5, -0,05 ⇒ -0.1, 20,05 ⇒ 20.1), humidité en dixièmes ; préchauffage / première heure ⇒ air `null` + `prechauffage` ON ; défaut ⇒ tout `null` + `capteur_defaut` ON ; absent ⇒ `capteur_defaut` ON, `prechauffage` `null` ; capteur désactivé ⇒ `null` partout (pas « sans défaut ») ; climat invalide seul ; LDR invalide ⇒ `null` ; `heure_sure` ON/OFF ; tampon trop petit ⇒ 0 | **PASSE** 2026-11-05 |
+| MQ-05 | `mqtt_level_option()`, `mqtt_state_json()` | `excellent`, `bon`, `moyen`, `mauvais`, `tres_mauvais` = les `options` de la découverte ; `Unknown` ⇒ `null` ; un niveau confirmé **avec air invalide** ⇒ `null` (honnêteté) | **PASSE** 2026-11-05 |
+| MQ-06 | `MqttPublisher::update_state()` / `next_action()` | État publié à la première mesure, puis **pas avant** `periode_s` malgré une mesure par seconde, puis à la période ; **changement de niveau** ⇒ publié sans attendre ; même niveau ⇒ rien ; aucune allocation | **PASSE** 2026-11-05 |
+| MQ-07 | `is_ha_online()`, `MqttPublisher::on_message()` | `<prefixe>/status` = `online` ⇒ découverte + état renvoyés ; `offline` ou autre topic ⇒ rien ; `request_discovery()` (bouton) idem | **PASSE** 2026-11-05 |
+| MQ-08 | `validate(MqttConfig)`, `mqtt_status_reason()` | Les 9 statuts (`HostEmpty` seulement si active, `HostInvalid` bords et caractères, `PortInvalid`, `UserInvalid`, `PasswordInvalid`, `PasswordWithoutUser`, `PrefixInvalid` vide / bords / majuscule / joker, `PeriodInvalid` 4 et 601) ; tableaux non terminés refusés ; `configure()` invalide ⇒ défauts (désactivé) ; une raison par statut | **PASSE** 2026-11-05 |
+| MQ-09 | `settings::apply_mqtt_form()`, `mqtt_model_json()`, `mqtt_json()`, page `/mqtt` | Les 8 champs de `kMqttFields` ; mot de passe vide = gardé, `effacer_mdp`, préfixe vide = défaut ; 16 corps fautifs tout-ou-rien ; modèle avec `libelle`, type `secret`, défauts 1883 / `homeassistant` ; le mot de passe n'est jamais relu (`mot_de_passe_defini`) ; page : champs dans exactement un groupe (`mqtt:`, `mqtt_avance:`), aucun `name=` recopié (WEB-04) | **PASSE** 2026-11-05 |
+| MQ-10 | `MqttPublisher::configure()` / `next_action()` | Désactivation connectée ⇒ `PublishOffline` **puis** `Disconnect`, jamais `Connect` ; changement de broker connecté ⇒ offline, disconnect, connect ; en connexion ⇒ disconnect, connect ; coupure ⇒ rien en file, retour ⇒ online + découverte + état ; compteurs sans double comptage | **PASSE** 2026-11-05 |
 
 ### 1.8 `settings` / web — `dev/spec-serveur-web.md` §7
 
@@ -185,7 +187,7 @@ l'horloge.
 | WEB-01 | `form_field()` | Couvert aussi par RES-10, appliqué aux formulaires d'affichage, de luminosité, de système, du wizard de luminosité, de `usine` et de `test` | **PASSE** 2026-11-05 (`test_settings.cpp`) |
 | WEB-02 | `settings::apply_<domain>_form()` | Tout-ou-rien : un champ fautif ⇒ `false` + `FormError`, **rien** modifié dans `out` ; corps vide ⇒ succès sans changement ; mauvais encodage (`%ZZ`) sur chaque champ ⇒ refus nommé | **PASSE** 2026-11-05 |
 | WEB-03 | idem | Champ nommé, raison en français, bornes exactes (`budget_ma` 400..15000, `vitesse_defilement` 5..60, `largeur_module` 0/8, `pas_lum` 1..32, `extinction_*` 0..1439, scènes ≤ 8, courbe 2..6 points croissants, fuseau dans la table, hôte NTP valide) | **PASSE** 2026-11-05 |
-| WEB-04 | `settings::*_model_json()` ⇄ `www/app.html` | Le modèle nomme chaque champ avec `type`, `libelle`, bornes, défaut, aide (`heure` pour les minutes du jour, `scenes` et `courbe` pour les éditeurs) ; la page **construit** ses formulaires depuis `/api/<domaine>/modele` (aucun `name=` recopié), répartit chaque champ dans **exactement un** groupe, possède un widget par type émis (dont `type: 'time'` et le réordonnancement des scènes) ; les clés et valeurs codées en dur par les wizards existent dans le modèle ; aucun `https://`, aucun emoji. 3 domaines sur les 8 prévus (les autres suivent leur composant) | **PASSE** 2026-11-05 |
+| WEB-04 | `settings::*_model_json()` ⇄ `www/app.html` | Le modèle nomme chaque champ avec `type`, `libelle`, bornes, défaut, aide (`heure` pour les minutes du jour, `scenes` et `courbe` pour les éditeurs) ; la page **construit** ses formulaires depuis `/api/<domaine>/modele` (aucun `name=` recopié), répartit chaque champ dans **exactement un** groupe, possède un widget par type émis (dont `type: 'time'` et le réordonnancement des scènes) ; les clés et valeurs codées en dur par les wizards existent dans le modèle ; aucun `https://`, aucun emoji. 6 domaines (`affichage`, `luminosite`, `systeme`, `air`, `ha`, `mqtt`) ; `alertes` suivra son composant | **PASSE** 2026-11-05 |
 | WEB-05 | `settings::JsonWriter` | Échappement, virgules, profondeur ≤ 8, `nullptr` refusé, débordement ⇒ `length()` = 0 (le serveur répond 500 `incomplet`), jamais de JSON invalide | **PASSE** 2026-11-05 |
 | WEB-06 | `alerts::decode_form()` | Mêmes bornes et rejets que HA-13 | **PASSE** 2026-11-05 (= ALR-15) |
 | WEB-07 | `handle_factory()` (`web_server.cpp`) | Refus sans `confirme=OUI` | Vérifié par HTTP sur la carte (400 sans confirmation) ; logique dans l'adaptateur, pas de test host |
@@ -260,9 +262,9 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-AIR-06 | Température / humidité confrontées à une référence | Après compensation : < 1 °C, < 5 % HR | À FAIRE |
 | HW-AIR-07 | Capteur débranché à chaud puis rebranché | Grandeurs invalides, logo gris, `CAPTEUR AIR HS` ; bus rétabli **sans redémarrage** | À FAIRE |
 | HW-AIR-08 | Lecture de `PART_ID` et des registres sur le module réel | Table de `spec-qualite-air.md` §2 confirmée ou **corrigée** (dette D11) | **PASSE** 2026-11-05 : `PART_ID` 0x0160 à 0x53, `OPMODE` relu 0x02, `DEVICE_STATUS` cohérent (STATAS, validité, NEWDAT), AHT21 à 0x38 calibré, 24,9 °C / 37,6 % plausibles. Restent à confronter : `DATA_*` (après la première heure) |
-| HW-MQ-01 | Home Assistant **de test en Docker** + Mosquitto, liaison activée | Appareil « Horloge » et ses 10 entités découverts sans YAML ; valeurs = page `/air` | À FAIRE |
-| HW-MQ-02 | Mise sous tension de l'horloge, pendant les 3 min de préchauffage | Entités d'air *inconnues* (`null`), puis valeurs ; `prechauffage` à `on` puis `off` | À FAIRE |
-| HW-MQ-03 | Horloge débranchée ; puis Home Assistant redémarré | `disponible` passe `offline` (testament) ; après redémarrage de HA, entités retrouvées (découverte renvoyée) | À FAIRE |
+| HW-MQ-01 | Home Assistant **de test en Docker** + Mosquitto, liaison activée | Appareil « Horloge » et ses 10 entités découverts sans YAML ; valeurs = page `/air` | **MÉCANIQUE VÉRIFIÉE** 2026-11-05 sur le broker de banc (`mini_broker.py`) : `CONNECT` avec utilisateur, keepalive 30 s et testament `offline` retenu, abonnement `homeassistant/status`, `online`, **10** messages de découverte retenus QoS 1 (JSON valides), état retenu QoS 0 toutes les 10 s (28,5 °C, 40,8 %, eCO2 1000, TVOC 992, AQI 4, `mauvais`, LDR 1198) ; `/api/etat.mqtt` = `connected`. Reste : le vrai Home Assistant (Mosquitto) |
+| HW-MQ-02 | Mise sous tension de l'horloge, pendant les 3 min de préchauffage | Entités d'air *inconnues* (`null`), puis valeurs ; `prechauffage` à `on` puis `off` | À FAIRE (logique couverte par MQ-04 ; à observer au prochain démarrage à froid avec le broker de banc) |
+| HW-MQ-03 | Horloge débranchée ; puis Home Assistant redémarré | `disponible` passe `offline` (testament) ; après redémarrage de HA, entités retrouvées (découverte renvoyée) | **MÉCANIQUE VÉRIFIÉE** 2026-11-05 : `homeassistant/status` = `online` injecté ⇒ les 10 découvertes + l'état renvoyés ; bouton « renvoyer la découverte » idem ; désactivation ⇒ `offline` retenu **puis** `DISCONNECT` propre. Testament par coupure brutale : à faire sur Mosquitto |
 | HW-WEB-01 | Page sur iPhone, Android, PC, thèmes clair et sombre | Lisible, utilisable au doigt | À FAIRE |
 | HW-WEB-02 | OTA d'une image valide (`curl --data-binary @matrix_clock.bin /api/ota`) | Barre de progression sur la dalle, redémarrage sur la nouvelle image, `OTA image confirmed` | **PASSE** 2026-11-05 : 998 Ko en 5,6 s, redémarrage sur l'autre emplacement, image confirmée, réglages conservés (budget 2500 relu) |
 | HW-WEB-03 | OTA d'une image **volontairement cassée** | **Rollback** automatique sur l'ancienne image | À FAIRE |

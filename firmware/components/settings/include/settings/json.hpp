@@ -24,6 +24,7 @@ std::size_t system_model_json(char* out, std::size_t out_size) noexcept;
 std::size_t air_model_json(char* out, std::size_t out_size) noexcept;
 /// Link + weather fields, plus `valeur` (the sub-model of one tracked value) and `valeurs_max`.
 std::size_t ha_model_json(char* out, std::size_t out_size) noexcept;
+std::size_t mqtt_model_json(char* out, std::size_t out_size) noexcept;
 
 std::size_t display_json(const DisplaySettings& s, char* out, std::size_t out_size) noexcept;
 std::size_t brightness_json(const brightness::Config& c, char* out, std::size_t out_size) noexcept;
@@ -31,5 +32,7 @@ std::size_t system_json(const SystemSettings& s, char* out, std::size_t out_size
 std::size_t air_json(const AirSettings& s, char* out, std::size_t out_size) noexcept;
 /// The token is never written back: `jeton_defini` says whether one is stored.
 std::size_t ha_json(const HaSettings& s, char* out, std::size_t out_size) noexcept;
+/// The password is never written back: `mot_de_passe_defini` says whether one is stored.
+std::size_t mqtt_json(const homeassistant::MqttConfig& c, char* out, std::size_t out_size) noexcept;
 
 }  // namespace settings

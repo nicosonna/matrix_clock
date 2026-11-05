@@ -65,6 +65,7 @@ table.liste select { max-width:11rem; }
   <a href="/luminosite" data-page="luminosite">Luminosité</a>
   <a href="/air" data-page="air">Air</a>
   <a href="/ha" data-page="ha">Home Assistant</a>
+  <a href="/mqtt" data-page="mqtt">MQTT</a>
   <a href="/systeme" data-page="systeme">Système</a>
   <a href="/wifi">WiFi</a>
 </nav>
@@ -163,6 +164,30 @@ table.liste select { max-width:11rem; }
   </div>
 </section>
 
+<section id="mqtt">
+  <div class="carte">
+    <h2>Publication MQTT</h2>
+    <p class="aide">Les capteurs de l’horloge (air, température, humidité, lumière, heure) apparaissent dans Home Assistant comme un appareil « Horloge » par découverte MQTT, sans YAML. Une grandeur invalide (préchauffage, capteur absent) est publiée inconnue, jamais inventée.</p>
+    <div class="grille" id="tuiles-mqtt"></div>
+    <p class="aide" id="mqtt-etat"></p>
+    <div class="boutons"><button class="second" type="button" id="mqtt-decouverte">Renvoyer la découverte</button></div>
+    <p class="msg" id="mqtt-msg"></p>
+  </div>
+  <div class="carte">
+    <h2>Mise en service — wizard</h2>
+    <p class="aide">Broker (module Mosquitto de Home Assistant), utilisateur dédié, découverte.</p>
+    <div id="wiz-mqtt"></div>
+  </div>
+  <div class="carte">
+    <h2>Broker</h2>
+    <form id="form-mqtt" data-domaine="mqtt" data-groupe="mqtt"></form>
+  </div>
+  <div class="carte">
+    <h2>Réglages avancés</h2>
+    <form id="form-mqtt-2" data-domaine="mqtt" data-groupe="mqtt_avance"></form>
+  </div>
+</section>
+
 <section id="systeme">
   <div class="carte">
     <h2>Heure</h2>
@@ -191,8 +216,8 @@ table.liste select { max-width:11rem; }
 <script>
 (function () {
   'use strict';
-  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'ha', 'systeme'];
-  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/ha': 'ha', '/systeme': 'systeme' };
+  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'ha', 'mqtt', 'systeme'];
+  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/ha': 'ha', '/mqtt': 'mqtt', '/systeme': 'systeme' };
   // Which fields each form shows (the model stays the single source of truth for everything else).
   var groupes = {
     scenes: ['scenes', 'vitesse_defilement', 'clignotement', 'barre_secondes'],
@@ -203,6 +228,8 @@ table.liste select { max-width:11rem; }
     ha: ['actif', 'securise', 'hote', 'port', 'jeton', 'effacer_jeton', 'notifications'],
     ha_avance: ['ping_s', 'pong_ms'],
     meteo: ['meteo_actif', 'latitude', 'longitude', 'meteo_periode_s'],
+    mqtt: ['actif', 'hote', 'port', 'utilisateur', 'mot_de_passe', 'effacer_mdp', 'prefixe'],
+    mqtt_avance: ['periode_s'],
     ha_valeur: ['actif', 'nom', 'mode', 'entite', 'attribut', 'gabarit', 'type', 'decimales', 'unite', 'icone', 'peremption_s'],
     air_seuils: ['grandeur_pilote', 'seuil_eco2_bon', 'seuil_eco2_moyen', 'seuil_eco2_mauvais', 'seuil_eco2_tres_mauvais', 'seuil_tvoc_bon', 'seuil_tvoc_moyen', 'seuil_tvoc_mauvais', 'seuil_tvoc_tres_mauvais', 'hysteresis_eco2', 'hysteresis_tvoc', 'confirmation_s']
   };
@@ -542,6 +569,75 @@ table.liste select { max-width:11rem; }
     boite.appendChild(box);
   }
 
+  // ---- MQTT: live status, wizard
+  var mqttTimer = null;
+  function lireMqtt() {
+    fetch('/api/etat').then(function (r) { return r.json(); }).then(function (e) {
+      var m = e.mqtt;
+      var g = document.getElementById('tuiles-mqtt'); g.innerHTML = '';
+      if (!m) { return; }
+      g.appendChild(tuile('Liaison', m.etat));
+      g.appendChild(tuile('Appareil', m.id ? 'horloge_' + m.id : '—'));
+      g.appendChild(tuile('Connexions / coupures', m.connexions + ' / ' + m.coupures));
+      g.appendChild(tuile('Découvertes / états publiés', m.decouvertes + ' / ' + m.etats + (m.echecs ? ' (' + m.echecs + ' échecs)' : '')));
+      document.getElementById('mqtt-etat').textContent = m.erreur ? 'Dernière erreur : ' + m.erreur : '';
+    }).catch(function () {});
+  }
+  document.getElementById('mqtt-decouverte').onclick = function () {
+    var msg = document.getElementById('mqtt-msg');
+    post('/api/mqtt/decouverte', '').then(function (r) { dire(msg, r.ok ? 'Découverte renvoyée (si la liaison est connectée).' : r.texte, r.ok); });
+  };
+  function wizardMqtt(i) {
+    var boite = document.getElementById('wiz-mqtt');
+    boite.innerHTML = '';
+    var box = el('div', { class: 'etapes' });
+    if (i === 0) {
+      boite.appendChild(el('p', {}, '1/3 — Adresse du broker MQTT (l’adresse IP de Home Assistant si le module Mosquitto y tourne) et port (1883).'));
+      var hote = el('input', { type: 'text', placeholder: '10.0.0.10' }); var port = el('input', { type: 'number', value: 1883, min: 1, max: 65535 });
+      boite.appendChild(hote); boite.appendChild(el('span', { class: 'unite' }, ':')); boite.appendChild(port);
+      var msg0 = el('p', { class: 'msg' }); boite.appendChild(msg0);
+      var ok = el('button', { type: 'button', class: 'second' }, 'Continuer');
+      ok.onclick = function () {
+        post('/api/mqtt', 'hote=' + encodeURIComponent(hote.value) + '&port=' + encodeURIComponent(port.value)).then(function (r) {
+          if (r.ok) { wizardMqtt(1); } else { dire(msg0, erreurTexte(r.texte), false); }
+        });
+      };
+      box.appendChild(ok);
+    } else if (i === 1) {
+      boite.appendChild(el('p', {}, '2/3 — Utilisateur et mot de passe créés pour l’horloge dans Mosquitto (vides pour une connexion anonyme). La publication est activée et testée.'));
+      var util = el('input', { type: 'text', placeholder: 'horloge', autocomplete: 'off' }); var mdp = el('input', { type: 'password', autocomplete: 'new-password' });
+      boite.appendChild(el('label', {}, 'Utilisateur')); boite.appendChild(util); boite.appendChild(el('label', {}, 'Mot de passe')); boite.appendChild(mdp);
+      var msg = el('p', { class: 'msg' }); boite.appendChild(msg);
+      var ok2 = el('button', { type: 'button', class: 'second' }, 'Activer et tester');
+      ok2.onclick = function () {
+        post('/api/mqtt', 'actif=1&utilisateur=' + encodeURIComponent(util.value) + '&mot_de_passe=' + encodeURIComponent(mdp.value)).then(function (r) {
+          if (!r.ok) { dire(msg, erreurTexte(r.texte), false); return; }
+          dire(msg, 'Connexion en cours…', true);
+          var essais = 0;
+          var t = setInterval(function () {
+            fetch('/api/etat').then(function (x) { return x.json(); }).then(function (e) {
+              essais++;
+              var etat = e.mqtt ? e.mqtt.etat : '?';
+              if (etat === 'connected') { clearInterval(t); dire(msg, 'Connecté au broker, découverte publiée.', true); setTimeout(function () { wizardMqtt(2); }, 1000); }
+              else if (essais > 20) { clearInterval(t); dire(msg, 'Pas de connexion (' + etat + (e.mqtt && e.mqtt.erreur ? ' : ' + e.mqtt.erreur : '') + '). Vérifiez l’adresse, le port, l’utilisateur et le mot de passe.', false); }
+              else { dire(msg, 'État : ' + etat + '…', true); }
+            });
+          }, 1000);
+        });
+      };
+      box.appendChild(ok2);
+    } else {
+      boite.appendChild(el('p', {}, '3/3 — Dans Home Assistant : Paramètres → Appareils et services → MQTT, l’appareil « Horloge » et ses entités sont là. Rien d’autre à configurer. Si les entités manquent, renvoyez la découverte avec le bouton ci-dessus.'));
+      var fin = el('button', { type: 'button', class: 'second' }, 'Terminer');
+      fin.onclick = function () {
+        boutonWizard('wiz-mqtt', 'Relancer le wizard', function () { wizardMqtt(0); }, 'Mise en service terminée.', true);
+        chargerDomaine('mqtt');
+      };
+      box.appendChild(fin);
+    }
+    boite.appendChild(box);
+  }
+
   // ---- dashboard
   var etatTimer = null;
   function tuile(titre, valeur) { var t = el('div', { class: 'tuile' }); t.appendChild(el('b', {}, valeur)); t.appendChild(el('span', {}, titre)); return t; }
@@ -745,11 +841,13 @@ table.liste select { max-width:11rem; }
     if (brutTimer) { clearInterval(brutTimer); brutTimer = null; }
     if (airTimer) { clearInterval(airTimer); airTimer = null; }
     if (haTimer) { clearInterval(haTimer); haTimer = null; }
+    if (mqttTimer) { clearInterval(mqttTimer); mqttTimer = null; }
     if (page === 'tableau') { lireEtat(); etatTimer = setInterval(lireEtat, 2000); }
     if (page === 'affichage') { chargerDomaine('affichage'); boutonWizard('wiz-map', 'Lancer le wizard', function () { wizardMap(0); }); }
     if (page === 'luminosite') { chargerDomaine('luminosite'); lireBrut(); brutTimer = setInterval(lireBrut, 1000); boutonWizard('wiz-lum', 'Lancer le wizard', function () { wizardLum(0); }); }
     if (page === 'air') { chargerDomaine('air'); lireAir(); airTimer = setInterval(lireAir, 2000); boutonWizard('wiz-air', 'Lancer le wizard', function () { wizardAir(0); }); }
     if (page === 'ha') { chargerDomaine('ha'); chargerValeursHa(); lireHa(); haTimer = setInterval(lireHa, 2000); boutonWizard('wiz-ha', 'Lancer le wizard', function () { wizardHa(0); }); }
+    if (page === 'mqtt') { chargerDomaine('mqtt'); lireMqtt(); mqttTimer = setInterval(lireMqtt, 2000); boutonWizard('wiz-mqtt', 'Lancer le wizard', function () { wizardMqtt(0); }); }
     if (page === 'systeme') { chargerDomaine('systeme'); }
   }
   var initiale = chemins[location.pathname] || 'tableau';

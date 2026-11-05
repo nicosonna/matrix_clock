@@ -30,6 +30,7 @@
 #include "clock_display/led_panel.hpp"
 #include "clock_hal/i2c_bus.hpp"
 #include "clock_homeassistant/ha_link.hpp"
+#include "clock_homeassistant/mqtt_link.hpp"
 #include "clock_hal/ldr_adc.hpp"
 #include "clock_settings/store.hpp"
 #include "clock_time/time_source.hpp"
@@ -207,6 +208,22 @@ void on_ota_progress(uint8_t percent, bool active) {
     taskEXIT_CRITICAL(&s_mux);
 }
 
+/// What the MQTT task publishes: the latest air, light and time state (called from the mqtt task).
+void fill_mqtt_state(homeassistant::MqttState& out) {
+    taskENTER_CRITICAL(&s_mux);
+    out.air_enabled = s_air.enabled;
+    out.air = s_air.reading;
+    out.level = s_air.level;
+    out.ldr_valid = s_shared.ldr_valid && !s_shared.ldr_fault;
+    out.ldr_raw = s_shared.ldr_raw;
+    taskEXIT_CRITICAL(&s_mux);
+    out.time_sure = clock_time::now().sure;
+}
+
+void on_mqtt_discovery() {
+    clock_homeassistant::mqtt_request_discovery();
+}
+
 /// `/api/etat` for the dashboard.
 std::size_t status_json(char* out, std::size_t size) {
     const clock_time::Snapshot ts = clock_time::now();
@@ -272,6 +289,14 @@ std::size_t status_json(char* out, std::size_t size) {
              w.field("texte", v.text) && w.field("meteo", v.from_weather) && w.field("erreur", v.error) && w.end_object();
     }
     ok = ok && w.end_array() && w.end_object();
+    clock_homeassistant::MqttSnapshot mq{};
+    clock_homeassistant::mqtt_snapshot(mq);
+    ok = ok && w.key("mqtt") && w.begin_object() && w.field("actif", mq.enabled) && w.field("etat", mq.state_name) &&
+         w.field("id", mq.device_id) && w.field("connexions", static_cast<int64_t>(mq.stats.connections)) &&
+         w.field("coupures", static_cast<int64_t>(mq.stats.disconnections)) &&
+         w.field("decouvertes", static_cast<int64_t>(mq.stats.discoveries)) &&
+         w.field("etats", static_cast<int64_t>(mq.stats.states)) &&
+         w.field("echecs", static_cast<int64_t>(mq.publish_failures)) && w.field("erreur", mq.last_error) && w.end_object();
     ok = ok && w.key("meteo") && w.begin_object() && w.field("actif", ha.weather_enabled) &&
          w.field("valide", ha.weather_valid) && w.field("temperature_deci", static_cast<int64_t>(ha.weather_deci)) &&
          w.field("age_s", static_cast<int64_t>(ha.weather_age_s)) && w.end_object();
@@ -763,6 +788,7 @@ extern "C" void app_main(void) {
     hooks.ldr_raw = on_ldr_raw;
     hooks.ota_progress = on_ota_progress;
     hooks.air_raw_temperature = on_air_raw_temperature;
+    hooks.mqtt_discovery = on_mqtt_discovery;
     const clock_web::WebStatus web = clock_web::start(hooks);
     switch (web) {
         case clock_web::WebStatus::Ok:
@@ -787,6 +813,10 @@ extern "C" void app_main(void) {
         const esp_err_t ha_err = clock_homeassistant::start(on_notification);
         if (ha_err != ESP_OK) {
             ESP_LOGE(kTag, "home assistant link not started: %s", esp_err_to_name(ha_err));
+        }
+        const esp_err_t mqtt_err = clock_homeassistant::mqtt_start(fill_mqtt_state);
+        if (mqtt_err != ESP_OK) {
+            ESP_LOGE(kTag, "mqtt publication not started: %s", esp_err_to_name(mqtt_err));
         }
     }
 

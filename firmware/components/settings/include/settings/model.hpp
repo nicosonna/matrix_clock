@@ -18,6 +18,7 @@
 #include "display/panel_map.hpp"
 #include "display/scheduler.hpp"
 #include "display/scroll.hpp"
+#include "homeassistant/mqtt.hpp"
 #include "homeassistant/values.hpp"
 #include "homeassistant/weather.hpp"
 #include "homeassistant/ws_client.hpp"
@@ -82,6 +83,7 @@ struct Settings {
     SystemSettings system;
     AirSettings air;
     HaSettings ha;
+    homeassistant::MqttConfig mqtt;   ///< MQTT publication (page /mqtt).
 };
 
 DisplaySettings default_display_settings() noexcept;

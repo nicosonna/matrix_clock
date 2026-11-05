@@ -46,6 +46,8 @@ struct Hooks {
     void (*ota_progress)(uint8_t percent, bool active);
     /// Raw AHT21 temperature (before the offset) for the self-heating wizard; false if invalid.
     bool (*air_raw_temperature)(int16_t& centi);
+    /// Page button of /mqtt: publish the discovery again.
+    void (*mqtt_discovery)();
 };
 
 /// Snapshot of the network state for the display and `/api/info`.

@@ -79,7 +79,7 @@ volontaire.
 | `clock_display` | `espressif/led_strip`, SPI/DMA | oui (matériel) |
 | `clock_hal` | ADC1 oneshot + étalonnage ; bus I²C `i2c_master` derrière `air_quality::I2cBus` (délai 50 ms, réinitialisation d'un bus bloqué par 9 coups d'horloge) | oui (matériel) |
 | `clock_time` | SNTP ; la conversion et la validité sont dans `timekeeping` (pur) | oui (transport) |
-| `clock_homeassistant` | tâche `ha` (cœur 0, 100 ms) : `esp_websocket_client` sans reconnexion automatique (le client pur décide), réassemblage, envoi des messages demandés, météo Open-Meteo en HTTPS (paquet de certificats), snapshot sous mutex ; `esp-mqtt` à venir | oui (transport) |
+| `clock_homeassistant` | tâche `ha` (cœur 0, 100 ms) : `esp_websocket_client` sans reconnexion automatique (le client pur décide), réassemblage, envoi des messages demandés, météo Open-Meteo en HTTPS (paquet de certificats), snapshot sous mutex ; tâche `mqtt` (cœur 0, 250 ms) : `esp-mqtt` (testament `offline` retenu, keepalive 30 s, reconnexion par le client) exécutant les actions du `MqttPublisher` pur — découverte QoS 1 retenue, état QoS 0 retenu, renvoi sur `<prefixe>/status` | oui (transport) |
 | `clock_web` | `esp_http_server`, page embarquée, DNS captif, mDNS | oui (transport) |
 | `clock_settings` | blobs NVS versionnés par domaine, copie partagée sous mutex, compteur de version scruté par la tâche d'affichage (application à chaud) | oui (NVS, FreeRTOS) |
 | `main/app_main.cpp` | câblage | oui |
@@ -93,6 +93,7 @@ volontaire.
 | `display` | **la plus haute** des tâches applicatives | 25 Hz (40 ms) | Compose la scène depuis le **dernier état publié**, applique gamma et plafond de courant, pousse la trame. **Aucune attente réseau, aucun verrou long.** |
 | `periodique` | moyenne | 1 Hz | Lit l'ADC et le bus I²C (AHT21 puis ENS160, ~100 ms), fait avancer `brightness`, `air_quality`, `network`, `alerts`, publie l'état. L'I²C ne vit **jamais** dans la tâche d'affichage. |
 | `homeassistant` | basse | événementielle | WebSocket Home Assistant, météo de repli. |
+| `mqtt` | basse | 250 ms | Lit l'état air / lumière / heure, fait avancer `MqttPublisher`, publie par `esp-mqtt`. |
 | `web` | **la plus basse** | événementielle | HTTP, DNS captif. |
 
 Les états partagés sont publiés par **copie atomique d'une structure simple**

@@ -67,6 +67,7 @@ void default_settings_into(Settings& s) noexcept {
     s.system = default_system_settings();
     s.air = default_air_settings();
     default_ha_settings_into(s.ha);
+    s.mqtt = homeassistant::default_mqtt_config();
 }
 
 Settings default_settings() noexcept {

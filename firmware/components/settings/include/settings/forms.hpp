@@ -34,6 +34,8 @@ extern const char* const kHaFields[];
 extern const std::size_t kHaFieldCount;
 extern const char* const kHaValueFields[];
 extern const std::size_t kHaValueFieldCount;
+extern const char* const kMqttFields[];
+extern const std::size_t kMqttFieldCount;
 
 /**
  * @brief Applies a form to a copy of @p current; writes @p out only if everything is valid.
@@ -53,6 +55,10 @@ bool apply_ha_form(const char* body, std::size_t len, const HaSettings& current,
 /// One tracked value (index 0..7), all or nothing.
 bool apply_ha_value_form(const char* body, std::size_t len, std::size_t index, const HaSettings& current,
                          HaSettings& out, FormError& err) noexcept;
+/// MQTT link; the password is replaced only when `mot_de_passe` is non-empty, cleared by `effacer_mdp=1`,
+/// an empty `prefixe` means the default.
+bool apply_mqtt_form(const char* body, std::size_t len, const homeassistant::MqttConfig& current,
+                     homeassistant::MqttConfig& out, FormError& err) noexcept;
 
 /// Enumerations, as the page shows them (French labels are the API values).
 const char* axis_name(display::FirstAxis a) noexcept;

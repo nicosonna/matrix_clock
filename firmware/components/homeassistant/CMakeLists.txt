@@ -9,8 +9,9 @@ idf_component_register(
         "src/reassembler.cpp"
         "src/ws_client.cpp"
         "src/weather.cpp"
+        "src/mqtt.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES alerts
+    REQUIRES alerts air_quality
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE

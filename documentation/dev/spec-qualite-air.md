@@ -263,8 +263,8 @@ exactement le genre de valeur silencieusement fausse qu'on refuse.
 
 | Fonction | Broche | Note |
 |---|---|---|
-| `SDA` | **GPIO21** | I²C0, 100 kHz (400 kHz possible) |
-| `SCL` | **GPIO22** | — |
+| `SDA` | **GPIO27** | I²C0, 100 kHz (400 kHz possible). Câblage relevé le 2026-11-05. |
+| `SCL` | **GPIO26** | Broches ADC2 toutes les deux : sans importance pour un bus numérique. |
 
 - Tirages de 4,7 kΩ : en général **déjà sur le module**, à vérifier avant d'en
   ajouter (deux jeux en parallèle font chuter les temps de montée).

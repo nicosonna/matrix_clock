@@ -19,13 +19,13 @@ chaque cas est dans la spec citée.
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| AFF-01 | `panneau::index()` | Bijection {0..31}×{0..7} → {0..255} pour les 8 combinaisons origine × axe × serpentin | À ÉCRIRE |
-| AFF-02 | `panneau::index()` | Modules 8×8 chaînés corrects sur les 4 modules | À ÉCRIRE |
-| AFF-03 | `TamponImage::pixel()` | Écriture hors dalle ignorée, compteur incrémenté | À ÉCRIRE |
-| AFF-04 | `gamma::table` | Monotone croissante, `[0]=0`, `[255]=255` | À ÉCRIRE |
-| AFF-05 | `courant::estimer()` | Blanc plein = 15,6 A ±1 % ; dalle éteinte = 256 mA | À ÉCRIRE |
-| AFF-06 | `courant::ecreter()` | Budget respecté, rapports r:g:b conservés | À ÉCRIRE |
-| AFF-07 | `settings::valider_affichage()` | Budget < courant de repos refusé | À ÉCRIRE |
+| AFF-01 | `display::led_index()` | Bijection {0..31}×{0..7} → {0..255} pour les **32** combinaisons origine × axe × serpentin × modules ; positions connues des câblages usuels | **PASSE** 2026-11-05 |
+| AFF-02 | `display::led_index()` | Modules 8×8 chaînés corrects sur les 4 modules ; (x, y) hors dalle et config invalide refusés | **PASSE** 2026-11-05 |
+| AFF-03 | `FrameBuffer::set/get/fill_rect` | Écriture hors dalle ignorée, compteur incrémenté, rectangle clippé (pas de débordement `uint8_t`), `clear()` garde le compteur | **PASSE** 2026-11-05 |
+| AFF-04 | `display::kGammaTable` | Monotone croissante, `[0]=0`, `[255]=255`, `[64]=12`, `[128]=56`, `[192]=137` (table générée par `tools/gen_gamma.py`) | **PASSE** 2026-11-05 |
+| AFF-05 | `display::estimate_current_ua()` | Blanc plein = 15 616 000 µA exactement ; dalle éteinte = 256 000 µA | **PASSE** 2026-11-05 |
+| AFF-06 | `display::apply_current_limit()` | Budget jamais dépassé, jamais sous-atteint de plus de 5 % (plancher d'arrondi), canaux uniformes, teinte 4:2:1 conservée à ±2, trame sombre intacte, trame noire au budget minimal | **PASSE** 2026-11-05 |
+| AFF-07 | `display::is_valid_budget_ma()` | 400–15 000 mA ; budget invalide ⇒ repli sur 2000 ; minimum > courant de repos | **PASSE** 2026-11-05 |
 | AFF-08 | `police_*` | Largeurs exactes ; glyphe absent ⇒ rectangle vide | À ÉCRIRE |
 | AFF-09 | `translitere()` | Accents, minuscules, caractère inconnu | À ÉCRIRE |
 | AFF-10 | `scene_heure()` | `HH:MM` en 5×7 = 25 px, centré sur 32 | À ÉCRIRE |
@@ -34,6 +34,8 @@ chaque cas est dans la spec citée.
 | AFF-13 | `Ordonnanceur::step()` | Notification P≥1 interrompt puis rend la main à la scène interrompue | À ÉCRIRE |
 | AFF-14 | `Defilement` | Vitesse respectée sans tremblement, troncature 128 car., fin de boucles | À ÉCRIRE |
 | AFF-15 | `Ordonnanceur::step()` | Débordement 32 bits du compteur ms sans saut | À ÉCRIRE |
+| AFF-16 | zone d'icônes | Alternance 3 s, priorité alerte > logo air > liaison, glyphes du logo air | À ÉCRIRE |
+| AFF-17 | `display::render()` | Chaîne complète : luminosité **avant** gamma (128 → 56), pixel (1,0) sur la LED 15, luminosité 0 ⇒ tout éteint, blanc plein écrêté même à 15 A, mapping invalide ⇒ trame noire et `false` ; **aucune allocation** (GEN-04) | **PASSE** 2026-11-05 |
 
 ### 1.2 `brightness` — `dev/spec-luminosite.md` §5
 
@@ -191,11 +193,11 @@ l'horloge.
 
 | Id | Vérifie | Statut |
 |---|---|---|
-| GEN-01 | Les composants purs compilent avec un **g++ nu** (aucun include ESP-IDF) | À ÉCRIRE |
-| GEN-02 | Build host en `-Werror` avec tout l'arsenal d'avertissements | À ÉCRIRE |
-| GEN-03 | Couverture ≥ 95 % de la logique pure, échec en dessous | À ÉCRIRE |
-| GEN-04 | `operator new` global armé après init ⇒ **aucune allocation** sur tous les chemins testés | À ÉCRIRE |
-| GEN-05 | Harnais **sans `assert()`** : code de retour non nul au moindre échec, nombre de vérifications compté | À ÉCRIRE |
+| GEN-01 | Les composants purs compilent avec un **g++ nu** (aucun include ESP-IDF) | **PASSE** 2026-11-05 (`display`, g++ 15.2 MinGW) |
+| GEN-02 | Build host en `-Werror` avec tout l'arsenal d'avertissements | **PASSE** 2026-11-05 |
+| GEN-03 | Couverture ≥ 95 % de la logique pure, échec en dessous | **PASSE** 2026-11-05 (`display` : 128 lignes, **100 %**) |
+| GEN-04 | `operator new` global armé après init ⇒ **aucune allocation** sur tous les chemins testés | **PASSE** 2026-11-05 (`AllocGuard` autour de `render()`, AFF-17) |
+| GEN-05 | Harnais **sans `assert()`** : code de retour non nul au moindre échec, nombre de vérifications compté | **PASSE** 2026-11-05 (8357 vérifications ; l'échec initial de AFF-06 a bien fait sortir en erreur) |
 
 ---
 
@@ -205,7 +207,7 @@ l'horloge.
 
 | Id | Procédure | Attendu | Statut |
 |---|---|---|---|
-| HW-AFF-01 | Motif `pixel`, `ligne`, `diagonale`, `plein` | Correspondance validée à l'œil, wizard concluant | À FAIRE |
+| HW-AFF-01 | Chenillard physique (LED 0 rouge, LED 255 bleue, point blanc) puis motifs `pixel`, `ligne`, `diagonale`, `plein` | Câblage lu au chenillard, puis motifs géométriquement justes à l'œil | **PASSE** 2026-11-05 : rouge haut-gauche, parcours vertical serpentin, bleue haut-droite ⇒ (colonne, serpentin, haut-gauche) ; pixel haut-gauche, colonne verticale à gauche, diagonale confirmés par Nicolas. Dorsales **SPI/DMA et RMT** toutes deux fonctionnelles. |
 | HW-AFF-02 | Blanc, luminosité 64, **pince ampèremétrique** | Courant mesuré à ±20 % de l'estimation de la page `/` | À FAIRE |
 | HW-AFF-03 | Tension **à la dalle** sur scène `plein` | ≥ 4,7 V | À FAIRE |
 | HW-AFF-04 | Observation à 25 trames/s, lisibilité à 4 m | Aucun scintillement, heure lisible | À FAIRE |

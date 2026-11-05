@@ -1,0 +1,33 @@
+# sdkconfig defaults (regenerates sdkconfig on the first build).
+# Board-agnostic on purpose: flash size and partition table are PER-BOARD settings
+# (overlay sdkconfig.defaults.<board>, stacked with
+# -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.<board>").
+# The default build without -DSDKCONFIG_DEFAULTS picks up sdkconfig.defaults AND
+# sdkconfig.defaults.horloge-v1 automatically? No — ESP-IDF only reads this file.
+# The firmware/README.md build command stacks the horloge-v1 overlay explicitly.
+
+CONFIG_IDF_TARGET="esp32"
+
+# Safety coding standard (CLAUDE.md): no exceptions, no RTTI.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+# FreeRTOS tick at 1 ms: vTaskDelay(pdMS_TO_TICKS(x)) is exact to the millisecond.
+CONFIG_FREERTOS_HZ=1000
+
+# Task watchdog on: a stuck task reboots the board instead of freezing silently.
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=y
+
+# OTA rollback: a new image that does not confirm itself is reverted on the next
+# boot (spec-serveur-web.md section 5). app_main confirms once the panel is up.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Custom partition table (two OTA slots), see partitions.csv.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"

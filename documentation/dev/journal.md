@@ -5,6 +5,83 @@
 
 ---
 
+## 2026-11-05 (suite 5) — Premier code : squelette ESP-IDF et composant `display`
+
+**Quoi.** Étapes 1 et 2 de l'ordre de la phase 1 (`cadrage-fonctionnel.md` §4) :
+
+- `firmware/` : `CMakeLists.txt` (projet `matrix_clock`, `PROJECT_VER 0.1.0`),
+  `partitions.csv` (4 Mo, deux emplacements OTA de 1920 Ko, NVS 48 Ko),
+  `sdkconfig.defaults` (pas d'exceptions/RTTI, tick 1 ms, watchdog de tâche,
+  rollback OTA) et la surcouche `sdkconfig.defaults.horloge-v1` (flash 4 Mo,
+  DIO 40 MHz, profil de carte).
+- `clock_board` : brochage `constexpr` sélectionné par Kconfig, profils
+  `horloge-v1` et `devkit`. **I²C relevé sur GPIO27 (SDA) / GPIO26 (SCL)** à la
+  demande de Nicolas ; la proposition de bouton passe de GPIO27 à GPIO25.
+- `display` (pur, anglais) : `FrameBuffer` (hors dalle ignoré et compté),
+  `led_index()` (origine × axe × serpentin × modules, bijection prouvée pour
+  les 32 combinaisons), `kGammaTable` (générée par `tools/gen_gamma.py`),
+  `estimate_current_ua()` / `apply_current_limit()` (écrêtage proportionnel en
+  virgule fixe Q8, repos non écrêtable), `render()` (luminosité → gamma →
+  plafond → correspondance, sortie RGB en ordre physique).
+- `clock_display` : `LedPanel` sur `espressif/led_strip` **2.5.5**, dorsale
+  SPI/DMA par défaut, RMT par Kconfig.
+- `main/app_main.cpp` : efface la dalle, confirme l'image OTA, fait tourner
+  les **quatre motifs de mise en service** (pixel, colonne, diagonale, blanc)
+  toutes les 3 s en loguant le courant estimé et l'écrêtage.
+- Harnais host `firmware/test/` : macros `CHECK*` sans `assert`, **piège
+  `operator new`** (`AllocGuard`), agrégation gcov, échec sous 95 %.
+
+**Résultats.** Tests host : **8357 vérifications, 0 échec, couverture
+100 %** (128 lignes de `display`). `idf.py build` **propre, sans
+avertissement** ; `matrix_clock.bin` = **227 Ko**, 88 % de l'emplacement OTA
+de 1920 Ko libres.
+
+**Ce que les tests ont attrapé.** Le premier passage de AFF-06 a **échoué** :
+j'attendais l'écrêtage à 1 % du budget, il tombe à ~3 % en dessous (plancher sur
+l'échelle 29/256 puis sur chaque canal 255 → 28). Le budget n'est jamais
+dépassé, c'est l'invariant qui compte ; l'attente est passée à « jamais plus de
+5 % en dessous », consigné dans le test. Le harnais a bien rendu un code
+d'erreur (GEN-05 vérifié en vrai).
+
+**Pièges notés.** `CHECK(a == Rgb{1,2,3})` : les virgules de l'agrégat
+cassent la macro, il faut une paire de parenthèses. Un en-tête public qui inclut
+`led_strip.h` impose `espressif__led_strip` dans `REQUIRES`, pas en privé.
+
+**Flashé sur COM21** (à la demande de Nicolas) : démarrage propre, table de
+partitions 4 Mo relue par le bootloader, `led_panel: SPI backend (DMA) on
+GPIO13: ESP_OK`, les quatre motifs s'enchaînent toutes les 3 s. Estimations
+loguées à luminosité 48 : pixel 257 mA, colonne 259 mA, diagonale 271 mA,
+**blanc plein 617 mA** (gamma(48) = 5 : 256 × 3 × 5 × 20 mA / 255 + 256 mA de
+repos — cohérent). Le CPU tourne à **160 MHz** (défaut IDF) : 240 MHz
+possible, à décider (todo).
+
+**Correspondance : le schéma du fabricant était faux, le chenillard a
+tranché.** Sur le dessin fourni par Nicolas (rangées, entrée bas-droite) j'avais
+passé le défaut à (ligne, serpentin, bas-droite) ; les motifs semblaient faux.
+Un **chenillard physique** (LED 0 rouge fixe, LED 255 bleue fixe, point blanc
+dans l'ordre du ruban, ajouté à `app_main`) a montré : rouge **haut-gauche**,
+parcours **vertical colonne par colonne**, bleue **haut-droite** — donc
+serpentin. Défaut remis à **(colonne, serpentin, haut-gauche)**, test AFF-01
+complété par ces positions (LED 0 en (0,0), LED 255 en (31,0), LED 15 en (1,0)).
+Leçon consignée dans la fiche carte : on ne se fie qu'à ce qu'on allume. Le
+schéma reste utile pour le **fil d'alimentation central** (injection).
+
+**Premier allumage.** DIN confirmé sur **GPIO13**. Une alerte « la dalle
+montre n'importe quoi » s'est révélée une **fausse alerte** (Nicolas : l'écran
+était juste). Au passage, la dorsale **RMT** a été construite et flashée en
+contre-essai (`sdkconfig.defaults.rmt`, `build-rmt/`) et elle affiche aussi
+proprement : **les deux dorsales fonctionnent** sur cette dalle. Le défaut reste
+**SPI/DMA** ; l'overlay RMT est conservé comme outil de diagnostic.
+
+**HW-AFF-01 validé** : avec la correspondance mesurée, Nicolas confirme pixel
+en haut à gauche, colonne verticale au bord gauche, diagonale. La mise en
+service matérielle de l'affichage est faite, en SPI/DMA.
+
+**Non vérifié.** Le courant **réel** à la pince (HW-AFF-02), la tension à la
+dalle (HW-AFF-03), la charge processeur SPI vs RMT.
+
+---
+
 ## 2026-11-05 (suite 4) — Carte identifiée : compatible
 
 `esptool flash_id` sur la carte désignée par Nicolas (**COM21**, CP210x) :

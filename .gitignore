@@ -1,11 +1,15 @@
 # ESP-IDF
 firmware/build/
 firmware/build-*/
+# idf.py -B is relative to the current directory: catch a build dir created at the root by mistake.
+/build/
+/build-*/
 firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/managed_components/
 firmware/dependencies.lock
 firmware/test/build/
+firmware/test/build-cov/
 firmware/test/coverage/
 
 # Host tests / tooling

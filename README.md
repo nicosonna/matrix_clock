@@ -46,7 +46,7 @@ C++17 with a safety-oriented coding standard.
 |---|---|---|
 | WS2812B data | GPIO13 | `led_strip` SPI backend (DMA); level shifter recommended |
 | Photoresistor | GPIO33 | ADC1_CH5 — ADC1 works with Wi-Fi on |
-| ENS160 + AHT21 | GPIO21 / GPIO22 | I²C, `0x53` + `0x38`, mount it away from the LED heat |
+| ENS160 + AHT21 | GPIO27 (SDA) / GPIO26 (SCL) | I²C, `0x53` + `0x38`, mount it away from the LED heat |
 
 Power: 5 V / 5 A minimum, injected at both ends of the panel. Details, pitfalls
 and the current budget are in `documentation/cartes/horloge-v1/README.md`.

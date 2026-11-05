@@ -1,0 +1,9 @@
+# Diagnostic overlay: RMT backend instead of SPI, in its own build directory so
+# the normal build is untouched. Run it FROM firmware/ (idf.py -B is relative to
+# the current directory, not to -C: run from the repo root it creates ./build-rmt
+# at the root, which is why .gitignore also lists /build-*/):
+#   cd firmware
+#   idf.py -B build-rmt -DSDKCONFIG=build-rmt/sdkconfig `
+#     -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.horloge-v1;sdkconfig.defaults.rmt" build
+#   idf.py -B build-rmt -DSDKCONFIG=build-rmt/sdkconfig -p COM21 flash
+CONFIG_CLOCK_LED_BACKEND_RMT=y

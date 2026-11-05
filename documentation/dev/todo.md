@@ -7,7 +7,7 @@
 
 ## Décisions en attente (bloquent peu, mais à trancher)
 
-- [ ] **Q1 — bouton physique** sur GPIO27 ? Sans lui : aucun portail forcé
+- [ ] **Q1 — bouton physique** sur GPIO25 ? Sans lui : aucun portail forcé
       hors page web. Proposition : court = scène suivante, long 5 s = portail,
       très long 15 s = usine. (Pas d'acquittement : EX-46.)
 - [x] ~~Q3 — fuseau horaire par défaut~~ : `Europe/Zurich`, réglable sur la page
@@ -26,20 +26,19 @@
 
 ## Phase 1 — à faire, dans l'ordre
 
-- [ ] Squelette ESP-IDF : `firmware/CMakeLists.txt`, `main/`, `partitions.csv`
-      (table de `spec-serveur-web.md` §5), `sdkconfig.defaults`,
-      `sdkconfig.defaults.horloge-v1`, build propre.
-- [ ] `clock_board` : brochage `constexpr` + Kconfig, profils `horloge-v1` et
-      `devkit`.
-- [ ] Harnais de test host : `firmware/test/` (CMake + g++),
-      `run_host_tests.sh`, macros `CHECK*` **sans `assert`**, agrégation gcov,
-      échec sous 95 %, **et le test `operator new`** qui interdit l'allocation
-      après init.
-- [ ] `display` pur : tampon, correspondance, gamma, plafond de courant
-      (`AFF-01` → `AFF-07`).
-- [ ] `clock_display` : `espressif/led_strip`, dorsale **SPI/DMA**,
-      effacement explicite au boot, motifs de test. **Mesurer** la charge
-      processeur SPI vs RMT et consigner au journal.
+- [x] ~~Squelette ESP-IDF~~ : `CMakeLists.txt`, `main/`, `partitions.csv`,
+      `sdkconfig.defaults` + surcouche `horloge-v1`, build propre (2026-11-05).
+- [x] ~~`clock_board`~~ : profils `horloge-v1` et `devkit`, I²C sur 27/26
+      (2026-11-05).
+- [x] ~~Harnais de test host~~ : `CHECK*` sans `assert`, `AllocGuard`
+      (`operator new` piégé), gcov, échec sous 95 % (2026-11-05).
+- [x] ~~`display` pur~~ : `AFF-01` → `AFF-07` + `AFF-17`, 100 % couvert
+      (2026-11-05).
+- [x] ~~`clock_display`~~ : `led_strip` 2.5.5, SPI/DMA, chenillard et motifs
+      vérifiés sur la dalle (HW-AFF-01, 2026-11-05).
+- [ ] **Mesurer** la charge processeur SPI vs RMT (les deux dorsales marchent ;
+      overlay `sdkconfig.defaults.rmt`) et consigner au journal.
+- [ ] HW-AFF-02/03 : courant à la pince et tension à la dalle sur blanc plein.
 - [ ] Polices 5×7, 3×5, 3×4 + `translitere()` + scènes + défilement
       (`AFF-08` → `AFF-14`).
 - [ ] `brightness` pur (`LUM-01` → `LUM-14`) ; `clock_hal` ADC1 oneshot +
@@ -126,6 +125,9 @@
       lot de LEDs réel (vérification 2 de la fiche carte). Un écart > 20 % se
       corrige dans la constante, pas dans le budget.
 - [ ] Taille de la page gzippée à relever **à chaque build** (budget 60 Ko).
+- [ ] CPU à **160 MHz** par défaut (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ`) : passer
+      à 240 MHz si le rendu + WiFi + HTTP le demandent ; à mesurer, pas à
+      supposer.
 - [ ] **D10** — auto-échauffement du module air : décider du déport (Q10) et
       relever l'écart réel (HW-AIR-05). Un décalage qui dépend de la scène
       affichée ne se corrige pas en logiciel.

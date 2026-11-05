@@ -1,0 +1,10 @@
+# Per-board overlay — horloge-v1 (ESP32-WROOM-32 devkit, 4 MB, no PSRAM).
+# Stack it on top of the common defaults:
+#   idf.py -C firmware -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.horloge-v1" build
+CONFIG_CLOCK_BOARD_HORLOGE_V1=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+# The board read on 2026-11-05 (ESP32-D0WD-V3 rev 3.0, GD25Q32) runs DIO at 40 MHz
+# without trouble; faster modes can be tried once the panel driver is in place.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y

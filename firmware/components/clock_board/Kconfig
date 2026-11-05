@@ -1,0 +1,25 @@
+menu "matrix_clock - target board"
+
+choice CLOCK_BOARD
+    prompt "Pin profile"
+    default CLOCK_BOARD_HORLOGE_V1
+    help
+      Selects the compiled pin profile. See documentation/cartes/.
+
+config CLOCK_BOARD_HORLOGE_V1
+    bool "horloge-v1 (ESP32-WROOM-32 devkit, 4 MB, no PSRAM)"
+    help
+      WS2812B 8x32 data on GPIO13 (SPI2 MOSI), photoresistor on GPIO33
+      (ADC1_CH5), ENS160+AHT21 on I2C GPIO27 (SDA) / GPIO26 (SCL).
+      See documentation/cartes/horloge-v1/README.md.
+
+config CLOCK_BOARD_DEVKIT
+    bool "bare devkit on the bench (same pins, nothing has to be connected)"
+    help
+      Same pin plan as horloge-v1, for a board with no panel attached: driving
+      an unconnected data pin is harmless. Exists so a second devkit can run the
+      firmware for network / web / Home Assistant work without the matrix.
+
+endchoice
+
+endmenu

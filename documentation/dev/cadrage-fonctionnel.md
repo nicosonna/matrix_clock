@@ -146,9 +146,9 @@ Détail et pièges : `../cartes/horloge-v1/README.md`.
 |---|---|---|
 | Données de la dalle WS2812B | GPIO13 | MOSI de SPI2, dorsale SPI **avec DMA** du composant `led_strip`. Résistance série 330–470 Ω. |
 | Photorésistance | **GPIO33** | ADC1_CH5. ADC1 **fonctionne avec le WiFi actif** (ADC2 non). Diviseur avec une résistance fixe. |
-| **ENS160 + AHT21** | **GPIO21 (SDA) / GPIO22 (SCL)** | I²C0, adresses `0x53` (ENS160) et `0x38` (AHT21). Module **déporté** hors du flux de chaleur de la dalle. |
-| Bouton (proposition, §5) | GPIO27 | Changer de scène, forcer le portail, réglages d'usine. **Pas d'acquittement** (EX-46). Non décidé. |
-| RTC DS3231 (phase 3) | GPIO21/22 | Même bus I²C (`0x68`, pas de conflit). Garderait l'heure pendant une coupure. Non décidé. |
+| **ENS160 + AHT21** | **GPIO27 (SDA) / GPIO26 (SCL)** | I²C0, adresses `0x53` (ENS160) et `0x38` (AHT21). Câblage relevé le 2026-11-05. Module **déporté** hors du flux de chaleur de la dalle. |
+| Bouton (proposition, §5) | GPIO25 | Changer de scène, forcer le portail, réglages d'usine. **Pas d'acquittement** (EX-46). Non décidé. |
+| RTC DS3231 (phase 3) | GPIO27/26 | Même bus I²C (`0x68`, pas de conflit). Garderait l'heure pendant une coupure. Non décidé. |
 
 Alimentation : **5 V / 5 A minimum**, injection aux deux extrémités de la dalle,
 condensateur de 1000 µF au plus près, masse commune avec l'ESP32.
@@ -205,7 +205,7 @@ TLS sur la liaison Home Assistant, police accentuée sur 8 lignes.
 
 | # | Question | Pourquoi ça compte | Proposition |
 |---|---|---|---|
-| Q1 | **Un bouton physique** sur la carte ? | Sans lui, aucun moyen de forcer le portail sans la page web. Un appui long « j'ouvre le portail » sauve une mise en service ratée. *(Il ne servirait **pas** à acquitter : EX-46.)* | Oui, un bouton sur GPIO27 : appui court = scène suivante, appui long 5 s = portail forcé, appui très long 15 s = réglages d'usine. |
+| Q1 | **Un bouton physique** sur la carte ? | Sans lui, aucun moyen de forcer le portail sans la page web. Un appui long « j'ouvre le portail » sauve une mise en service ratée. *(Il ne servirait **pas** à acquitter : EX-46.)* | Oui, un bouton sur GPIO25 : appui court = scène suivante, appui long 5 s = portail forcé, appui très long 15 s = réglages d'usine. |
 | Q2 | **RTC de secours** (DS3231) ? | Après une coupure sans réseau, l'horloge affiche `--:--` jusqu'à ce que la box revienne. Avec un DS3231 elle affiche l'heure tout de suite. | Phase 3, sauf si la coupure sans réseau est un cas fréquent chez toi. |
 | ~~Q3~~ | ~~Fuseau horaire par défaut ?~~ | **Tranché le 2026-11-05** : `Europe/Zurich` par défaut, réglable sur la page (EX-03). | — |
 | Q4 | **Quelles entités** Home Assistant afficher au départ ? | Dimensionne le nombre de valeurs suivies et les scènes par défaut. | Température extérieure + température d'une pièce, le reste réglable. **À préciser.** |

@@ -1,0 +1,12 @@
+# Partition table — ESP32-WROOM-32, 4 MB flash, board horloge-v1
+#
+# Frozen once and for all: repartitioning later would erase the NVS, i.e. every
+# setting of the installation. Two application slots for OTA with rollback.
+# 4 MB leaves no room for a data partition: the web page is embedded in the image.
+#
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0xC000,
+otadata,    data, ota,     0x15000,  0x2000,
+phy_init,   data, phy,     0x17000,  0x1000,
+ota_0,      app,  ota_0,   0x20000,  0x1E0000,
+ota_1,      app,  ota_1,   0x200000, 0x1E0000,

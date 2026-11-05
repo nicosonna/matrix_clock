@@ -1,6 +1,8 @@
 # Architecture — Horloge
 
-> État au **2026-11-05** : **specs seules, aucun code**. Ce document décrit la
+> État au **2026-11-05** : squelette ESP-IDF, `clock_board`, `display` (pur,
+> 100 % couvert) et `clock_display` (compilé, non vérifié sur la dalle) existent ;
+> **le reste est spécifié, pas écrit**. Ce document décrit la
 > cible et les choix arrêtés. Il se met à jour dès que la structure du dépôt bouge.
 
 ---

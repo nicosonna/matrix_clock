@@ -27,9 +27,11 @@ Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
 > avant toute implémentation**. Quand un dossier est créé/renommé ou qu'un choix
 > est arrêté, **mettre à jour ce fichier** pour qu'il reste fidèle au dépôt.
 
-> ⚠️ **État du dépôt : specs seules.** Aucun code n'est écrit à ce jour
-> (2026-11-05). Les composants décrits ci-dessous sont la **cible**, pas
-> l'existant. `dev/journal.md` et `dev/todo.md` disent où on en est.
+> ⚠️ **État du dépôt (2026-11-05)** : squelette ESP-IDF, `clock_board`,
+> composant pur **`display`** (tampon, correspondance, gamma, plafond de
+> courant, rendu — 100 % couvert) et pilote `clock_display` avec les motifs de
+> mise en service. **Tout le reste** des composants décrits ci-dessous est la
+> **cible**, pas l'existant. `dev/journal.md` et `dev/todo.md` disent où on en est.
 
 ## Structure du dépôt
 
@@ -245,7 +247,7 @@ Contraintes **impératives** :
 - Cible **`horloge-v1`** : devkit **ESP32-WROOM-32** (4 Mo de flash, **pas de
   PSRAM**), dalle **WS2812B 8×32** (256 LEDs), **photorésistance sur GPIO33**
   (ADC1_CH5 — ADC1 fonctionne avec le WiFi actif, ADC2 non), module
-  **ENS160 + AHT21** sur I²C (GPIO21 SDA / GPIO22 SCL, adresses `0x53` et
+  **ENS160 + AHT21** sur I²C (**GPIO27 SDA / GPIO26 SCL**, adresses `0x53` et
   `0x38`).
 - ⚠️ **Auto-échauffement** : 256 LEDs chauffent le boîtier ; un AHT21 à côté lit
   plusieurs degrés de trop, et cette erreur se propage à l'AQI de l'ENS160 par la

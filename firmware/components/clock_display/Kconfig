@@ -1,0 +1,20 @@
+menu "matrix_clock - LED panel driver"
+
+choice CLOCK_LED_BACKEND
+    prompt "led_strip backend"
+    default CLOCK_LED_BACKEND_SPI
+    help
+      SPI uses DMA and costs the CPU nothing per frame. RMT on the classic ESP32
+      has no DMA: 256 LEDs x 24 bits x 1.25 us = 7.7 ms of interrupt-fed
+      transmission per frame, competing with Wi-Fi. Kept selectable in case the
+      SPI backend misbehaves on a given panel.
+
+config CLOCK_LED_BACKEND_SPI
+    bool "SPI2 with DMA (default)"
+
+config CLOCK_LED_BACKEND_RMT
+    bool "RMT (no DMA on ESP32)"
+
+endchoice
+
+endmenu

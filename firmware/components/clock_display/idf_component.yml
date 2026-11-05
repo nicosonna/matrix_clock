@@ -1,0 +1,5 @@
+## Managed component dependencies (fetched by idf.py from the component registry
+## into firmware/managed_components/, which is git-ignored).
+dependencies:
+  espressif/led_strip: "^2.5.5"
+  idf: ">=5.3"

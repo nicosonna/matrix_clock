@@ -44,9 +44,9 @@ L'adresse MAC relevée n'est volontairement pas consignée ici : dépôt public.
 |---|---|---|---|
 | Données dalle WS2812B | **GPIO13** | MOSI de SPI2 (`led_strip`, dorsale SPI **avec DMA**) | Sortie uniquement ; le SPI passe par la matrice GPIO, donc une autre broche libre convient aussi |
 | Photorésistance | **GPIO33** | **ADC1_CH5** | ⚠️ **ADC1 obligatoire** : ADC2 est indisponible dès que le WiFi tourne |
-| **ENS160 + AHT21** | **GPIO21 (SDA) / GPIO22 (SCL)** | I²C0, 100 kHz | Tirages 4,7 kΩ en général déjà sur le module ; câble < 30 cm |
-| Bouton *(proposition Q1, non décidé)* | GPIO27 | GPIO entrée + tirage interne | Ni strapping, ni JTAG, ni flash |
-| RTC DS3231 *(phase 3, non décidé)* | GPIO21 / GPIO22 | même bus I²C, `0x68` | Pas de conflit d'adresse avec le module air |
+| **ENS160 + AHT21** | **GPIO27 (SDA) / GPIO26 (SCL)** | I²C0, 100 kHz | Câblé ainsi sur la carte (2026-11-05). Tirages 4,7 kΩ en général déjà sur le module ; câble < 30 cm. GPIO26/27 sont des broches ADC2 : sans importance pour un bus numérique. |
+| Bouton *(proposition Q1, non décidé)* | GPIO25 | GPIO entrée + tirage interne | Ni strapping, ni JTAG, ni flash, ni sortie au boot |
+| RTC DS3231 *(phase 3, non décidé)* | GPIO27 / GPIO26 | même bus I²C, `0x68` | Pas de conflit d'adresse avec le module air |
 
 ### Broches à ne pas utiliser sur ce module
 
@@ -58,6 +58,25 @@ L'adresse MAC relevée n'est volontairement pas consignée ici : dépôt public.
 | ADC2 (GPIO0, 2, 4, 12–15, 25–27) | Inutilisable en ADC dès que le WiFi est actif. |
 
 ---
+
+## 2 bis. Câblage de la dalle — mesuré au chenillard (2026-11-05)
+
+Le **schéma du fabricant** montrait un ruban en rangées avec l'entrée en bas à
+droite : **il ne décrit pas cette dalle**. Le chenillard physique (LED 0 rouge,
+LED 255 bleue, point blanc dans l'ordre du ruban) a donné la vérité :
+
+| Observation | Conséquence |
+|---|---|
+| LED 0 (rouge) **en haut à gauche** | `origin = TopLeft` |
+| Le point descend une **colonne de 8**, puis passe à la suivante | `first_axis = Column` |
+| LED 255 (bleue) **en haut à droite** | la 32ᵉ colonne **remonte** ⇒ `serpentine = true` (sans serpentin elle serait en bas à droite) |
+| Alimentation : fil rouge/blanc **au milieu** de la dalle (schéma) | point d'**injection central** prévu par le fabricant, à utiliser en plus de l'entrée |
+| Longueur 320 mm | pas de 10 mm |
+
+Correspondance par défaut du firmware (`display::default_panel_map()`) :
+**`Column`, serpentin, `TopLeft`, dalle entière**. Si la dalle est montée dans
+un autre sens, seule l'origine change — le wizard le règle. Leçon : **on ne se
+fie qu'à ce qu'on allume**, jamais à un dessin de catalogue.
 
 ## 3. Courant — la contrainte dimensionnante
 

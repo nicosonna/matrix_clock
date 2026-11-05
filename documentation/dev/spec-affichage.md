@@ -39,8 +39,12 @@ couleur logique (RGB8)
    ▼
    │  4. correspondance (x, y) → index de LED
    ▼
-tampon d'octets GRB → pilote led_strip
+trame RGB en ordre physique → pilote led_strip (qui fait lui-même l'ordre GRB)
 ```
+
+Implémenté le 2026-11-05 (`components/display/`, 100 % couvert) : la logique
+rend une trame **RGB en ordre physique** ; l'ordre des octets sur le fil (GRB)
+appartient au pilote, pas à la logique.
 
 Le gamma vient **après** la luminosité (pour que l'assombrissement reste
 progressif à l'œil) et le plafond **après** le gamma (le courant est
@@ -60,8 +64,10 @@ raison de faire tomber l'affichage) et compté dans un compteur de diagnostic.
 ### 2.2 Gamma
 
 Table `constexpr std::array<uint8_t, 256>`, `sortie = round(255 · (i/255)^2,2)`,
-calculée à la compilation. Propriétés garanties par test : monotone croissante,
-`table[0] == 0`, `table[255] == 255`.
+**générée une fois** par `firmware/tools/gen_gamma.py` et embarquée en littéral
+(`display/gamma.hpp`) : pas de flottant, ni à l'exécution ni à la compilation.
+Propriétés garanties par test (AFF-04) : monotone croissante, `table[0] == 0`,
+`table[255] == 255`, `table[128] == 56`.
 
 ### 2.3 Plafond de courant
 
@@ -89,10 +95,19 @@ serpentin, ou 4 modules 8×8 chaînés). On ne devine pas, on règle :
 
 | Réglage | Valeurs | Défaut |
 |---|---|---|
-| `axe_premier` | `Colonne` (le ruban avance en colonnes de 8) / `Ligne` | `Colonne` |
+| `axe_premier` | `Colonne` (le ruban avance en colonnes de 8) / `Ligne` (rangées de 32) | **`Colonne`** |
 | `serpentin` | oui / non | oui |
-| `origine` | `HautGauche` / `HautDroite` / `BasGauche` / `BasDroite` | `HautGauche` |
+| `origine` | `HautGauche` / `HautDroite` / `BasGauche` / `BasDroite` | **`HautGauche`** |
 | `largeur_module` | 0 (dalle entière) ou 8 (4 modules chaînés) | 0 |
+
+Défauts **mesurés au chenillard physique** le 2026-11-05 sur la dalle en main :
+LED 0 en haut à gauche, colonnes de 8 parcourues de haut en bas puis de bas en
+haut, LED 255 en haut à droite. Le **schéma du fabricant** (rangées, entrée en
+bas à droite) ne décrivait **pas** cette dalle : on ne se fie qu'à ce qu'on
+allume. Monter la dalle dans un autre sens ne change que `origine` ; le wizard
+le détermine. Note : en colonnes de 8, « 4 modules 8×8 chaînés » et « dalle
+entière » donnent les **mêmes index** — `largeur_module` n'a d'effet qu'en
+rangées.
 
 `index(x, y) → uint16_t` est pure, sans branche coûteuse, et **testée sur les
 8 combinaisons** d'origine × axe × serpentin, plus le cas des modules chaînés.
@@ -236,6 +251,7 @@ Tests host du composant pur `display` (identifiants du plan de test) :
 | AFF-14 | Défilement : vitesse respectée sans tremblement (accumulateur), troncature à 128 caractères, fin de boucles. |
 | AFF-15 | Débordement 32 bits du compteur de millisecondes sans saut d'affichage. |
 | AFF-16 | Zone d'icônes : alternance toutes les 3 s, priorité alerte > logo air > liaison ; glyphes 6×6 et 8×8 du logo air dans les bornes. (Couleur et modes du logo : AIR-18, AIR-19.) |
+| AFF-17 | Chaîne `render()` complète : luminosité avant gamma, mapping appliqué, écrêtage, mapping invalide refusé, **aucune allocation**. |
 
 Vérifications matérielles (étape séparée, plan de test) : motif de test,
 correspondance validée à l'œil par le wizard, **courant mesuré à la pince** sur

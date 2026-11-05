@@ -61,3 +61,5 @@ struct AllocGuard {
 
 /// Test suites, defined in their own files.
 void run_display_tests();
+void run_text_tests();
+void run_scenes_tests();

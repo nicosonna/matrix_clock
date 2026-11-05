@@ -26,15 +26,16 @@ chaque cas est dans la spec citée.
 | AFF-05 | `display::estimate_current_ua()` | Blanc plein = 15 616 000 µA exactement ; dalle éteinte = 256 000 µA | **PASSE** 2026-11-05 |
 | AFF-06 | `display::apply_current_limit()` | Budget jamais dépassé, jamais sous-atteint de plus de 5 % (plancher d'arrondi), canaux uniformes, teinte 4:2:1 conservée à ±2, trame sombre intacte, trame noire au budget minimal | **PASSE** 2026-11-05 |
 | AFF-07 | `display::is_valid_budget_ma()` | 400–15 000 mA ; budget invalide ⇒ repli sur 2000 ; minimum > courant de repos | **PASSE** 2026-11-05 |
-| AFF-08 | `police_*` | Largeurs exactes ; glyphe absent ⇒ rectangle vide | À ÉCRIRE |
-| AFF-09 | `translitere()` | Accents, minuscules, caractère inconnu | À ÉCRIRE |
-| AFF-10 | `scene_heure()` | `HH:MM` en 5×7 = 25 px, centré sur 32 | À ÉCRIRE |
-| AFF-11 | `scene_heure()` | `sure == false` ⇒ `--:--` (ni `00:00`, ni temps depuis le boot) | À ÉCRIRE |
-| AFF-12 | `Ordonnanceur::step()` | Rotation, durées, scène à donnée invalide sautée, `Heure` jouée si tout est sauté | À ÉCRIRE |
-| AFF-13 | `Ordonnanceur::step()` | Notification P≥1 interrompt puis rend la main à la scène interrompue | À ÉCRIRE |
-| AFF-14 | `Defilement` | Vitesse respectée sans tremblement, troncature 128 car., fin de boucles | À ÉCRIRE |
-| AFF-15 | `Ordonnanceur::step()` | Débordement 32 bits du compteur ms sans saut | À ÉCRIRE |
+| AFF-08 | `kFont5x7/3x5/3x4`, `text_width()`, `draw_text()` | Largeurs exactes, aucun glyphe ne déborde de sa hauteur, glyphe absent ⇒ boîte vide et curseur avancé, **clipping** gauche/droite/bas sans compteur hors-dalle | **PASSE** 2026-11-05 |
+| AFF-09 | `transliterate()` | Accents Latin-1 (É à ç ÿ ß ñ ø Ì Ù Ð Ý), Œ, `°` → glyphe degré, minuscules, `€`/`×`/`©` → `?`, troncature NUL-terminée, `nullptr`, séquence UTF-8 tronquée | **PASSE** 2026-11-05 |
+| AFF-10 | `draw_clock()` | `HH:MM` = 25 px dans les colonnes 3..27, deux-points étroit (col. 15, lignes 2 et 4), clignotement = −2 pixels, barre des secondes 30 s = 16 px | **PASSE** 2026-11-05 |
+| AFF-11 | `draw_clock()`, `draw_date()` | `sure == false` ⇒ `--:--` (22 pixels, ligne 3 seule), **pas** de barre des secondes, différent de `00:00` ; date vide | **PASSE** 2026-11-05 |
+| AFF-12 | `Scheduler::step()` | Rotation et durées, scène à donnée invalide sautée **ou quittée en cours**, horloge synthétique si tout est sauté et reprise sous 1 s, durée 0 = jusqu'à `finished`, liste invalide ⇒ défaut | **PASSE** 2026-11-05 |
+| AFF-13 | `Scheduler::notify()` | P≥1 interrompt puis rend la main **au temps restant** ; P0 attend la fin de scène ; remplacement seulement par priorité ≥ | **PASSE** 2026-11-05 |
+| AFF-14 | `Scroller` | 20 px/s = 20 px/s exactement à 40 ms comme à 33 ms (pas de dérive), sortie par la gauche à 3,05 s, 2 passages, infini, bornes 5–60, troncature à 128 car., texte vide fini d'emblée | **PASSE** 2026-11-05 |
+| AFF-15 | `Scheduler` | Débordement 32 bits : construction à 0xFFFFF000, transitions et notification à travers le passage à zéro | **PASSE** 2026-11-05 |
 | AFF-16 | zone d'icônes | Alternance 3 s, priorité alerte > logo air > liaison, glyphes du logo air | À ÉCRIRE |
+| AFF-18 | `draw_test_pattern()`, `chaser_frame()` | Pixel = 1, colonne = 8, diagonale = 32 avec (4,1), plein = 256 ; chenillard : marqueurs 0/255, traîne 48/24/12/6, repli modulo 256 | **PASSE** 2026-11-05 |
 | AFF-17 | `display::render()` | Chaîne complète : luminosité **avant** gamma (128 → 56), pixel (1,0) sur la LED 15, luminosité 0 ⇒ tout éteint, blanc plein écrêté même à 15 A, mapping invalide ⇒ trame noire et `false` ; **aucune allocation** (GEN-04) | **PASSE** 2026-11-05 |
 
 ### 1.2 `brightness` — `dev/spec-luminosite.md` §5
@@ -195,9 +196,9 @@ l'horloge.
 |---|---|---|
 | GEN-01 | Les composants purs compilent avec un **g++ nu** (aucun include ESP-IDF) | **PASSE** 2026-11-05 (`display`, g++ 15.2 MinGW) |
 | GEN-02 | Build host en `-Werror` avec tout l'arsenal d'avertissements | **PASSE** 2026-11-05 |
-| GEN-03 | Couverture ≥ 95 % de la logique pure, échec en dessous | **PASSE** 2026-11-05 (`display` : 128 lignes, **100 %**) |
+| GEN-03 | Couverture ≥ 95 % de la logique pure, échec en dessous | **PASSE** 2026-11-05 (`display` : 422 lignes, **99,5 %** ; les 2 lignes restantes sont des branches défensives de `scheduler.cpp` injoignables avec un `enum class` valide) |
 | GEN-04 | `operator new` global armé après init ⇒ **aucune allocation** sur tous les chemins testés | **PASSE** 2026-11-05 (`AllocGuard` autour de `render()`, AFF-17) |
-| GEN-05 | Harnais **sans `assert()`** : code de retour non nul au moindre échec, nombre de vérifications compté | **PASSE** 2026-11-05 (8357 vérifications ; l'échec initial de AFF-06 a bien fait sortir en erreur) |
+| GEN-05 | Harnais **sans `assert()`** : code de retour non nul au moindre échec, nombre de vérifications compté | **PASSE** 2026-11-05 (8530 vérifications ; les échecs initiaux de AFF-06 puis de AFF-12/13/15 ont bien fait sortir en erreur) |
 
 ---
 

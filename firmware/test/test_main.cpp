@@ -55,6 +55,10 @@ void check_eq(int64_t got, int64_t expected, const char* what, int line) {
 int main() {
     std::printf("-- display: frame buffer, panel mapping, gamma, current limit, render\n");
     run_display_tests();
+    std::printf("-- display: fonts, text, transliteration, clock and date scenes\n");
+    run_text_tests();
+    std::printf("-- display: scrolling, scene scheduler, test patterns\n");
+    run_scenes_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

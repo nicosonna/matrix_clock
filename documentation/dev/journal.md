@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-11-05 (suite 6) — Polices, scènes, défilement, ordonnanceur ; `--:--` sur la dalle
+
+**Quoi.** Étape 3 de la phase 1, dans `display` (pur) :
+
+- `font.hpp` / `fonts.cpp` : trois polices colonne-majeure (bit 0 = ligne du
+  haut) — **5×7** (jeu GLCD classique, `' '..'`'`), **3×5** et **3×4** dessinées
+  pour la dalle ; le degré occupe le slot du backtick (`kDegreeChar`).
+- `text.hpp` : `text_width()`, `draw_text()` avec **clipping propre** (un texte
+  qui défile hors dalle n'incrémente pas le compteur hors-dalle), et
+  `transliterate()` : UTF-8 → capitales ASCII, accents Latin-1 et Œ réduits à
+  leur base, `°` → degré, inconnu → `?`, borné et toujours NUL-terminé.
+- `clock_scene.hpp` : `TimeInfo{sure, …}`, `draw_clock()` (25 px, deux-points
+  étroit d'un pixel, clignotement, barre des secondes) qui affiche **`--:--`
+  sans barre** quand `sure` est faux, `draw_date()` (`SAM 05.11` en 3×5, 30 px,
+  rien si pas sûr), abréviations françaises des jours.
+- `scroll.hpp` : `Scroller` à vitesse entière exacte (position en 1/256 px +
+  reste en ms : 20 px/s font 20 px/s à 40 ms comme à 33 ms), 1..n passages ou
+  infini, troncature à 128 caractères.
+- `scheduler.hpp` : rotation des scènes, saut des scènes sans donnée (y compris
+  **en cours** si la donnée disparaît), horloge synthétique si tout est sauté,
+  durée 0 = jusqu'à `finished`, notifications (P≥1 interrompt et rend la main
+  **au temps restant**, P0 attend la fin de scène, remplacement par priorité ≥),
+  débordement 32 bits toléré.
+- `test_patterns.hpp` : les motifs de mise en service et le chenillard
+  physique sortent de `app_main` pour devenir des fonctions pures (le wizard
+  s'en servira tel quel).
+- `app_main` : boucle à **25 i/s** pilotée par l'ordonnanceur ; sans source de
+  temps, la scène Heure montre **`--:--`** avec le deux-points qui clignote, en
+  alternance avec un texte défilant translittéré (« MATRIX CLOCK — ESP-IDF —
+  HEURE NON SYNCHRONISEE »).
+
+**Résultats.** Tests host : **8530 vérifications, 0 échec, couverture 99,5 %**
+(422 lignes ; les deux lignes restantes sont des branches défensives
+injoignables de `scheduler.cpp`). `idf.py build` propre (`esp_timer` ajouté
+aux `REQUIRES` de `main`), image 230 Ko, **flashé sur COM21** : `scene 0`
+(Heure) puis `scene 4` (Défilement) dans les logs, `oob=0`.
+
+**Ce que les tests ont attrapé.** L'ordonnanceur attendait une seconde en
+« horloge synthétique » avant de choisir la première scène : onze échecs d'un
+coup, tous décalés de 1 s — corrigé par un `started_` qui fait choisir dès le
+premier `step()`. Deux pièges de compilation notés : `"\xC3\xA9e"` est **un
+seul** échappement hexadécimal invalide (le `e` est un chiffre hexa), il faut
+couper la chaîne ; et le `.gcda` d'un run précédent fait râler gcov après une
+recompilation (le script les efface désormais avant `ctest`).
+
+**Vérifié sur la dalle** (Nicolas) : `--:--` clignotant puis le texte qui
+défile. **Non vérifié** : la lisibilité des glyphes 3×5 / 3×4 dessinés à la
+main — la date n'apparaît qu'avec une heure sûre, donc à l'étape SNTP.
+
+---
+
 ## 2026-11-05 (suite 5) — Premier code : squelette ESP-IDF et composant `display`
 
 **Quoi.** Étapes 1 et 2 de l'ordre de la phase 1 (`cadrage-fonctionnel.md` §4) :

@@ -252,6 +252,7 @@ Tests host du composant pur `display` (identifiants du plan de test) :
 | AFF-15 | Débordement 32 bits du compteur de millisecondes sans saut d'affichage. |
 | AFF-16 | Zone d'icônes : alternance toutes les 3 s, priorité alerte > logo air > liaison ; glyphes 6×6 et 8×8 du logo air dans les bornes. (Couleur et modes du logo : AIR-18, AIR-19.) |
 | AFF-17 | Chaîne `render()` complète : luminosité avant gamma, mapping appliqué, écrêtage, mapping invalide refusé, **aucune allocation**. |
+| AFF-18 | Motifs de mise en service (pixel, colonne, diagonale, plein) et chenillard physique (marqueurs LED 0 / 255, traîne). |
 
 Vérifications matérielles (étape séparée, plan de test) : motif de test,
 correspondance validée à l'œil par le wizard, **courant mesuré à la pince** sur

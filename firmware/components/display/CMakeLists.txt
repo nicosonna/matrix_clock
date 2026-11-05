@@ -5,6 +5,12 @@ idf_component_register(
         "src/panel_map.cpp"
         "src/current_limit.cpp"
         "src/render.cpp"
+        "src/fonts.cpp"
+        "src/text.cpp"
+        "src/clock_scene.cpp"
+        "src/scroll.cpp"
+        "src/scheduler.cpp"
+        "src/test_patterns.cpp"
     INCLUDE_DIRS "include"
 )
 

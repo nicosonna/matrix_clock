@@ -2,26 +2,31 @@
  * @file app_main.cpp
  * @brief Entry point: wires the hardware adapters to the pure logic.
  *
- * Current state (phase 1, step 2): brings the LED panel up and cycles the
- * commissioning test patterns (single pixel, first column, diagonal, full
- * white) so the wiring and the panel mapping can be checked by eye. The
- * display loop will move to its own task once the scene scheduler exists.
+ * Current state (phase 1, step 3): a 25 fps display loop driven by the scene
+ * scheduler. There is no time source yet, so the clock scene honestly shows
+ * `--:--`, alternating with a scrolling text. The display loop will move to its
+ * own task when the network tasks arrive (EX-61).
  */
 
 #include <cstdint>
 
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "clock_board/board.hpp"
 #include "clock_display/led_panel.hpp"
+#include "display/clock_scene.hpp"
 #include "display/color.hpp"
 #include "display/current_limit.hpp"
 #include "display/frame_buffer.hpp"
 #include "display/panel_map.hpp"
 #include "display/render.hpp"
+#include "display/scheduler.hpp"
+#include "display/scroll.hpp"
+#include "display/text.hpp"
 
 namespace {
 
@@ -32,72 +37,21 @@ constexpr TickType_t ticks_from_ms(uint32_t ms) noexcept {
     return static_cast<TickType_t>((ms * static_cast<uint32_t>(CONFIG_FREERTOS_HZ)) / 1000U);
 }
 
-/// Brightness used for the commissioning patterns: visible, not blinding.
-constexpr uint8_t kTestBrightness = 48U;
-/// Time each pattern stays on screen.
-constexpr uint32_t kPatternPeriodMs = 3000U;
-/// Number of commissioning patterns.
-constexpr uint8_t kPatternCount = 4U;
+/// 25 frames per second.
+constexpr uint32_t kFramePeriodMs = 40U;
+/// Brightness until the light sensor exists: visible, not blinding.
+constexpr uint8_t kBrightness = 48U;
+/// Colon blink: 1 Hz, half period.
+constexpr uint32_t kColonHalfPeriodMs = 500U;
+/// Diagnostics log period.
+constexpr uint32_t kLogPeriodMs = 5000U;
 
-/// Draws commissioning pattern @p index into @p fb (see spec-affichage.md, mapping wizard).
-void draw_pattern(uint8_t index, display::FrameBuffer& fb) noexcept {
-    fb.clear();
-    switch (index) {
-        case 0U:  // one pixel: where is (0, 0)?
-            fb.set(0U, 0U, display::kWhite);
-            break;
-        case 1U:  // first eight LEDs of the strip: a column or a row?
-            for (uint8_t y = 0U; y < display::kHeight; ++y) {
-                fb.set(0U, y, display::Rgb{0U, 0U, 255U});
-            }
-            break;
-        case 2U:  // full diagonal: straight, or broken every 8 pixels?
-            for (uint8_t y = 0U; y < display::kHeight; ++y) {
-                for (uint8_t k = 0U; k < 4U; ++k) {
-                    fb.set(static_cast<uint8_t>(y * 4U + k), y, display::Rgb{0U, 255U, 0U});
-                }
-            }
-            break;
-        default:  // full white: current estimate and limiter at work
-            fb.fill_rect(0U, 0U, display::kWidth, display::kHeight, display::kWhite);
-            break;
-    }
-}
+constexpr display::Rgb kClockColor{255U, 255U, 255U};
+constexpr display::Rgb kScrollColor{255U, 160U, 40U};
 
-/// Chaser step period: 256 LEDs x 40 ms = about 10 s per sweep.
-constexpr uint32_t kChaserStepMs = 40U;
-/// Sweeps of the physical chaser before the logical patterns are shown again.
-constexpr uint8_t kChaserSweeps = 2U;
-/// Dim linear values: the chaser bypasses gamma and the limiter on purpose.
-constexpr display::Rgb kMarkerFirst{40U, 0U, 0U};   ///< LED 0: red, fixed.
-constexpr display::Rgb kMarkerLast{0U, 0U, 40U};    ///< LED 255: blue, fixed.
-constexpr uint8_t kChaserTail = 4U;
-constexpr uint8_t kChaserHead = 48U;
-
-/**
- * @brief Runs a white dot along the strip in **physical** order, mapping ignored.
- *
- * Reveals the real wiring: where LED 0 sits, which way the strip runs, where it
- * turns. LED 0 stays red and LED 255 stays blue so the two ends are obvious.
- */
-void run_physical_chaser(clock_display::LedPanel& panel, display::PhysicalFrame& frame) noexcept {
-    for (uint8_t sweep = 0U; sweep < kChaserSweeps; ++sweep) {
-        for (uint16_t head = 0U; head < display::kLedCount; ++head) {
-            for (display::Rgb& p : frame) {
-                p = display::kBlack;
-            }
-            for (uint8_t t = 0U; t < kChaserTail; ++t) {
-                if (head >= t) {
-                    const uint8_t v = static_cast<uint8_t>(kChaserHead >> t);  // 48, 24, 12, 6
-                    frame[static_cast<uint16_t>(head - t)] = display::Rgb{v, v, v};
-                }
-            }
-            frame[0] = kMarkerFirst;
-            frame[display::kLedCount - 1U] = kMarkerLast;
-            (void)panel.show(frame);
-            vTaskDelay(ticks_from_ms(kChaserStepMs));
-        }
-    }
+/// Milliseconds since boot, 32-bit wrap tolerated by every consumer.
+uint32_t now_ms() noexcept {
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
 }
 
 /// Confirms this image to the bootloader (no-op when not pending verification).
@@ -109,6 +63,15 @@ void confirm_ota_image() noexcept {
         const esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
         ESP_LOGI(kTag, "OTA image confirmed (%s)", esp_err_to_name(err));
     }
+}
+
+/// Demo rotation until settings exist: the clock for 6 s, then one pass of text.
+display::SceneList demo_scene_list() noexcept {
+    display::SceneList l{};
+    l.entries[0] = display::SceneEntry{display::SceneKind::Clock, 0U, 6U, true};
+    l.entries[1] = display::SceneEntry{display::SceneKind::Scroll, 0U, 0U, true};
+    l.count = 2U;
+    return l;
 }
 
 }  // namespace
@@ -133,26 +96,75 @@ extern "C" void app_main(void) {
 
     static display::FrameBuffer fb;
     static display::PhysicalFrame frame;
+    static display::Scroller scroller;
+    static char scroll_text[display::kTextMax + 1U];
+    // "\xC3\xA9" is split from the following 'e': a hex digit would extend the escape.
+    (void)display::transliterate("Matrix clock \xE2\x80\x94 ESP-IDF \xE2\x80\x94 heure non synchronis\xC3\xA9" "e",
+                                 scroll_text, sizeof(scroll_text));
+
     const display::PanelMapConfig map = display::default_panel_map();
-    uint8_t pattern = 0U;
+    const display::SceneList scenes = demo_scene_list();
+    display::Scheduler scheduler(scenes, now_ms());
+
+    // No time source yet: the clock must say so.
+    const display::TimeInfo time_info{false, 0U, 0U, 0U, 1U, 1U, 0U};
+
+    uint8_t last_scene = display::kSyntheticClock;
+    bool scroll_started = false;
+    uint32_t last_frame = now_ms();
+    uint32_t last_log = last_frame;
 
     for (;;) {
-        if (pattern == 0U) {
-            ESP_LOGI(kTag, "physical chaser: LED 0 red, LED 255 blue, white dot in strip order");
-            run_physical_chaser(panel, frame);
+        const uint32_t now = now_ms();
+        const uint32_t dt = now - last_frame;
+        last_frame = now;
+
+        display::SceneAvailability avail{};
+        avail.date = time_info.sure;
+        avail.scroll = true;
+        const bool scroll_done = scroll_started && scroller.finished();
+        const display::Shown shown = scheduler.step(now, avail, scroll_done);
+
+        display::SceneKind kind = display::SceneKind::Clock;
+        if (!shown.notification && (shown.scene != display::kSyntheticClock)) {
+            kind = scenes.entries[shown.scene].kind;
         }
-        draw_pattern(pattern, fb);
+        if (shown.scene != last_scene) {
+            scroll_started = false;  // a scene restarts from its beginning
+            last_scene = shown.scene;
+        }
+
+        fb.clear();
+        switch (kind) {
+            case display::SceneKind::Scroll:
+                if (!scroll_started) {
+                    scroller.start(scroll_text, display::kFont5x7, display::kScrollSpeedDefault, 1U);
+                    scroll_started = true;
+                } else {
+                    scroller.step(dt);
+                }
+                scroller.draw(fb, 0, kScrollColor);
+                break;
+            case display::SceneKind::Clock:
+            default: {
+                const bool colon_on = ((now / kColonHalfPeriodMs) % 2U) == 0U;
+                display::draw_clock(fb, time_info, display::kClockCentredX, colon_on, true, kClockColor);
+                break;
+            }
+        }
+
         display::RenderStats stats{};
-        (void)display::render(fb, kTestBrightness, display::kDefaultBudgetMa, map, frame, stats);
+        (void)display::render(fb, kBrightness, display::kDefaultBudgetMa, map, frame, stats);
         const esp_err_t show_err = panel.show(frame);
         if (show_err != ESP_OK) {
             ESP_LOGW(kTag, "panel refresh failed: %s", esp_err_to_name(show_err));
         }
-        ESP_LOGI(kTag, "pattern %u: estimated %lu mA, applied %lu mA, limited=%d, scale=%u/256",
-                 static_cast<unsigned>(pattern), static_cast<unsigned long>(stats.estimated_ua / 1000U),
-                 static_cast<unsigned long>(stats.applied_ua / 1000U), stats.limited ? 1 : 0,
-                 static_cast<unsigned>(stats.scale_q8));
-        pattern = static_cast<uint8_t>((pattern + 1U) % kPatternCount);
-        vTaskDelay(ticks_from_ms(kPatternPeriodMs));
+        if ((now - last_log) >= kLogPeriodMs) {
+            last_log = now;
+            ESP_LOGI(kTag, "scene %u: estimated %lu mA, limited=%d, oob=%lu",
+                     static_cast<unsigned>(kind), static_cast<unsigned long>(stats.estimated_ua / 1000U),
+                     stats.limited ? 1 : 0, static_cast<unsigned long>(fb.out_of_bounds_count()));
+        }
+        vTaskDelay(ticks_from_ms(kFramePeriodMs));
     }
 }

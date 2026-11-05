@@ -14,10 +14,18 @@ set(DISPLAY ${CMAKE_CURRENT_SOURCE_DIR}/../components/display)
 add_executable(test_clock
     test_main.cpp
     test_display.cpp
+    test_text.cpp
+    test_scenes.cpp
     ${DISPLAY}/src/frame_buffer.cpp
     ${DISPLAY}/src/panel_map.cpp
     ${DISPLAY}/src/current_limit.cpp
     ${DISPLAY}/src/render.cpp
+    ${DISPLAY}/src/fonts.cpp
+    ${DISPLAY}/src/text.cpp
+    ${DISPLAY}/src/clock_scene.cpp
+    ${DISPLAY}/src/scroll.cpp
+    ${DISPLAY}/src/scheduler.cpp
+    ${DISPLAY}/src/test_patterns.cpp
 )
 target_include_directories(test_clock PRIVATE
     ${DISPLAY}/include

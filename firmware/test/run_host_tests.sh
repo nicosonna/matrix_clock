@@ -30,6 +30,8 @@ cmake -S "$HERE" -B "$BUILD" -G Ninja \
       -DCMAKE_BUILD_TYPE=Debug \
       -DCLOCK_COVERAGE="$COVERAGE"
 cmake --build "$BUILD"
+# Stale profile data from a previous run would mismatch the rebuilt objects.
+find "$BUILD" -name '*.gcda' -delete
 ctest --test-dir "$BUILD" --output-on-failure
 
 if [ "$COVERAGE" = "ON" ]; then

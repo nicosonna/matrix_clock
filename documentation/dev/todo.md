@@ -39,8 +39,12 @@
 - [ ] **Mesurer** la charge processeur SPI vs RMT (les deux dorsales marchent ;
       overlay `sdkconfig.defaults.rmt`) et consigner au journal.
 - [ ] HW-AFF-02/03 : courant à la pince et tension à la dalle sur blanc plein.
-- [ ] Polices 5×7, 3×5, 3×4 + `translitere()` + scènes + défilement
-      (`AFF-08` → `AFF-14`).
+- [x] ~~Polices 5×7, 3×5, 3×4 + translittération + scènes Heure/Date +
+      défilement + ordonnanceur~~ (`AFF-08` → `AFF-15`, `AFF-18`, 2026-11-05).
+      Restent dans ce domaine : scène `Valeur` (icônes 8×8), `DeuxLignes`,
+      `Nuit`, zone d'icônes (`AFF-16`), transition glissée (option), et le rendu
+      des notifications (bandeau / défilement selon la priorité) qui attend le
+      composant `alerts`.
 - [ ] `brightness` pur (`LUM-01` → `LUM-14`) ; `clock_hal` ADC1 oneshot +
       étalonnage ; asservissement.
 - [ ] **Lire `PART_ID` sur le module ENS160 + AHT21 réel** et confronter la

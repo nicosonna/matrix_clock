@@ -45,8 +45,10 @@
       `Nuit`, zone d'icônes (`AFF-16`), transition glissée (option), et le rendu
       des notifications (bandeau / défilement selon la priorité) qui attend le
       composant `alerts`.
-- [ ] `brightness` pur (`LUM-01` → `LUM-14`) ; `clock_hal` ADC1 oneshot +
-      étalonnage ; asservissement.
+- [x] ~~`brightness` pur (`LUM-01` → `LUM-14`) ; `clock_hal` ADC1 oneshot +
+      étalonnage ; asservissement~~ (2026-11-05, câblage (a) confirmé). Reste :
+      relevés nuit/soir/jour en conditions stables (HW-LUM-01) et le wizard
+      quand la page web existera.
 - [ ] **Lire `PART_ID` sur le module ENS160 + AHT21 réel** et confronter la
       table des registres de `spec-qualite-air.md` §2 à la fiche technique
       (dette D11) — **avant** d'écrire le décodage.

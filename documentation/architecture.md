@@ -2,9 +2,10 @@
 
 > État au **2026-11-05** : squelette ESP-IDF, `clock_board`, `display` (pur :
 > tampon, correspondance, gamma, plafond de courant, rendu, polices, texte,
-> scènes Heure/Date, défilement, ordonnanceur, motifs — 99,5 % couvert) et
-> `clock_display` (vérifié sur la dalle) existent ; **le reste est spécifié,
-> pas écrit**. Ce document décrit la
+> scènes Heure/Date, défilement, ordonnanceur, motifs), `brightness` (pur :
+> filtres, courbe, contrôleur, wizard — 98,9 % couvert ensemble), `clock_display`
+> (vérifié sur la dalle) et `clock_hal` (ADC1 de la LDR) existent ; **le reste
+> est spécifié, pas écrit**. Ce document décrit la
 > cible et les choix arrêtés. Il se met à jour dès que la structure du dépôt bouge.
 
 ---

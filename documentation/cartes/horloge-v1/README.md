@@ -143,7 +143,8 @@ Deux remèdes, au choix :
 
 Les deux câblages sont acceptés : la courbe d'étalonnage peut être croissante ou
 décroissante (`../../dev/spec-luminosite.md` §1), et le wizard détermine le sens
-tout seul.
+tout seul. **Carte en main : câblage (a)**, vérifié le 2026-11-05 (main sur la
+LDR ⇒ la dalle s'assombrit) ; ~2086 comptes (1,9 V) sous l'éclairage du bureau.
 
 Choix de la résistance fixe : prendre l'ordre de grandeur de la résistance du LDR
 à la luminosité où l'on veut le plus de résolution — **l'éclairage du soir**,

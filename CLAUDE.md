@@ -28,10 +28,12 @@ Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
 > est arrêté, **mettre à jour ce fichier** pour qu'il reste fidèle au dépôt.
 
 > ⚠️ **État du dépôt (2026-11-05)** : squelette ESP-IDF, `clock_board`,
-> composant pur **`display`** (tampon, correspondance, gamma, plafond de
-> courant, rendu — 100 % couvert) et pilote `clock_display` avec les motifs de
-> mise en service. **Tout le reste** des composants décrits ci-dessous est la
-> **cible**, pas l'existant. `dev/journal.md` et `dev/todo.md` disent où on en est.
+> composants purs **`display`** (tampon, correspondance, gamma, plafond de
+> courant, rendu, polices, scènes, défilement, ordonnanceur) et
+> **`brightness`** (filtres, courbe, contrôleur, wizard), pilote `clock_display`
+> vérifié sur la dalle, `clock_hal` (ADC1 de la LDR). **Tout le reste** des
+> composants décrits ci-dessous est la **cible**, pas l'existant.
+> `dev/journal.md` et `dev/todo.md` disent où on en est.
 
 ## Structure du dépôt
 

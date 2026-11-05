@@ -42,20 +42,20 @@ chaque cas est dans la spec citée.
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| LUM-01 | `mediane5()` | 1 pic rejeté ; 2 pics consécutifs passent (limite documentée D7) | À ÉCRIRE |
-| LUM-02 | `MoyenneAsym::step()` | Constantes de temps montée/descente à ±10 %, asymétrie effective | À ÉCRIRE |
-| LUM-03 | `Luminosite::step()` | Entrée constante + compensation ⇒ convergence, **pas de pompage** (100 itérations) | À ÉCRIRE |
-| LUM-04 | `Courbe::interpoler()` | Points exacts, interpolation, extrapolation plate | À ÉCRIRE |
-| LUM-05 | `Courbe::interpoler()` | Câblage inversé (courbe décroissante) correct | À ÉCRIRE |
-| LUM-06 | `Courbe::valider()` | < 2 points, axe non monotone, hors bornes ⇒ repli sur la courbe par défaut | À ÉCRIRE |
-| LUM-07 | `hysteresis()` | Bruit ±1 LSB au seuil ⇒ sortie stable | À ÉCRIRE |
-| LUM-08 | `quantifier()` | Quantification par `pas_lum` | À ÉCRIRE |
-| LUM-09 | `Luminosite::step()` | Plancher et plafond respectés, `lum_min = 0` inclus | À ÉCRIRE |
-| LUM-10 | `Luminosite::step()` | 5 lectures invalides ⇒ `kLumRepli` + drapeau ; 1 valide rétablit | À ÉCRIRE |
-| LUM-11 | `Luminosite::step()` | Mesure collée à 0 ou 4095 ⇒ capteur en défaut | À ÉCRIRE |
-| LUM-12 | `plage_horaire()` | Extinction 23:30 → 06:30 (franchit minuit) | À ÉCRIRE |
-| LUM-13 | `Luminosite::step()` | `Manuel` ignore la mesure ; `Eteint` ⇒ 0 | À ÉCRIRE |
-| LUM-14 | `construire_courbe()` | Courbe du wizard à partir des 4 mesures, y compris câblage inversé | À ÉCRIRE |
+| LUM-01 | `Median5::push()` | 1 pic rejeté ; 2 pics consécutifs passent (limite documentée D7) ; remplissage par le premier échantillon | **PASSE** 2026-11-05 |
+| LUM-02 | `AsymmetricAverage::push()` | 63 % à τ ±10 % en montée, descente 6× plus lente, premier échantillon sans retard, τ = 1 s = pas de filtrage, plancher α = 1/256 | **PASSE** 2026-11-05 |
+| LUM-03 | `Controller::step()` | Ambiance constante + dalle vue par le capteur (400 comptes) ⇒ convergence sur le niveau de l'ambiance vraie, amplitude finale ≤ `step` : **pas de pompage** | **PASSE** 2026-11-05 |
+| LUM-04 | `interpolate()` | Points exacts, interpolation arrondie, extrapolation plate | **PASSE** 2026-11-05 |
+| LUM-05 | `interpolate()` | Câblage (b) : courbe décroissante correcte | **PASSE** 2026-11-05 |
+| LUM-06 | `is_valid()` | < 2 points, doublon, non monotone, > 4095, > 6 points, bornes de chaque réglage ⇒ refus ; config invalide ⇒ défauts + `config_replaced` | **PASSE** 2026-11-05 |
+| LUM-07 | `Controller::auto_level()` | ±20 comptes de bruit ⇒ sortie stable (zone morte d'un pas) | **PASSE** 2026-11-05 |
+| LUM-08 | idem | Changement réel ⇒ saut à un multiple de `step` | **PASSE** 2026-11-05 |
+| LUM-09 | idem | Plancher et plafond, `min_level = 0` inclus | **PASSE** 2026-11-05 |
+| LUM-10 | `Controller::step()` | 4 ratés = maintien ; 5 ⇒ `kFallbackLevel` (64) + drapeau ; 1 lecture valide rétablit ; défaut dès le boot ⇒ 64 | **PASSE** 2026-11-05 |
+| LUM-11 | idem | Collé à 0 ou 4095 ⇒ capteur en défaut | **PASSE** 2026-11-05 |
+| LUM-12 | `in_window()` | 23:30 → 06:30 franchit minuit, fenêtre même jour, fenêtre vide ; **ignorée si l'heure n'est pas sûre** | **PASSE** 2026-11-05 |
+| LUM-13 | `Controller::step()` | `Manual` ignore la mesure (même invalide) ; `Off` ⇒ 0 | **PASSE** 2026-11-05 |
+| LUM-14 | `build_from_wizard()` | Compensation signée, 3 points triés par mesure, câblage (b) ⇒ courbe décroissante et contrôleur dans le bon sens, mesures égales ou > 4095 refusées sans toucher la config ; aucune allocation | **PASSE** 2026-11-05 |
 
 ### 1.3 `network` — `dev/spec-reseau-portail.md` §5
 
@@ -196,7 +196,7 @@ l'horloge.
 |---|---|---|
 | GEN-01 | Les composants purs compilent avec un **g++ nu** (aucun include ESP-IDF) | **PASSE** 2026-11-05 (`display`, g++ 15.2 MinGW) |
 | GEN-02 | Build host en `-Werror` avec tout l'arsenal d'avertissements | **PASSE** 2026-11-05 |
-| GEN-03 | Couverture ≥ 95 % de la logique pure, échec en dessous | **PASSE** 2026-11-05 (`display` : 422 lignes, **99,5 %** ; les 2 lignes restantes sont des branches défensives de `scheduler.cpp` injoignables avec un `enum class` valide) |
+| GEN-03 | Couverture ≥ 95 % de la logique pure, échec en dessous | **PASSE** 2026-11-05 (`display` + `brightness` : 629 lignes, **98,9 %** ; le reste = branches défensives injoignables ou `default` d'un `switch` sur `enum class`) |
 | GEN-04 | `operator new` global armé après init ⇒ **aucune allocation** sur tous les chemins testés | **PASSE** 2026-11-05 (`AllocGuard` autour de `render()`, AFF-17) |
 | GEN-05 | Harnais **sans `assert()`** : code de retour non nul au moindre échec, nombre de vérifications compté | **PASSE** 2026-11-05 (8530 vérifications ; les échecs initiaux de AFF-06 puis de AFF-12/13/15 ont bien fait sortir en erreur) |
 
@@ -213,7 +213,7 @@ l'horloge.
 | HW-AFF-03 | Tension **à la dalle** sur scène `plein` | ≥ 4,7 V | À FAIRE |
 | HW-AFF-04 | Observation à 25 trames/s, lisibilité à 4 m | Aucun scintillement, heure lisible | À FAIRE |
 | HW-AFF-05 | 1 h sur une scène claire | Dalle et alimentation tièdes | À FAIRE |
-| HW-LUM-01 | Relevés nuit noire / soir / plein jour | Trois valeurs nettement distinctes | À FAIRE |
+| HW-LUM-01 | Relevés nuit noire / soir / plein jour | Trois valeurs nettement distinctes | **EN COURS** 2026-11-05 : ADC1_CH5 étalonné (eFuse), ~2086 comptes / 1,9 V en éclairage de bureau ; **câblage (a) confirmé** (main sur la LDR ⇒ la dalle s'assombrit). Relevés nuit/soir/jour à faire en conditions stables. |
 | HW-LUM-02 | Wizard d'étalonnage, étape 2 | Auto-éclairage **chiffré** ; > 150 ‰ ⇒ déplacer le capteur | À FAIRE |
 | HW-LUM-03 | Une journée complète d'observation | Aucun pompage, aucun scintillement | À FAIRE |
 | HW-RES-01 | Coupure secteur maison (horloge **et** box) | Reprise seule, heure affichée, **pas** de portail | À FAIRE |

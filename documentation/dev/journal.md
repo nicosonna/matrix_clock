@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-11-05 (suite 7) — Luminosité automatique : `brightness` pur, ADC1, asservissement
+
+**Quoi.** Étape 4 de la phase 1 :
+
+- `components/brightness/` (pur) : `Median5` (réseau de comparaisons),
+  `AsymmetricAverage` (Q8, montée 10 s / descente 60 s), `Config` + `Curve`
+  validés, `interpolate()` entier arrondi, `in_window()` franchissant minuit,
+  `Controller` (compensation d'auto-éclairage **signée en comptes à 255**,
+  zone morte d'un pas + arrondi au multiple du pas, plancher/plafond, 5 ratés
+  ⇒ `kFallbackLevel` 64, rails 0/4095 = défaut, fenêtre d'extinction appliquée
+  **seulement si l'heure est sûre**, modes Auto/Manual/Off),
+  `build_from_wizard()` (3 points triés par mesure, compensation signée).
+- `components/clock_hal/` : `LdrAdc` — `adc_oneshot` sur le canal résolu depuis
+  le GPIO (refus explicite si ADC2), 12 dB, 12 bits, 64 échantillons moyennés,
+  étalonnage *line fitting* par l'eFuse, lecture ratée ⇒ échantillon invalide.
+- `app_main` : lecture à 1 Hz, `Controller::step()`, le niveau appliqué nourrit
+  `render()` ; log brut / mV / filtré / niveau / défaut toutes les 5 s.
+
+**Écarts de spec, consignés dans `spec-luminosite.md`** : compensation en
+**comptes ADC** (signée) plutôt qu'en ‰ ; courbe du wizard à **3 points**
+(nuit/soir/jour) et non 4 — la 4ᵉ mesure est l'auto-éclairage, pas un niveau
+d'ambiance ; « hystérésis d'un demi-pas » précisée en **zone morte d'un pas +
+arrondi au pas**.
+
+**Résultats.** Tests host : **8661 vérifications, 0 échec, couverture 98,9 %**
+(629 lignes). Build propre, 241 Ko, flashé sur COM21 : `ADC1 channel 5 on
+GPIO33, 12 dB, calibrated=1`, ~2086 comptes (1,9 V) sous l'éclairage du bureau
+⇒ niveau 170 avec la courbe par défaut (câblage (a) supposé).
+
+**Câblage confirmé (a)** : main sur la LDR ⇒ la dalle s'assombrit (Nicolas).
+La courbe par défaut est dans le bon sens. La baisse de mesure vue dans les
+logs (2086 → 1754) pendant que la dalle passait de 48 à 170 n'était pas de
+l'auto-éclairage — avec ce câblage il ferait *monter* les comptes — mais
+l'ambiance qui changeait (lampe allumée entre-temps, déplacements). Aucune
+compensation inventée : le wizard la mesurera dans le noir, dalle éteinte puis
+allumée (HW-LUM-02).
+
+**Ce que les tests ont attrapé.** Une attente d'arrondi fausse dans LUM-05
+(131,5 → 131, l'arrondi va à l'opposé de zéro sur une pente négative) ; le code
+était cohérent, l'attente a été corrigée et documentée dans le test.
+
+---
+
 ## 2026-11-05 (suite 6) — Polices, scènes, défilement, ordonnanceur ; `--:--` sur la dalle
 
 **Quoi.** Étape 3 de la phase 1, dans `display` (pur) :

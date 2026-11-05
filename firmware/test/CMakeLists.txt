@@ -10,12 +10,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(CLOCK_COVERAGE "Instrument for gcov" OFF)
 
 set(DISPLAY ${CMAKE_CURRENT_SOURCE_DIR}/../components/display)
+set(BRIGHT ${CMAKE_CURRENT_SOURCE_DIR}/../components/brightness)
 
 add_executable(test_clock
     test_main.cpp
     test_display.cpp
     test_text.cpp
     test_scenes.cpp
+    test_brightness.cpp
+    ${BRIGHT}/src/filters.cpp
+    ${BRIGHT}/src/brightness.cpp
     ${DISPLAY}/src/frame_buffer.cpp
     ${DISPLAY}/src/panel_map.cpp
     ${DISPLAY}/src/current_limit.cpp
@@ -29,6 +33,7 @@ add_executable(test_clock
 )
 target_include_directories(test_clock PRIVATE
     ${DISPLAY}/include
+    ${BRIGHT}/include
     ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(test_clock PRIVATE
     CLOCK_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

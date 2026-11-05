@@ -59,6 +59,8 @@ int main() {
     run_text_tests();
     std::printf("-- display: scrolling, scene scheduler, test patterns\n");
     run_scenes_tests();
+    std::printf("-- brightness: median, asymmetric average, curve, dead band, fault, schedule, wizard\n");
+    run_brightness_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

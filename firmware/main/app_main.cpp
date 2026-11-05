@@ -16,8 +16,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "brightness/brightness.hpp"
 #include "clock_board/board.hpp"
 #include "clock_display/led_panel.hpp"
+#include "clock_hal/ldr_adc.hpp"
 #include "display/clock_scene.hpp"
 #include "display/color.hpp"
 #include "display/current_limit.hpp"
@@ -39,8 +41,10 @@ constexpr TickType_t ticks_from_ms(uint32_t ms) noexcept {
 
 /// 25 frames per second.
 constexpr uint32_t kFramePeriodMs = 40U;
-/// Brightness until the light sensor exists: visible, not blinding.
-constexpr uint8_t kBrightness = 48U;
+/// Brightness before the first sensor reading: visible, not blinding.
+constexpr uint8_t kInitialBrightness = 48U;
+/// Sensor sampling period: the brightness controller is tuned for 1 Hz.
+constexpr uint32_t kSensorPeriodMs = 1000U;
 /// Colon blink: 1 Hz, half period.
 constexpr uint32_t kColonHalfPeriodMs = 500U;
 /// Diagnostics log period.
@@ -94,6 +98,14 @@ extern "C" void app_main(void) {
     (void)panel.clear();
     confirm_ota_image();
 
+    // Light sensor: a failure here is not fatal, the controller falls back on its own.
+    static clock_hal::LdrAdc ldr;
+    const esp_err_t ldr_err = ldr.init();
+    if (ldr_err != ESP_OK) {
+        ESP_LOGW(kTag, "LDR unavailable (%s): fallback brightness", esp_err_to_name(ldr_err));
+    }
+    static brightness::Controller brightness_ctl(brightness::default_config());
+
     static display::FrameBuffer fb;
     static display::PhysicalFrame frame;
     static display::Scroller scroller;
@@ -113,11 +125,22 @@ extern "C" void app_main(void) {
     bool scroll_started = false;
     uint32_t last_frame = now_ms();
     uint32_t last_log = last_frame;
+    uint32_t last_sensor = last_frame - kSensorPeriodMs;  // read on the first frame
+    uint8_t applied = kInitialBrightness;
+    brightness::Sample sample{0U, false};
+    brightness::Output lum{};
 
     for (;;) {
         const uint32_t now = now_ms();
         const uint32_t dt = now - last_frame;
         last_frame = now;
+
+        if ((now - last_sensor) >= kSensorPeriodMs) {
+            last_sensor = now;
+            sample = ldr.read();
+            lum = brightness_ctl.step(sample, applied, time_info.sure, 0U);
+            applied = lum.level;
+        }
 
         display::SceneAvailability avail{};
         avail.date = time_info.sure;
@@ -154,16 +177,19 @@ extern "C" void app_main(void) {
         }
 
         display::RenderStats stats{};
-        (void)display::render(fb, kBrightness, display::kDefaultBudgetMa, map, frame, stats);
+        (void)display::render(fb, applied, display::kDefaultBudgetMa, map, frame, stats);
         const esp_err_t show_err = panel.show(frame);
         if (show_err != ESP_OK) {
             ESP_LOGW(kTag, "panel refresh failed: %s", esp_err_to_name(show_err));
         }
         if ((now - last_log) >= kLogPeriodMs) {
             last_log = now;
-            ESP_LOGI(kTag, "scene %u: estimated %lu mA, limited=%d, oob=%lu",
+            ESP_LOGI(kTag, "scene %u: estimated %lu mA, limited=%d, oob=%lu | ldr raw=%u (%d mV, valid=%d) filtered=%u -> level %u fault=%d",
                      static_cast<unsigned>(kind), static_cast<unsigned long>(stats.estimated_ua / 1000U),
-                     stats.limited ? 1 : 0, static_cast<unsigned long>(fb.out_of_bounds_count()));
+                     stats.limited ? 1 : 0, static_cast<unsigned long>(fb.out_of_bounds_count()),
+                     static_cast<unsigned>(sample.raw), ldr.last_mv(), sample.valid ? 1 : 0,
+                     static_cast<unsigned>(lum.filtered_raw), static_cast<unsigned>(applied),
+                     lum.sensor_fault ? 1 : 0);
         }
         vTaskDelay(ticks_from_ms(kFramePeriodMs));
     }

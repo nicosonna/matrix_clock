@@ -60,10 +60,14 @@ d'asservissement : l'horloge s'assombrit, donc le capteur voit moins de lumière
 donc elle s'assombrit encore.
 
 3. **Compensation d'auto-éclairage** — la dalle éclaire le capteur. Mesurée par le
-   wizard (§4) et soustraite proportionnellement à la luminosité **appliquée** :
-   `mesure_corrigee = mesure − compensation_pour_mille · lum_appliquee / 1000`
-   (bornée à 0). Avec un capteur bien placé la compensation est nulle ; avec un
-   capteur en façade elle évite la boucle de pompage.
+   wizard (§4) en **comptes ADC à luminosité 255**, **signée** (un câblage (b)
+   voit la mesure *baisser* quand la dalle s'allume), et soustraite
+   proportionnellement à la luminosité **appliquée** :
+   `mesure_corrigee = mesure − compensation_comptes · lum_appliquee / 255`
+   (bornée à 0..4095). Avec un capteur bien placé la compensation est nulle ;
+   avec un capteur en façade elle évite la boucle de pompage.
+   *(Implémenté le 2026-11-05 : `compensation_counts`, ±4095 — l'unité « ‰ »
+   initialement prévue a été remplacée, plus simple à mesurer et à tester.)*
 
 ---
 
@@ -87,14 +91,15 @@ Validation (`is_valid()`), avec repli sur la courbe par défaut si elle échoue 
 | `pas_lum` | 4 | 1–32 | Quantification de la sortie (§3.1). |
 | `extinction_active` | non | — | Plage horaire d'extinction complète. |
 | `extinction_debut` / `extinction_fin` | 23:30 / 06:30 | minutes | Franchit minuit (début > fin accepté). |
-| `compensation_pour_mille` | 0 | 0–1000 | Déterminée par le wizard. |
+| `compensation_counts` | 0 | −4095–4095 | Comptes ADC ajoutés (ou retirés) par la dalle à 255. Déterminée par le wizard. |
 
-### 3.1 Hystérésis
+### 3.1 Zone morte et quantification
 
-La sortie est **quantifiée** par pas de `pas_lum`, avec une hystérésis d'un
-demi-pas : la luminosité appliquée ne change que si la valeur calculée franchit
-le milieu du pas suivant. Sans cela, un bruit de 1 LSB fait clignoter la dalle
-en permanence.
+La luminosité appliquée ne bouge que si la valeur calculée s'en écarte d'au
+moins **un pas** (`pas_lum`, zone morte) ; elle saute alors à la valeur
+calculée **arrondie au multiple du pas**, bornée par plancher et plafond. Un
+bruit de ±1 LSB, et même de ±20 comptes, ne fait donc jamais clignoter la
+dalle (LUM-07), et les niveaux appliqués sont des multiples du pas (LUM-08).
 
 ### 3.2 Repli (EX-13)
 
@@ -116,18 +121,21 @@ Quatre étapes, la page lit les mesures brutes en direct sur `/api/luminosite/br
 | Étape | Consigne à l'écran | Mesure retenue |
 |---|---|---|
 | 1 | « Fais le noir dans la pièce. La dalle va s'éteindre. » | `brut_nuit` (dalle à 0) |
-| 2 | « Ne bouge rien, la dalle va s'allumer au maximum. » | `brut_nuit_allume` ⇒ `compensation_pour_mille = (brut_nuit_allume − brut_nuit) · 1000 / 255`, **avec le signe du câblage** |
+| 2 | « Ne bouge rien, la dalle va s'allumer au maximum. » | `brut_nuit_allume` ⇒ `compensation_counts = brut_nuit_allume − brut_nuit`, **signée** (négative pour un câblage (b)) |
 | 3 | « Allume l'éclairage du soir. » | `brut_soir` |
 | 4 | « Reviens en plein jour. » | `brut_jour` |
 
-La courbe est construite sur ces quatre points, triée dans le sens monotone, et
-associée aux luminosités `lum_min`, 40, 160, `lum_max`. L'étape 2 **mesure
-réellement** l'auto-éclairage au lieu de le supposer nul — c'est le piège de ce
-montage.
+La courbe est construite sur les **trois** niveaux d'ambiance (nuit, soir,
+jour), triée par mesure croissante, chaque point gardant sa luminosité
+(`lum_min`, 40, `lum_max`) — ce qui donne d'office une courbe décroissante pour
+un câblage (b). Deux mesures égales ⇒ le wizard refuse (LUM-14). L'étape 2
+**mesure réellement** l'auto-éclairage au lieu de le supposer nul — c'est le
+piège de ce montage.
 
 Le wizard affiche le résultat (« capteur bien isolé : compensation 0 ‰ » ou
-« le capteur voit la dalle : compensation 180 ‰, envisage de le déporter ») et
-demande confirmation avant d'écrire en NVS.
+« le capteur voit la dalle : +600 comptes à pleine luminosité, envisage de le
+déporter » — seuil `kCompensationWarnCounts = 600`) et demande confirmation
+avant d'écrire en NVS.
 
 ---
 

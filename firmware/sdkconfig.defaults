@@ -23,6 +23,10 @@ CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=y
 
+# lwIP sockets: HTTP server (4 clients + 2 internal), captive DNS, mDNS, and a
+# reserve for the Home Assistant WebSocket, MQTT and the hub.
+CONFIG_LWIP_MAX_SOCKETS=16
+
 # OTA rollback: a new image that does not confirm itself is reverted on the next
 # boot (spec-serveur-web.md section 5). app_main confirms once the panel is up.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

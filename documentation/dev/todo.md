@@ -59,13 +59,18 @@
       attente bloquante ; boucle de mesure dans la tâche `periodique`.
 - [ ] Logo air (glyphes 6×6 et 8×8) + scène `Air` + alternance de la zone
       d'icônes (`AFF-16`).
-- [ ] `network` : **copier** le composant de ThermoSync, puis ajouter `EtatLien`,
-      `CauseEchec`, grâce au démarrage et `AttenteBail` / `BailDesespere`.
-      Vérifier que `RES-01` → `RES-11` passent **avant** d'ajouter quoi que ce
-      soit, puis `RES-20` → `RES-29`.
-- [ ] `clock_web` : serveur HTTP, DNS captif, sondes de détection de portail,
-      mDNS, page `/wifi`, affichage du SSID et de la phrase de passe **sur la
-      dalle**.
+- [x] ~~`network` : repris de ThermoSync, traduit, extension coupure
+      (`LinkStatus`, `FailCause`, `BootGrace`, `WaitingLease`,
+      `LeaseDesperate`, redémarrage)~~ — `RES-01` → `RES-12`, `RES-20` → `RES-29`
+      (2026-11-05).
+- [x] ~~`clock_web` : HTTP, DNS captif, sondes de portail, mDNS, page `/wifi`,
+      SSID + mot de passe sur la dalle, `POST /api/notification`~~ (2026-11-05).
+      Reste : **vérifier au téléphone** (HW-RES-05/06/07), coupure secteur
+      (HW-RES-01/02), DHCP coupé (HW-RES-03).
+- [ ] `alerts` : le décodeur de notification existe (`ALR-15`) ; moteur de
+      règles, file bornée, heures silencieuses, rendu par priorité à écrire
+      (`ALR-01` → `ALR-14`, `ALR-16` → `ALR-18`). En attendant, `app_main` ne
+      garde qu'**une** notification en attente et ignore `effacer`.
 - [ ] `clock_time` : SNTP, fuseau, **validité** de l'heure (extraire la partie
       testable de la validité).
 - [ ] `settings` pur + `/api/<domaine>/modele` + `POST` tout-ou-rien

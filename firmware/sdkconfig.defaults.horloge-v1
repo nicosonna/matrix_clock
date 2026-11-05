@@ -8,3 +8,7 @@ CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
 # without trouble; faster modes can be tried once the panel driver is in place.
 CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+# Commissioning access point password, chosen by Nicolas (2026-11-05). It only
+# guards the portal (no network configured, or fallback); empty = derived from
+# the MAC.
+CONFIG_CLOCK_WIFI_AP_PASSWORD="12345678"

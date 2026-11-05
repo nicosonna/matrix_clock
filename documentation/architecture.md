@@ -3,9 +3,11 @@
 > État au **2026-11-05** : squelette ESP-IDF, `clock_board`, `display` (pur :
 > tampon, correspondance, gamma, plafond de courant, rendu, polices, texte,
 > scènes Heure/Date, défilement, ordonnanceur, motifs), `brightness` (pur :
-> filtres, courbe, contrôleur, wizard — 98,9 % couvert ensemble), `clock_display`
-> (vérifié sur la dalle) et `clock_hal` (ADC1 de la LDR) existent ; **le reste
-> est spécifié, pas écrit**. Ce document décrit la
+> filtres, courbe, contrôleur, wizard), `network` (pur : identifiants, DNS
+> captif, superviseur avec grâce et bail), `alerts` (pur, décodeur de
+> notification seulement — 99,1 % couvert ensemble), `clock_display` (vérifié sur
+> la dalle), `clock_hal` (ADC1 de la LDR) et `clock_web` (Wi-Fi, portail, HTTP,
+> mDNS, canal de notification) existent ; **le reste est spécifié, pas écrit**. Ce document décrit la
 > cible et les choix arrêtés. Il se met à jour dès que la structure du dépôt bouge.
 
 ---

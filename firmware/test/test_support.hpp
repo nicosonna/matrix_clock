@@ -64,3 +64,5 @@ void run_display_tests();
 void run_text_tests();
 void run_scenes_tests();
 void run_brightness_tests();
+void run_network_tests();
+void run_alerts_tests();

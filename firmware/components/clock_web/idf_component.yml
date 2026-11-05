@@ -1,0 +1,4 @@
+## mDNS responder: advertises horloge.local and _http._tcp (EX-25).
+dependencies:
+  espressif/mdns: "^1.4.0"
+  idf: ">=5.3"

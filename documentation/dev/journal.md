@@ -5,6 +5,64 @@
 
 ---
 
+## 2026-11-05 (suite 8) — Réseau : portail captif, reprise après coupure, canal de notification
+
+**Quoi.** Étape 5 de la phase 1, à la demande de Nicolas « rien de ThermoSync
+sauf le réseau, et le hub doit pouvoir envoyer des messages » :
+
+- `components/network/` (pur) : `credentials` (validation, formulaire borné,
+  JSON, mot de passe du point d'accès), `captive_dns` et `supervisor` **repris
+  de ThermoSync et traduits** ; le superviseur gagne l'**extension coupure de
+  courant** : états `BootGrace` (délais 10/20/40/60/60 s, jamais de portail,
+  fin anticipée après 2 échecs d'authentification), `WaitingLease` (associé
+  sans IP : réessais 60 s → 5 min, jamais de portail), `LeaseDesperate` (30 min
+  sans bail : portail levé **en plus**), et la demande de redémarrage de
+  récupération (24 h sans IP, une fois). Entrée `LinkStatus{associated, has_ip}`
+  + `FailCause` ; l'ancienne signature `step(now, link_up)` reste pour
+  l'héritage.
+- `components/alerts/` (pur, amorce) : `decode_form()` du canal de
+  notification — `cle` obligatoire `[a-z0-9_]`, champs hors bornes remplacés
+  par leur défaut et comptés, textes tronqués. Partagé par toutes les portes
+  d'entrée (HTTP local aujourd'hui, Home Assistant et hub ensuite).
+- `components/clock_web/` : Wi-Fi APSTA, événements → `LinkStatus`/`FailCause`
+  (`NO_AP_FOUND` → `ApNotFound`, `AUTH_FAIL`/handshake → `AuthFailed`), tâche
+  de supervision à 1 s qui **applique le plan**, DNS captif (tâche), identifiants
+  en NVS `clk_wifi` pris en compte **sans redémarrage**, mDNS `horloge.local`,
+  serveur HTTP : `/wifi` (page embarquée, 6,3 Ko), `/api/wifi/*`, `/api/info`,
+  sondes de détection de portail, 404 → portail, et **`POST /api/notification`**
+  qui pousse une notification à l'affichage (priorité → couleur, durée →
+  interruption de scène).
+- `app_main` : **tâche d'affichage dédiée** sur le cœur 1, priorité 6 (au-dessus
+  du serveur HTTP et des tâches réseau, EX-61) ; le réseau démarre ensuite et
+  son échec ne touche pas l'affichage. Le texte défilant montre **comment
+  joindre l'horloge** : `WIFI Horloge-XXXX MDP …` en portail, l'adresse IP une
+  fois connectée.
+- Mot de passe du point d'accès : alphabet **chiffres + majuscules sans O ni I**
+  — la police 5×7 n'a pas de minuscules, et un mot de passe lu sur la dalle doit
+  se taper exactement. Puis, à la demande de Nicolas, mot de passe **fixé à
+  `12345678`** dans `sdkconfig.defaults.horloge-v1` (`CLOCK_WIFI_AP_PASSWORD`) :
+  il ne garde que le portail de mise en service, et un mot de passe trivial
+  lisible sur la dalle vaut mieux qu'un mot de passe dérivé que personne ne
+  retient. La dérivation reste le repli quand le réglage est vide.
+
+**Résultats.** Tests host : **8901 vérifications, 0 échec, couverture 99,1 %**
+(1075 lignes). Build propre, image **894 Ko** (53 % libres : le WiFi, lwIP,
+mbedTLS et mDNS pèsent). Flashé sur COM21 : `access point Horloge-C995 (WPA2)`,
+`captive DNS ready`, `mDNS: horloge.local`, `HTTP server ready`, affichage à
+25 i/s et LDR vivants pendant que le réseau tourne.
+
+**Ce que les tests ont attrapé.** Un test de troncature mal construit (préfixe
+compté à la main à 44 au lieu de 45 caractères : le champ `texte` n'existait
+pas) ; corrigé par `strlen`. Le décodeur acceptait d'abord un texte trop long
+en le **refusant** au lieu de le tronquer : corrigé (tampon de travail de 1 Ko,
+troncature comptée).
+
+**Non vérifié.** Portail ouvert depuis un téléphone (HW-RES-05), connexion à la
+box depuis le portail (HW-RES-06), `horloge.local` (HW-RES-07), coupure
+secteur (HW-RES-01/02) : ça demande un téléphone et la box de Nicolas.
+
+---
+
 ## 2026-11-05 (suite 7) — Luminosité automatique : `brightness` pur, ADC1, asservissement
 
 **Quoi.** Étape 4 de la phase 1 :

@@ -1,0 +1,17 @@
+menu "matrix_clock - network"
+
+    config CLOCK_WIFI_AP_PASSWORD
+        string "Access point password (empty = derived from the MAC)"
+        default ""
+        help
+          Access point + captive portal "Horloge-xxxx" (http://192.168.4.1),
+          raised when no network is configured or in fallback. Empty: WPA2 with
+          a password derived from the MAC address, shown on the panel and in
+          the console. Otherwise at least 8 characters. Lives in sdkconfig,
+          which is git-ignored: never commit it.
+
+    config CLOCK_MDNS_HOSTNAME
+        string "mDNS host name (without .local)"
+        default "horloge"
+
+endmenu

@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS "app_main.cpp"
     INCLUDE_DIRS "."
-    REQUIRES display brightness clock_board clock_display clock_hal app_update esp_timer
+    REQUIRES display brightness alerts clock_board clock_display clock_hal clock_web app_update esp_timer
 )
 
 # Same warnings as the host build: an implicit conversion must not pass.

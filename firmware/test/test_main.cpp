@@ -61,6 +61,10 @@ int main() {
     run_scenes_tests();
     std::printf("-- brightness: median, asymmetric average, curve, dead band, fault, schedule, wizard\n");
     run_brightness_tests();
+    std::printf("-- network: credentials, portal form, captive DNS, supervisor (grace, lease, reboot)\n");
+    run_network_tests();
+    std::printf("-- alerts: inbound notification decoder\n");
+    run_alerts_tests();
 
     if (g_failures == 0U) {
         std::printf("OK: %lu checks passed.\n", static_cast<unsigned long>(g_checks));

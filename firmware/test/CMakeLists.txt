@@ -11,6 +11,8 @@ option(CLOCK_COVERAGE "Instrument for gcov" OFF)
 
 set(DISPLAY ${CMAKE_CURRENT_SOURCE_DIR}/../components/display)
 set(BRIGHT ${CMAKE_CURRENT_SOURCE_DIR}/../components/brightness)
+set(NET ${CMAKE_CURRENT_SOURCE_DIR}/../components/network)
+set(ALERTS ${CMAKE_CURRENT_SOURCE_DIR}/../components/alerts)
 
 add_executable(test_clock
     test_main.cpp
@@ -18,8 +20,14 @@ add_executable(test_clock
     test_text.cpp
     test_scenes.cpp
     test_brightness.cpp
+    test_network.cpp
+    test_alerts.cpp
+    ${ALERTS}/src/notification.cpp
     ${BRIGHT}/src/filters.cpp
     ${BRIGHT}/src/brightness.cpp
+    ${NET}/src/credentials.cpp
+    ${NET}/src/captive_dns.cpp
+    ${NET}/src/supervisor.cpp
     ${DISPLAY}/src/frame_buffer.cpp
     ${DISPLAY}/src/panel_map.cpp
     ${DISPLAY}/src/current_limit.cpp
@@ -34,6 +42,8 @@ add_executable(test_clock
 target_include_directories(test_clock PRIVATE
     ${DISPLAY}/include
     ${BRIGHT}/include
+    ${NET}/include
+    ${ALERTS}/include
     ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(test_clock PRIVATE
     CLOCK_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

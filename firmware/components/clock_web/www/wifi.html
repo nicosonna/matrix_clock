@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Horloge - WiFi</title>
+<style>
+:root { --fond:#f5f6f8; --carte:#ffffff; --texte:#1d2024; --doux:#5d636b; --accent:#2f5d8a; --erreur:#b3261e; --bord:#d9dde3; }
+@media (prefers-color-scheme: dark) {
+  :root { --fond:#14171b; --carte:#1d2126; --texte:#e7eaee; --doux:#9aa2ab; --accent:#6fa8dc; --erreur:#f2b8b5; --bord:#323840; }
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--fond); color:var(--texte); }
+main { max-width:28rem; margin:0 auto; padding:1.25rem 1rem 2rem; }
+h1 { font-size:1.35rem; margin:0 0 .25rem; display:flex; align-items:center; gap:.5rem; }
+h1 svg { width:1.4rem; height:1.4rem; stroke:var(--accent); fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+p.sous { margin:0 0 1.25rem; color:var(--doux); }
+.carte { background:var(--carte); border:1px solid var(--bord); border-radius:.75rem; padding:1rem; margin-bottom:1rem; }
+label { display:block; font-weight:600; margin:.75rem 0 .35rem; }
+input, select { width:100%; padding:.65rem .7rem; font-size:1rem; border:1px solid var(--bord); border-radius:.5rem; background:var(--fond); color:var(--texte); }
+button { margin-top:1rem; width:100%; padding:.75rem; font-size:1rem; font-weight:600; border:0; border-radius:.5rem; background:var(--accent); color:#fff; cursor:pointer; }
+button.second { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+.aide { font-size:.85rem; color:var(--doux); margin-top:.3rem; }
+#message { min-height:1.5rem; margin-top:.75rem; }
+.ok { color:var(--accent); } .ko { color:var(--erreur); }
+#etat { font-size:.9rem; color:var(--doux); }
+</style>
+</head>
+<body>
+<main>
+  <h1><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><path d="M2 9a14 14 0 0 1 20 0"/><circle cx="12" cy="19.5" r="1"/></svg>Connexion au réseau WiFi</h1>
+  <p class="sous">Choisissez le réseau de la maison. L'horloge s'y connectera et le point d'accès s'éteindra.</p>
+  <p id="etat" class="carte" role="status"></p>
+
+  <form id="formulaire" class="carte" method="post" action="/api/wifi">
+    <label for="ssid">Réseau</label>
+    <select id="choix" aria-label="Réseaux détectés"><option value="">Recherche des réseaux…</option></select>
+    <input id="ssid" name="ssid" required autocomplete="off" placeholder="Nom du réseau (SSID)">
+    <p class="aide" id="aide-ssid"></p>
+
+    <label for="password">Mot de passe</label>
+    <input id="password" name="password" type="password" autocomplete="off">
+    <p class="aide" id="aide-pass"></p>
+
+    <button type="submit">Enregistrer et se connecter</button>
+    <button type="button" class="second" id="rescan">Rechercher à nouveau</button>
+    <p id="message" role="status" aria-live="polite"></p>
+  </form>
+
+  <form class="carte" method="post" action="/api/wifi/oublier">
+    <p class="aide">Effacer le réseau enregistré : l'horloge revient en point d'accès.</p>
+    <button type="submit" class="second">Oublier le réseau</button>
+  </form>
+</main>
+<script>
+(function () {
+  var modele = { ssid_max: 32, pass_min: 8, pass_max: 63 };
+  var ssid = document.getElementById('ssid');
+  var pass = document.getElementById('password');
+  var choix = document.getElementById('choix');
+  var msg = document.getElementById('message');
+  var etat = document.getElementById('etat');
+
+  function dire(texte, ok) { msg.textContent = texte; msg.className = ok ? 'ok' : 'ko'; }
+
+  // Bounds come from the firmware (single source of truth).
+  fetch('/api/wifi/modele').then(function (r) { return r.json(); }).then(function (m) {
+    modele = m;
+    ssid.maxLength = m.ssid_max;
+    pass.maxLength = m.pass_max;
+    document.getElementById('aide-ssid').textContent = 'Au plus ' + m.ssid_max + ' caractères.';
+    document.getElementById('aide-pass').textContent =
+      'Vide pour un réseau ouvert, sinon de ' + m.pass_min + ' à ' + m.pass_max + ' caractères.';
+  }).catch(function () {});
+
+  function lireEtat() {
+    fetch('/api/info').then(function (r) { return r.json(); }).then(function (i) {
+      etat.textContent = 'État : ' + i.reseau + (i.connecte ? ' — adresse ' + i.ip : '') +
+        (i.portail ? ' — point d’accès ' + i.ap : '') + ' — version ' + i.version;
+    }).catch(function () { etat.textContent = ''; });
+  }
+
+  function scanner() {
+    choix.innerHTML = '<option value="">Recherche des réseaux…</option>';
+    fetch('/api/wifi/scan').then(function (r) { return r.json(); }).then(function (liste) {
+      choix.innerHTML = '<option value="">' + (liste.length ? 'Choisir un réseau détecté' : 'Aucun réseau détecté') + '</option>';
+      liste.forEach(function (ap) {
+        var o = document.createElement('option');
+        o.value = ap.ssid;
+        o.textContent = ap.ssid + '  (' + ap.rssi + ' dBm' + (ap.ouvert ? ', ouvert' : '') + ')';
+        choix.appendChild(o);
+      });
+    }).catch(function () { choix.innerHTML = '<option value="">Recherche impossible</option>'; });
+  }
+  choix.addEventListener('change', function () { if (choix.value) { ssid.value = choix.value; pass.focus(); } });
+  document.getElementById('rescan').addEventListener('click', scanner);
+
+  document.getElementById('formulaire').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var p = pass.value;
+    if (p.length > 0 && (p.length < modele.pass_min || p.length > modele.pass_max)) {
+      dire('Mot de passe : de ' + modele.pass_min + ' à ' + modele.pass_max + ' caractères.', false);
+      return;
+    }
+    var corps = 'ssid=' + encodeURIComponent(ssid.value) + '&password=' + encodeURIComponent(p);
+    fetch('/api/wifi', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: corps })
+      .then(function (r) { return r.text().then(function (t) { dire(t, r.ok); }); })
+      .catch(function () { dire('Envoi impossible.', false); });
+  });
+
+  lireEtat();
+  setInterval(lireEtat, 5000);
+  scanner();
+})();
+</script>
+</body>
+</html>

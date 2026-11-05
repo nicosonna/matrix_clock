@@ -64,27 +64,28 @@ toute modification du composant.
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| RES-01 | `WifiSupervisor::step()` | Pas d'identifiants ⇒ AP + portail | À ÉCRIRE (repris) |
-| RES-02 | idem | Identifiants ⇒ essais, AP éteint | À ÉCRIRE (repris) |
-| RES-03 | idem | 3 essais échoués hors grâce ⇒ `Repli`, station au repos | À ÉCRIRE (repris) |
-| RES-04 | idem | Nouvel essai 30 s / 15 min, AP maintenu | À ÉCRIRE (repris) |
-| RES-05 | idem | Connexion ⇒ `Connecte`, AP et portail éteints | À ÉCRIRE (repris) |
-| RES-06 | idem | Lien perdu ⇒ nouvelle série | À ÉCRIRE (repris) |
-| RES-07 | idem | `attempt_id` change à chaque essai, et seulement là | À ÉCRIRE (repris) |
-| RES-08 | idem | Débordement 32 bits sans faux déclenchement | À ÉCRIRE (repris) |
-| RES-09 | `validate()` | SSID / phrase de passe : tous les cas de `CredStatus` | À ÉCRIRE (repris) |
-| RES-10 | `form_field()` | Champ absent, `%XX`, `%` mal formé rejeté, `+`, octet nul, débordement | À ÉCRIRE (repris) |
-| RES-11 | `build_captive_response()` | A, AAAA (vide sans erreur), tronqué, compression, 2 questions, réponse | À ÉCRIRE (repris) |
-| **RES-20** | `WifiSupervisor::step()` | Grâce : 5 min d'échecs `PointAccesAbsent` ⇒ **jamais** de portail, délais 10/20/40/60/60 s | À ÉCRIRE |
-| **RES-21** | idem | Fin de grâce ⇒ `Essais` puis `Repli` | À ÉCRIRE |
-| **RES-22** | idem | `grace_demarrage_ms = 0` ⇒ comportement ThermoSync **à l'identique** | À ÉCRIRE |
-| **RES-23** | idem | 2 échecs `Authentification` en grâce ⇒ `Repli` immédiat | À ÉCRIRE |
-| **RES-24** | idem | 1 seul échec `Authentification` ne termine pas la grâce | À ÉCRIRE |
-| **RES-25** | idem | Associé sans IP ⇒ `AttenteBail`, pas de portail, réessai 60 s → plafond 300 s | À ÉCRIRE |
-| **RES-26** | idem | 29 min sans portail ; 30 min ⇒ `BailDesespere` (AP + portail + réessais) | À ÉCRIRE |
-| **RES-27** | idem | Bail obtenu depuis `AttenteBail` / `BailDesespere` ⇒ `Connecte` | À ÉCRIRE |
-| **RES-28** | idem | Après une association réussie, `BailAbsent` seul ne mène jamais au `Repli` | À ÉCRIRE |
-| **RES-29** | idem | `redemarrage_si_sans_ip_h` : une demande par tranche, jamais si 0 | À ÉCRIRE |
+| RES-01 | `WifiSupervisor::step()` | Pas d'identifiants ⇒ AP + portail dès le premier `step()`, pour toujours | **PASSE** 2026-11-05 (repris, traduit) |
+| RES-02 | idem | Identifiants ⇒ essais, AP éteint | **PASSE** 2026-11-05 |
+| RES-03 | idem | 3 essais échoués hors grâce ⇒ `Fallback`, station au repos | **PASSE** 2026-11-05 |
+| RES-04 | idem | Nouvel essai 30 s / 15 min, AP maintenu | **PASSE** 2026-11-05 |
+| RES-05 | idem | Connexion ⇒ `Connected`, AP et portail éteints | **PASSE** 2026-11-05 |
+| RES-06 | idem | Lien perdu ⇒ nouvelle série | **PASSE** 2026-11-05 |
+| RES-07 | idem | `attempt_id` change à chaque essai, et seulement là | **PASSE** 2026-11-05 |
+| RES-08 | idem | Débordement 32 bits sans faux déclenchement (grâce désactivée pour l'héritage) | **PASSE** 2026-11-05 |
+| RES-09 | `validate()` | SSID / phrase de passe : tous les cas de `CredStatus` | **PASSE** 2026-11-05 |
+| RES-10 | `form_field()` | Champ absent, `%XX`, `%` mal formé rejeté, `+`, octet nul, débordement, lecture hors corps | **PASSE** 2026-11-05 |
+| RES-11 | `build_captive_response()` | A, AAAA (vide sans erreur), EDNS ignoré, tronqué, compression, 2 questions, réponse, nom > 255 | **PASSE** 2026-11-05 |
+| RES-12 | `derive_ap_password()` | Déterministe, propre à chaque carte, **chiffres + majuscules sans O/I** (lisible en 5×7), valide en WPA2 | **PASSE** 2026-11-05 |
+| **RES-20** | `WifiSupervisor::step()` | Grâce : 5 min d'échecs `ApNotFound` ⇒ **jamais** d'AP ni de portail, essais à 0/20/50/100/170/240 s (délais 10/20/40/60/60), station **au repos** entre deux | **PASSE** 2026-11-05 |
+| **RES-21** | idem | Fin de grâce ⇒ `Connecting` puis `Fallback` à +30 s ; succès en grâce ⇒ `Connected` sans portail | **PASSE** 2026-11-05 |
+| **RES-22** | idem | `boot_grace_ms = 0` ⇒ comportement ThermoSync à l'identique (RES-01…08) | **PASSE** 2026-11-05 |
+| **RES-23** | idem | 2 échecs `AuthFailed` en grâce ⇒ `Fallback` immédiat ; **sauf** après une association réussie (box capricieuse, pas mauvais mot de passe) | **PASSE** 2026-11-05 |
+| **RES-24** | idem | 1 seul échec `AuthFailed` ne termine pas la grâce | **PASSE** 2026-11-05 |
+| **RES-25** | idem | Associé sans IP 20 s ⇒ `WaitingLease`, pas de portail, réessais à 60/180/420/720/1020 s (60 → plafond 300 s) | **PASSE** 2026-11-05 |
+| **RES-26** | idem | 29 min sans portail ; 30 min ⇒ `LeaseDesperate` (AP + portail + réessais poursuivis) | **PASSE** 2026-11-05 |
+| **RES-27** | idem | Bail obtenu depuis `WaitingLease` / `LeaseDesperate` ⇒ `Connected`, AP éteint | **PASSE** 2026-11-05 |
+| **RES-28** | idem | Après une association, une série `Connecting` restée associée ne tombe jamais en `Fallback` ; association perdue > 10 s ⇒ nouvelle série ; nouvel essai en repli qui s'associe sans bail ⇒ `WaitingLease` | **PASSE** 2026-11-05 |
+| **RES-29** | idem | `reboot_without_ip_ms` : une demande par tranche, remise à zéro par une IP, jamais si 0 ni sans identifiants ; **aucune allocation** | **PASSE** 2026-11-05 |
 
 ### 1.4 `homeassistant` — `dev/spec-home-assistant.md` §9
 
@@ -124,7 +125,7 @@ toute modification du composant.
 | ALR-12 | `FileNotifications::courante()` | Priorité puis ancienneté | À ÉCRIRE |
 | ALR-13 | idem | Ponctuelle expire à `duree_s` ; tenue externe retirée seulement par `effacer` de la même `cle` | À ÉCRIRE |
 | ALR-14 | `silence()` | Franchit minuit ; clignotement et défilement supprimés ; passages suspendus, tenues conservées et **reprises à la fin** ; P3 outrepasse | À ÉCRIRE |
-| ALR-15 | `decoder_notification()` | Partagé avec HA-13 (même fonction pure, trois portes d'entrée) | À ÉCRIRE |
+| ALR-15 | `alerts::decode_form()` | Clé obligatoire `[a-z0-9_]` ≤ 24, champs hors bornes ⇒ défaut + compteur, booléens `1/true/oui/on`, troncature texte/titre comptée, clé absente / vide / majuscules / mal encodée ⇒ rejet, `nullptr` ; aucune allocation. Partagé avec HA-13 et WEB-06. | **PASSE** 2026-11-05 (décodeur ; le reste du composant `alerts` à écrire) |
 | ALR-16 | tout `alerts` | 16 règles actives, **aucune allocation** (`operator new` piégé) | À ÉCRIRE |
 | ALR-17 | idem | Débordement 32 bits des compteurs ms | À ÉCRIRE |
 | ALR-18 | modèle ⇄ wizard | Aucun champ orphelin (règle des wizards) | À ÉCRIRE |
@@ -220,8 +221,8 @@ l'horloge.
 | HW-RES-02 | Box éteinte 10 min puis rallumée | Reconnexion seule, pas de portail | À FAIRE |
 | HW-RES-03 | DHCP désactivé sur la box | `AttenteBail` sans portail ; portail **en plus** à 30 min + alerte | À FAIRE |
 | HW-RES-04 | Phrase de passe changée sur la box | Portail en moins de 2 min | À FAIRE |
-| HW-RES-05 | Portail ouvert, iPhone / Android / Windows | Fenêtre captive qui s'ouvre seule ; SSID et phrase de passe **lisibles sur la dalle** | À FAIRE |
-| HW-RES-06 | Identifiants saisis au portail | Connexion **sans redémarrage** | À FAIRE |
+| HW-RES-05 | Portail ouvert, iPhone / Android / Windows | Fenêtre captive qui s'ouvre seule ; SSID et phrase de passe **lisibles sur la dalle** | **EN COURS** 2026-11-05 : AP `Horloge-XXXX` WPA2, DNS captif, sondes et page `/wifi` en place, SSID + mot de passe défilent sur la dalle — **essai au téléphone en attente** |
+| HW-RES-06 | Identifiants saisis au portail | Connexion **sans redémarrage** | **PASSE** 2026-11-05 : box jointe depuis le portail au téléphone, état `connected` sans reset (2 min de fonctionnement dans les logs), point d'accès éteint (absent du scan Wi-Fi du PC) |
 | HW-RES-07 | `horloge.local` depuis PC et téléphone | Résolu | À FAIRE |
 | HW-HA-01 | Liaison au Home Assistant **de la maison**, en lecture | Valeur affichée = valeur de l'interface | À FAIRE |
 | HW-HA-02 | Home Assistant redémarré | Reconnexion seule, valeurs retrouvées | À FAIRE |

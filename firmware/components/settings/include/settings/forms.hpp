@@ -36,6 +36,10 @@ extern const char* const kHaValueFields[];
 extern const std::size_t kHaValueFieldCount;
 extern const char* const kMqttFields[];
 extern const std::size_t kMqttFieldCount;
+extern const char* const kAlertFields[];
+extern const std::size_t kAlertFieldCount;
+extern const char* const kAlertRuleFields[];
+extern const std::size_t kAlertRuleFieldCount;
 
 /**
  * @brief Applies a form to a copy of @p current; writes @p out only if everything is valid.
@@ -59,6 +63,21 @@ bool apply_ha_value_form(const char* body, std::size_t len, std::size_t index, c
 /// an empty `prefixe` means the default.
 bool apply_mqtt_form(const char* body, std::size_t len, const homeassistant::MqttConfig& current,
                      homeassistant::MqttConfig& out, FormError& err) noexcept;
+/// Quiet hours (the rules have their own form).
+bool apply_alert_form(const char* body, std::size_t len, const AlertSettings& current, AlertSettings& out,
+                      FormError& err) noexcept;
+/**
+ * @brief One rule (index 0..15), all or nothing. `seuil` and `hysteresis` are decimal texts ("-0.5") read in the
+ *        fixed point of the source: @p value_decimals gives the decimals of the 8 Home Assistant values.
+ */
+bool apply_alert_rule_form(const char* body, std::size_t len, std::size_t index, const AlertSettings& current,
+                           AlertSettings& out, const uint8_t* value_decimals, FormError& err) noexcept;
+
+/// Fixed-point text helpers (shared with the JSON views): "-0.5" <-> -5 with 1 decimal.
+bool parse_fixed(const char* s, uint8_t decimals, int32_t& out) noexcept;
+std::size_t fixed_to_text(int32_t v, uint8_t decimals, char* out, std::size_t size) noexcept;
+/// `#RRGGBB` <-> bytes; an empty text means "no colour" (false, rgb untouched).
+bool parse_color(const char* s, uint8_t rgb[3]) noexcept;
 
 /// Enumerations, as the page shows them (French labels are the API values).
 const char* axis_name(display::FirstAxis a) noexcept;

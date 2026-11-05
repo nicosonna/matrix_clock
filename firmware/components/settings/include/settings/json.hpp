@@ -16,7 +16,7 @@
 namespace settings {
 
 /// Buffer size that fits every model and every values document.
-inline constexpr std::size_t kJsonMax = 4096U;
+inline constexpr std::size_t kJsonMax = 8192U;
 
 std::size_t display_model_json(char* out, std::size_t out_size) noexcept;
 std::size_t brightness_model_json(char* out, std::size_t out_size) noexcept;
@@ -25,6 +25,8 @@ std::size_t air_model_json(char* out, std::size_t out_size) noexcept;
 /// Link + weather fields, plus `valeur` (the sub-model of one tracked value) and `valeurs_max`.
 std::size_t ha_model_json(char* out, std::size_t out_size) noexcept;
 std::size_t mqtt_model_json(char* out, std::size_t out_size) noexcept;
+/// Quiet-hour fields, plus `regle` (sub-model of one rule), `regles_max`, `sources` (name, boolean, unit, decimals).
+std::size_t alert_model_json(char* out, std::size_t out_size) noexcept;
 
 std::size_t display_json(const DisplaySettings& s, char* out, std::size_t out_size) noexcept;
 std::size_t brightness_json(const brightness::Config& c, char* out, std::size_t out_size) noexcept;
@@ -34,5 +36,7 @@ std::size_t air_json(const AirSettings& s, char* out, std::size_t out_size) noex
 std::size_t ha_json(const HaSettings& s, char* out, std::size_t out_size) noexcept;
 /// The password is never written back: `mot_de_passe_defini` says whether one is stored.
 std::size_t mqtt_json(const homeassistant::MqttConfig& c, char* out, std::size_t out_size) noexcept;
+/// Quiet hours + `regles[]`; `seuil` and `hysteresis` as decimal texts in the source's fixed point (`decimales`).
+std::size_t alert_json(const AlertSettings& a, char* out, std::size_t out_size) noexcept;
 
 }  // namespace settings

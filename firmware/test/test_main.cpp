@@ -65,6 +65,7 @@ int main() {
     run_network_tests();
     std::printf("-- alerts: inbound notification decoder\n");
     run_alerts_tests();
+    run_alert_engine_tests();
     std::printf("-- timekeeping: POSIX rules, local time with DST, calendar, validity\n");
     run_timekeeping_tests();
     std::printf("-- settings: JSON writer, forms (all or nothing), models, page orphans\n");

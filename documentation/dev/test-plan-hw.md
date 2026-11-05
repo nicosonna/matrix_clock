@@ -111,24 +111,24 @@ toute modification du composant.
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| ALR-01 | `Regle::evaluer()` | Chaque comparaison | À ÉCRIRE |
-| ALR-02 | idem | Hystérésis : oscillation dans la bande ⇒ **un seul** déclenchement | À ÉCRIRE |
-| ALR-03 | idem | Confirmation 300 s ; coupure d'un pas ⇒ compteur à zéro | À ÉCRIRE |
-| ALR-04 | idem | Source invalide ⇒ `Indisponible`, aucune levée ; retour ⇒ compteur à zéro | À ÉCRIRE |
-| ALR-05 | `MoteurAlertes::step()` | Les 7 sources internes | À ÉCRIRE |
-| ALR-06 | idem | Passages : `duree_s` à l'arrivée puis toutes les `rappel_s` tant que `Levee` ; icône maintenue entre deux | À ÉCRIRE |
-| ALR-07 | idem | Retombée ⇒ notification tenue retirée d'elle-même ; **aucune** API ne la retire autrement | À ÉCRIRE |
-| ALR-08 | `valider_regle()` | Seuil dans la virgule fixe de la source, index, gabarit, priorité | À ÉCRIRE |
-| ALR-09 | `rendre_gabarit()` | `{n}`, `{v}`, `{u}`, accolade orpheline, inconnu, débordement | À ÉCRIRE |
-| ALR-10 | `FileNotifications::pousser()` | Dédoublonnage par clé, rang conservé, expiration repoussée | À ÉCRIRE |
-| ALR-11 | idem | File pleine : éviction de la plus basse priorité la plus ancienne ; rejet sinon | À ÉCRIRE |
-| ALR-12 | `FileNotifications::courante()` | Priorité puis ancienneté | À ÉCRIRE |
-| ALR-13 | idem | Ponctuelle expire à `duree_s` ; tenue externe retirée seulement par `effacer` de la même `cle` | À ÉCRIRE |
-| ALR-14 | `silence()` | Franchit minuit ; clignotement et défilement supprimés ; passages suspendus, tenues conservées et **reprises à la fin** ; P3 outrepasse | À ÉCRIRE |
+| ALR-01 | `RuleEngine::step()` (comparaisons) | `<` `<=` `>` `>=` `==` `!=` lèvent et retombent au bon côté du seuil ; `change` ⇒ une **ponctuelle** (non tenue, expire) ; `vrai` / `faux` sur une source interne ; règle inactive ⇒ `Inactive`, rien en file | **PASSE** 2026-11-05 |
+| ALR-02 | idem (hystérésis) | Lève à `< 0`, oscillation dans la bande `[0, 0,5[` ⇒ **un seul** déclenchement (même `seq` en file), retombe à `≥ 0,5` ; `>` avec hystérésis ; `==` avec bande | **PASSE** 2026-11-05 |
+| ALR-03 | idem (confirmation) | Condition tenue 299 s ⇒ `Confirming`, 300 s ⇒ `Raised` ; une coupure d'un pas ⇒ `Watching` et compteur à zéro (299 s après la coupure : toujours en confirmation) | **PASSE** 2026-11-05 |
+| ALR-04 | idem (`Unavailable`) | Source invalide ⇒ `Unavailable`, **aucune** levée même avec une valeur périmée à -5 °C ; retour ⇒ compteur à zéro ; une règle levée dont la source disparaît **retombe** ; valeur désactivée, air en préchauffage / défaut / absent / désactivé ⇒ indisponible | **PASSE** 2026-11-05 |
+| ALR-05 | `sample()`, `default_rules()` | Les 11 sources booléennes valides et fausses sur de bonnes entrées, chacune bascule sur son entrée ; `LiaisonHaPerdue` / `JetonRefuse` / `DonneePerimee` **indisponibles** liaison désactivée, air idem capteur désactivé, `AirCapteurDefaut` valide capteur absent ; décimales et unités des sources ; noms aller-retour ; règles par défaut de la spec valides, `AERER` levée après 120 s d'AQI 4, retombe seule | **PASSE** 2026-11-05 |
+| ALR-06 | `NotificationQueue::next_pass()` | Passage à la levée (`duree_s`, `interrupts` P1), rien avant `rappel_s`, rejoué à `rappel_s` ; `has_held()` entre deux passages (icône) ; texte suivi de la valeur (`GEL -4.1C`, même rang) | **PASSE** 2026-11-05 |
+| ALR-07 | `RuleEngine::step()` ⇄ file | Retombée ⇒ notification tenue retirée **d'elle-même** ; un `clear()` extérieur est annulé au pas suivant tant que la règle est levée ; reconfiguration ⇒ notifications des règles non levées retirées ; aucun champ d'acquittement (`Notification` n'a que `effacer`, réservé à la source) | **PASSE** 2026-11-05 |
+| ALR-08 | `validate(Rule)`, `settings::apply_alert_rule_form()` | Les 13 statuts (nom, source, index selon la source, comparaison booléenne ⇄ numérique, seuil, hystérésis, décimales, confirmation, priorité, texte, icône, durée, rappel) ; règle invalide ⇒ défaut inactif ; formulaire : seuil en **virgule fixe de la source** (`-0.5` sur 1 décimale ⇒ -5, `0.55` refusé, changement de source ⇒ nombres remis à zéro), index forcé à 0 hors `Valeur`, couleur `#RRGGBB` ou vide, 22 corps fautifs tout-ou-rien, `%ZZ` sur chaque champ refusé par son nom | **PASSE** 2026-11-05 |
+| ALR-09 | `render_template()` | `{n}`, `{v}` (virgule fixe, signe, `--` si invalide), `{u}` ; accolade orpheline et placeholder inconnu copiés tels quels ; gabarit vide ⇒ nom ; `{v}` d'une source booléenne ⇒ `--` ; débordement ⇒ 0 et tampon vidé ; `nullptr` | **PASSE** 2026-11-05 |
+| ALR-10 | `NotificationQueue::push()` | Même clé ⇒ contenu remplacé, `seq` et arrivée conservés, expiration repoussée ; texte vide ⇒ le titre ; couleur de la priorité sauf si posée ; clé invalide rejetée et comptée | **PASSE** 2026-11-05 |
+| ALR-11 | idem (pleine) | 16 tenues : une P1 évince la **plus ancienne P0** ; puis la suivante ; P1 face à 16 P1 ⇒ **rejetée** et comptée ; P3 évince la plus ancienne P1 ; remplacement d'une clé existante n'évince personne | **PASSE** 2026-11-05 |
+| ALR-12 | `next_pass()` | Priorité puis ancienneté ; P0 n'interrompt pas (`interrupts` faux) ; une ponctuelle ne se rejoue pas | **PASSE** 2026-11-05 |
+| ALR-13 | `step()`, `push()` (`effacer`) | Ponctuelle retirée à `duree_s` ; tenue externe (`persistante`) survit 1 h, rejouée à `rappel_s`, retirée **seulement** par `effacer` de la même clé ; `clear` d'une clé absente sans effet ni erreur | **PASSE** 2026-11-05 |
+| ALR-14 | `quiet_now()`, `rendering_for()`, `next_pass()` | Fenêtre 22:30 → 07:00 franchissant minuit, même jour, désactivée, heure non sûre ⇒ jamais silencieux, fenêtre vide, invalide ; rendu P0..P3 (interruption, clignotement 1 / 2 Hz, défilement, plancher 64) coupé en silence sauf P3 exempte ; passages suspendus, tenues **conservées et reprises** à la fin, P3 `outrepasse_silence` passe (si `silence_outrepasse_par_p3`) | **PASSE** 2026-11-05 |
 | ALR-15 | `alerts::decode_form()` | Clé obligatoire `[a-z0-9_]` ≤ 24, champs hors bornes ⇒ défaut + compteur, booléens `1/true/oui/on`, troncature texte/titre comptée, clé absente / vide / majuscules / mal encodée ⇒ rejet, `nullptr` ; aucune allocation. Partagé avec HA-13 et WEB-06. | **PASSE** 2026-11-05 (décodeur ; le reste du composant `alerts` à écrire) |
-| ALR-16 | tout `alerts` | 16 règles actives, **aucune allocation** (`operator new` piégé) | À ÉCRIRE |
-| ALR-17 | idem | Débordement 32 bits des compteurs ms | À ÉCRIRE |
-| ALR-18 | modèle ⇄ wizard | Aucun champ orphelin (règle des wizards) | À ÉCRIRE |
+| ALR-16 | tout `alerts` | 16 règles actives, 2000 pas avec file et passages, `AllocGuard` ⇒ **0** allocation | **PASSE** 2026-11-05 |
+| ALR-17 | idem | Confirmation et rappel à cheval sur le débordement 32 bits ; expiration d'une ponctuelle à travers le débordement | **PASSE** 2026-11-05 |
+| ALR-18 | modèle ⇄ page `/alertes` ⇄ wizard | Les 4 champs de `kAlertFields` dans le groupe `alertes:`, les 15 de `kAlertRuleFields` dans `alerte_regle:` une fois, cartes construites depuis `modele.regle`, le **wizard envoie exactement les 15 champs**, types `decimal` / `couleur` / `heure` rendus, aucun champ `acquitt…` (dans WEB-04) | **PASSE** 2026-11-05 |
 
 ### 1.6 `air_quality` — `dev/spec-qualite-air.md` §10
 
@@ -156,7 +156,7 @@ bus bloqué).
 | AIR-17 | `build_offset()` | mesuré − référence ; > 2,00 °C ⇒ avertissement « déporter » ; > 10 °C ⇒ refus | **PASSE** 2026-11-05 |
 | AIR-18 | `level_color()` | Gris neutre pour `Unknown` (r = g = b), vert seulement pour `Excellent`, rouge pour `Tres mauvais` | **PASSE** 2026-11-05 |
 | AIR-19 | `display::draw_air_logo_6/8()` | Glyphes 6×6 (15 px) et 8×8 (23 px) dans la couleur donnée, découpage hors dalle sans écriture hors bornes ; modes `Aucun` / `ZoneIcone` / `Scene` câblés dans `app_main` (vérification visuelle HW) | **PASSE** 2026-11-05 (glyphes) |
-| AIR-20 | `alerts` (moteur) | Source air en préchauffage / défaut ⇒ aucune levée ; `AirCapteurDefaut` lève | À ÉCRIRE (moteur de règles) |
+| AIR-20 | `alerts::sample()`, `RuleEngine` | Règle `AirAqi >= 4` : préchauffage (`air_aqi.valid` faux), défaut, absent, capteur désactivé ⇒ `Unavailable`, aucune levée ; air valide à 5 ⇒ levée ; `AirCapteurDefaut` valide et vrai capteur absent | **PASSE** 2026-11-05 (dans ALR-04 / ALR-05) |
 | AIR-21 | `AirSensor::step()` (`Recover`) | Bus bloqué ⇒ 3 échecs consécutifs ⇒ `fault`, `recover()` appelé, compteur `bus_resets`, nouvelle sonde ; aucune attente : une transaction par `step()` | **PASSE** 2026-11-05 |
 | AIR-22 | modèle ⇄ page `/air` | Les 16 champs de `kAirFields` dans exactement un groupe de la page, modèle avec `libelle` et type `temperature`, clé `reference` du wizard connue | **PASSE** 2026-11-05 (dans WEB-04) |
 
@@ -187,7 +187,7 @@ journalise ce que l'horloge publie et peut injecter `<prefixe>/status`).
 | WEB-01 | `form_field()` | Couvert aussi par RES-10, appliqué aux formulaires d'affichage, de luminosité, de système, du wizard de luminosité, de `usine` et de `test` | **PASSE** 2026-11-05 (`test_settings.cpp`) |
 | WEB-02 | `settings::apply_<domain>_form()` | Tout-ou-rien : un champ fautif ⇒ `false` + `FormError`, **rien** modifié dans `out` ; corps vide ⇒ succès sans changement ; mauvais encodage (`%ZZ`) sur chaque champ ⇒ refus nommé | **PASSE** 2026-11-05 |
 | WEB-03 | idem | Champ nommé, raison en français, bornes exactes (`budget_ma` 400..15000, `vitesse_defilement` 5..60, `largeur_module` 0/8, `pas_lum` 1..32, `extinction_*` 0..1439, scènes ≤ 8, courbe 2..6 points croissants, fuseau dans la table, hôte NTP valide) | **PASSE** 2026-11-05 |
-| WEB-04 | `settings::*_model_json()` ⇄ `www/app.html` | Le modèle nomme chaque champ avec `type`, `libelle`, bornes, défaut, aide (`heure` pour les minutes du jour, `scenes` et `courbe` pour les éditeurs) ; la page **construit** ses formulaires depuis `/api/<domaine>/modele` (aucun `name=` recopié), répartit chaque champ dans **exactement un** groupe, possède un widget par type émis (dont `type: 'time'` et le réordonnancement des scènes) ; les clés et valeurs codées en dur par les wizards existent dans le modèle ; aucun `https://`, aucun emoji. 6 domaines (`affichage`, `luminosite`, `systeme`, `air`, `ha`, `mqtt`) ; `alertes` suivra son composant | **PASSE** 2026-11-05 |
+| WEB-04 | `settings::*_model_json()` ⇄ `www/app.html` | Le modèle nomme chaque champ avec `type`, `libelle`, bornes, défaut, aide (`heure` pour les minutes du jour, `scenes` et `courbe` pour les éditeurs) ; la page **construit** ses formulaires depuis `/api/<domaine>/modele` (aucun `name=` recopié), répartit chaque champ dans **exactement un** groupe, possède un widget par type émis (dont `type: 'time'` et le réordonnancement des scènes) ; les clés et valeurs codées en dur par les wizards existent dans le modèle ; aucun `https://`, aucun emoji. 7 domaines (`affichage`, `luminosite`, `systeme`, `air`, `ha`, `mqtt`, `alertes`) | **PASSE** 2026-11-05 |
 | WEB-05 | `settings::JsonWriter` | Échappement, virgules, profondeur ≤ 8, `nullptr` refusé, débordement ⇒ `length()` = 0 (le serveur répond 500 `incomplet`), jamais de JSON invalide | **PASSE** 2026-11-05 |
 | WEB-06 | `alerts::decode_form()` | Mêmes bornes et rejets que HA-13 | **PASSE** 2026-11-05 (= ALR-15) |
 | WEB-07 | `handle_factory()` (`web_server.cpp`) | Refus sans `confirme=OUI` | Vérifié par HTTP sur la carte (400 sans confirmation) ; logique dans l'adaptateur, pas de test host |
@@ -248,12 +248,12 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-HA-03 | Jeton révoqué | `JetonRefuse` visible sur la page, pas de martèlement | À FAIRE |
 | HW-HA-04 | Automatisation réelle qui déclenche `horloge_notification` | Notification affichée au bon rendu | À FAIRE |
 | HW-ALR-01 | Sonde refroidie sous le seuil de la règle `GEL` | Alerte après la durée de confirmation, pas avant | À FAIRE |
-| HW-ALR-02 | Règle `AERER` levée, puis fenêtre ouverte | Passages toutes les `rappel_s` tant que l'air est mauvais ; disparition **seule** quand le niveau retombe ; aucun bouton sur la page | À FAIRE |
+| HW-ALR-02 | Règle `AERER` levée, puis fenêtre ouverte | Passages toutes les `rappel_s` tant que l'air est mauvais ; disparition **seule** quand le niveau retombe ; aucun bouton sur la page | **MÉCANIQUE VÉRIFIÉE** 2026-11-05 : `AERER` en `confirmation` à AQI 4 puis retour `surveille` à AQI 3 ; règle `CO2 >= 900` posée par l'API ⇒ `levee`, texte `CO2 906 ppm`, notification `regle_12` tenue (`!` dans la zone d'icône) ; notification externe tenue retirée **seulement** par `effacer` de sa source ; `seuil=0.55` sur une source à 1 décimale ⇒ 400 nommé. Reste : fenêtre ouverte réelle, passages comptés sur une heure |
 | HW-SYS-01 | Fuseau changé sur `/systeme` (`Europe/Zurich` → `UTC`) | Heure décalée **sans redémarrage** ; défaut `Europe/Zurich` après réglages d'usine | À FAIRE (page écrite, à jouer sur la carte) |
 | HW-TIME-01 | Mise sous tension, box jointe, SNTP `pool.ntp.org` | `--:--` jusqu'à la synchro, puis l'heure locale de Zurich ; date en 3×5 | **PASSE** 2026-11-05 : `boot_grace` → `connected` à 23 s, `SNTP synchronised` à 31 s, `time is now SURE (2026-11-05 03:33:24)`, heure et date sur la dalle |
 | HW-TIME-02 | Changement d'heure réel (29 mars 2026 à 02:00 → 03:00, 25 octobre 03:00 → 02:00) | La dalle bascule d'elle-même, sans redémarrage ni resynchro | À FAIRE (en mars) — couvert sur host à la seconde par TIME-02 |
 | HW-ALR-03 | Une nuit complète en heures silencieuses | Aucun clignotement, alerte conservée et visible au réveil | À FAIRE |
-| HW-ALR-04 | `POST /api/notification` depuis le PC (`cle=test`, priorité 2, 15 s) | 200, le texte interrompt l'heure, défile dans la couleur de la priorité, l'heure reprend | **PASSE** 2026-11-05 (canal local ; le hub y passera par `commande notifier` en phase 2) |
+| HW-ALR-04 | `POST /api/notification` depuis le PC (`cle=test`, priorité 2, 15 s) | 200, le texte interrompt l'heure, défile dans la couleur de la priorité, l'heure reprend | **PASSE** 2026-11-05 : ponctuelle P1 ⇒ scène `Alerte` puis retour `Heure`, `passages:true`, expirée ; tenue P2 (`persistante`) ⇒ passage, puis `tenues:true` jusqu'à `effacer` |
 | HW-AIR-01 | Mise sous tension, chronomètre | `--` + préchauffage ~3 min, puis valeurs ; **aucune** alerte « AERER » pendant ce temps | À FAIRE |
 | HW-AIR-02 | Premier usage du capteur neuf | Drapeau 2 pendant ~1 h, signalé sur la page | **OBSERVÉ** 2026-11-05 : `DEVICE_STATUS` = 0x8B (validité 2, NEWDAT), `premiere_mise_en_service:true`, AQI `--`, niveau `Inconnu` ; à confirmer : passage à 0 après ~1 h cumulée |
 | HW-AIR-03 | Solvant vaporisé à proximité | AQI, TVOC, eCO2 montent ; niveau confirmé après 60 s | À FAIRE |

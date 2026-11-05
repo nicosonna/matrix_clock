@@ -66,6 +66,7 @@ table.liste select { max-width:11rem; }
   <a href="/air" data-page="air">Air</a>
   <a href="/ha" data-page="ha">Home Assistant</a>
   <a href="/mqtt" data-page="mqtt">MQTT</a>
+  <a href="/alertes" data-page="alertes">Alertes</a>
   <a href="/systeme" data-page="systeme">Système</a>
   <a href="/wifi">WiFi</a>
 </nav>
@@ -188,6 +189,33 @@ table.liste select { max-width:11rem; }
   </div>
 </section>
 
+<section id="alertes">
+  <div class="carte">
+    <h2>Alertes en cours</h2>
+    <p class="aide">Une alerte revient toutes les « rappel » secondes tant que sa condition tient et tombe d’elle-même quand le système concerné revient à la normale. Il n’y a pas d’acquittement : la liste ci-dessous se lit, elle ne s’efface pas.</p>
+    <div class="grille" id="tuiles-alertes"></div>
+    <table class="liste"><thead><tr><th>Clé</th><th>Texte</th><th>P</th><th>Tenue</th><th>Depuis</th></tr></thead><tbody id="file-alertes"></tbody></table>
+  </div>
+  <div class="carte">
+    <h2>Règles</h2>
+    <p class="aide">Chaque règle surveille une source (valeur Home Assistant, capteur d’air, état interne). Source invalide = règle indisponible, jamais une alerte sur une donnée qu’on n’a pas.</p>
+    <div class="grille" id="etat-regles"></div>
+  </div>
+  <div class="carte">
+    <h2>Créer une règle — wizard</h2>
+    <p class="aide">Quoi surveiller, condition, stabilité, rendu, récapitulatif en français.</p>
+    <div id="wiz-alerte"></div>
+  </div>
+  <div class="carte">
+    <h2>Heures silencieuses</h2>
+    <form id="form-alertes" data-domaine="alertes" data-groupe="alertes"></form>
+  </div>
+  <div class="carte">
+    <h2>Toutes les règles</h2>
+    <div id="alertes-regles"></div>
+  </div>
+</section>
+
 <section id="systeme">
   <div class="carte">
     <h2>Heure</h2>
@@ -216,8 +244,8 @@ table.liste select { max-width:11rem; }
 <script>
 (function () {
   'use strict';
-  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'ha', 'mqtt', 'systeme'];
-  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/ha': 'ha', '/mqtt': 'mqtt', '/systeme': 'systeme' };
+  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'ha', 'mqtt', 'alertes', 'systeme'];
+  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/ha': 'ha', '/mqtt': 'mqtt', '/alertes': 'alertes', '/systeme': 'systeme' };
   // Which fields each form shows (the model stays the single source of truth for everything else).
   var groupes = {
     scenes: ['scenes', 'vitesse_defilement', 'clignotement', 'barre_secondes'],
@@ -230,6 +258,8 @@ table.liste select { max-width:11rem; }
     meteo: ['meteo_actif', 'latitude', 'longitude', 'meteo_periode_s'],
     mqtt: ['actif', 'hote', 'port', 'utilisateur', 'mot_de_passe', 'effacer_mdp', 'prefixe'],
     mqtt_avance: ['periode_s'],
+    alertes: ['silence_actif', 'silence_debut', 'silence_fin', 'silence_outrepasse_par_p3'],
+    alerte_regle: ['actif', 'nom', 'source', 'index', 'comparaison', 'seuil', 'hysteresis', 'confirmation_s', 'priorite', 'texte', 'couleur', 'icone', 'duree_s', 'rappel_s', 'outrepasse_silence'],
     ha_valeur: ['actif', 'nom', 'mode', 'entite', 'attribut', 'gabarit', 'type', 'decimales', 'unite', 'icone', 'peremption_s'],
     air_seuils: ['grandeur_pilote', 'seuil_eco2_bon', 'seuil_eco2_moyen', 'seuil_eco2_mauvais', 'seuil_eco2_tres_mauvais', 'seuil_tvoc_bon', 'seuil_tvoc_moyen', 'seuil_tvoc_mauvais', 'seuil_tvoc_tres_mauvais', 'hysteresis_eco2', 'hysteresis_tvoc', 'confirmation_s']
   };
@@ -417,6 +447,10 @@ table.liste select { max-width:11rem; }
         return boite;
       } else if (m.type === 'entier') {
         ctrl = el('input', { type: 'number', id: id, min: m.min, max: m.max, step: 1, value: valeur });
+      } else if (m.type === 'decimal') {
+        ctrl = el('input', { type: 'text', id: id, inputMode: 'decimal', value: (valeur === undefined || valeur === null) ? m.defaut : valeur });
+      } else if (m.type === 'couleur') {
+        ctrl = el('input', { type: 'text', id: id, maxLength: 7, placeholder: '#RRGGBB', value: valeur || '' });
       } else {
         ctrl = el('input', { type: 'text', id: id, maxLength: m.max, value: valeur });
       }
@@ -638,6 +672,139 @@ table.liste select { max-width:11rem; }
     boite.appendChild(box);
   }
 
+  // ---- Alerts: live rules and queue, rule cards, wizard
+  var alertesTimer = null;
+  var modeleAlertes = null;
+  function lireAlertes() {
+    fetch('/api/etat').then(function (r) { return r.json(); }).then(function (e) {
+      var a = e.alertes;
+      var g = document.getElementById('tuiles-alertes'); g.innerHTML = '';
+      var tb = document.getElementById('file-alertes'); tb.innerHTML = '';
+      var rg = document.getElementById('etat-regles'); rg.innerHTML = '';
+      if (!a) { return; }
+      g.appendChild(tuile('Règles levées', a.levees));
+      g.appendChild(tuile('Heures silencieuses', a.silence ? 'en cours' : 'non'));
+      g.appendChild(tuile('Notifications refusées (file pleine)', a.rejets));
+      (a.file || []).forEach(function (n) {
+        var tr = el('tr');
+        [n.cle, n.texte || n.titre, String(n.priorite), n.tenue ? 'oui' : 'non', Math.floor(n.age_s / 60) + ' min'].forEach(function (t) { tr.appendChild(el('td', {}, t)); });
+        tb.appendChild(tr);
+      });
+      if (!(a.file || []).length) { var tr0 = el('tr'); tr0.appendChild(el('td', { colSpan: 5 }, 'Aucune alerte en cours.')); tb.appendChild(tr0); }
+      (a.regles || []).forEach(function (r, i) {
+        if (!r.actif) { return; }
+        rg.appendChild(tuile((i + 1) + '. ' + r.nom + (r.valeur ? ' — ' + r.valeur : ''), r.etat));
+      });
+    }).catch(function () {});
+  }
+  function chargerReglesAlertes() {
+    var boite = document.getElementById('alertes-regles');
+    Promise.all([fetch('/api/alertes/modele').then(function (r) { return r.json(); }), fetch('/api/alertes').then(function (r) { return r.json(); })])
+      .then(function (res) {
+        boite.innerHTML = '';
+        var modele = res[0], regles = res[1].regles || [];
+        modeleAlertes = modele;
+        for (var i = 0; i < (modele.regles_max || 16); i++) {
+          var carte = el('div', { class: 'carte' });
+          carte.appendChild(el('h2', {}, 'Règle ' + (i + 1) + (regles[i] && regles[i].nom ? ' — ' + regles[i].nom : '')));
+          var form = el('form', { id: 'form-alerte-regle-' + i });
+          form.setAttribute('data-groupe', 'alerte_regle');
+          carte.appendChild(form);
+          boite.appendChild(carte);
+          construire(form, modele, regles[i] || {}, modele.regle, 'alertes/regle/' + i);
+        }
+      }).catch(function () { boite.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; });
+  }
+  function wizardAlerte(i, w) {
+    var boite = document.getElementById('wiz-alerte');
+    boite.innerHTML = '';
+    var box = el('div', { class: 'etapes' });
+    var m = modeleAlertes;
+    if (!m) { boite.appendChild(el('p', { class: 'msg ko' }, 'Modèle indisponible.')); return; }
+    w = w || { source: 'Valeur', index: 1, comparaison: '<', seuil: '0', hysteresis: '0', confirmation_s: 0, priorite: 1, texte: '', duree_s: 30, rappel_s: 300, nom: '' };
+    function src() { var s = null; (m.sources || []).forEach(function (x) { if (x.nom === w.source) { s = x; } }); return s || { booleen: false, unite: '', decimales: 0 }; }
+    function suivant(txt, f) { var b = el('button', { type: 'button', class: 'second' }, txt); b.onclick = f; box.appendChild(b); }
+    if (i === 0) {
+      boite.appendChild(el('p', {}, '1/5 — Quoi surveiller ? Une valeur Home Assistant (avec sa valeur actuelle) ou un état de l’horloge.'));
+      var sel = el('select'); (m.regle.source.valeurs || []).forEach(function (v) { var o = el('option', { value: v }, v); if (v === w.source) { o.selected = true; } sel.appendChild(o); });
+      var idx = el('select'); for (var k = 1; k <= 8; k++) { idx.appendChild(el('option', { value: k }, 'Valeur ' + k)); }
+      idx.value = w.index;
+      boite.appendChild(el('label', {}, 'Source')); boite.appendChild(sel); boite.appendChild(el('label', {}, 'Valeur Home Assistant')); boite.appendChild(idx);
+      var apercu = el('p', { class: 'aide' }); boite.appendChild(apercu);
+      function montrerValeur() {
+        if (sel.value !== 'Valeur' && sel.value !== 'DonneePerimee') { apercu.textContent = ''; return; }
+        var v = (haEtat && haEtat.valeurs) ? haEtat.valeurs[idx.value - 1] : null;
+        apercu.textContent = v ? ((v.nom || ('Valeur ' + idx.value)) + ' : ' + (v.valide ? v.texte : '-- (indisponible)')) : 'Onglet Home Assistant pour voir les valeurs.';
+      }
+      sel.onchange = montrerValeur; idx.onchange = montrerValeur; fetch('/api/etat').then(function (r) { return r.json(); }).then(function (e) { haEtat = e.ha; montrerValeur(); });
+      suivant('Continuer', function () { w.source = sel.value; w.index = parseInt(idx.value, 10); wizardAlerte(1, w); });
+    } else if (i === 1) {
+      var sd = src();
+      boite.appendChild(el('p', {}, '2/5 — Condition' + (sd.booleen ? ' : la règle se lève quand l’état est vrai ou faux.' : ' et seuil, dans l’unité de la source' + (sd.unite ? ' (' + sd.unite + ')' : '') + '.')));
+      var cmp = el('select');
+      (m.regle.comparaison.valeurs || []).forEach(function (c) { var bool = (c === 'vrai' || c === 'faux'); if (bool === !!sd.booleen) { cmp.appendChild(el('option', { value: c }, c)); } });
+      var seuil = el('input', { type: 'text', inputMode: 'decimal', value: w.seuil });
+      boite.appendChild(el('label', {}, 'Condition')); boite.appendChild(cmp);
+      if (!sd.booleen) { boite.appendChild(el('label', {}, 'Seuil')); boite.appendChild(seuil); }
+      var ap2 = el('p', { class: 'aide' }); boite.appendChild(ap2);
+      function apercuCond() {
+        var v = (haEtat && haEtat.valeurs && w.source === 'Valeur') ? haEtat.valeurs[w.index - 1] : null;
+        if (!v || !v.valide || sd.booleen) { ap2.textContent = ''; return; }
+        var x = parseFloat(v.texte), t = parseFloat(seuil.value), ok = false, c = cmp.value;
+        if (!isNaN(x) && !isNaN(t)) { ok = (c === '<' && x < t) || (c === '<=' && x <= t) || (c === '>' && x > t) || (c === '>=' && x >= t) || (c === '==' && x === t) || (c === '!=' && x !== t); }
+        ap2.textContent = 'Avec la valeur actuelle de ' + v.texte + ', cette règle ' + (ok ? 'se lèverait' : 'ne se lèverait pas') + '.';
+      }
+      cmp.onchange = apercuCond; seuil.oninput = apercuCond; apercuCond();
+      suivant('Continuer', function () { w.comparaison = cmp.value; w.seuil = sd.booleen ? '0' : seuil.value; wizardAlerte(2, w); });
+    } else if (i === 2) {
+      boite.appendChild(el('p', {}, '3/5 — Stabilité : l’hystérésis évite le papillonnement autour du seuil ; la confirmation exige que la condition tienne sans interruption.'));
+      var hyst = el('input', { type: 'text', inputMode: 'decimal', value: w.hysteresis }); var conf = el('input', { type: 'number', min: 0, max: m.regle.confirmation_s.max, value: w.confirmation_s });
+      if (!src().booleen) { boite.appendChild(el('label', {}, 'Hystérésis')); boite.appendChild(hyst); }
+      boite.appendChild(el('label', {}, 'Confirmation (s)')); boite.appendChild(conf);
+      suivant('Continuer', function () { w.hysteresis = src().booleen ? '0' : hyst.value; w.confirmation_s = parseInt(conf.value, 10) || 0; wizardAlerte(3, w); });
+    } else if (i === 3) {
+      boite.appendChild(el('p', {}, '4/5 — Rendu : priorité, texte ({n} nom, {v} valeur, {u} unité), durée d’un passage, rappel. Pas de couleur ici : celle de la priorité, modifiable ensuite dans la carte de la règle.'));
+      var nom = el('input', { type: 'text', maxLength: m.regle.nom.max, value: w.nom, placeholder: 'GEL' });
+      var prio = el('select'); for (var p2 = 0; p2 <= 3; p2++) { prio.appendChild(el('option', { value: p2 }, p2 + ' — ' + ['information', 'à savoir', 'important', 'critique'][p2])); } prio.value = w.priorite;
+      var texte = el('input', { type: 'text', maxLength: m.regle.texte.max, value: w.texte, placeholder: 'GEL {v}{u}' });
+      var duree = el('input', { type: 'number', min: 1, max: 3600, value: w.duree_s }); var rappel = el('input', { type: 'number', min: 10, max: 3600, value: w.rappel_s });
+      boite.appendChild(el('label', {}, 'Nom')); boite.appendChild(nom); boite.appendChild(el('label', {}, 'Priorité')); boite.appendChild(prio);
+      boite.appendChild(el('label', {}, 'Texte')); boite.appendChild(texte); boite.appendChild(el('label', {}, 'Durée d’un passage (s)')); boite.appendChild(duree); boite.appendChild(el('label', {}, 'Rappel (s)')); boite.appendChild(rappel);
+      var ap4 = el('p', { class: 'aide' }); boite.appendChild(ap4);
+      function apercuTexte() {
+        var v = (haEtat && haEtat.valeurs && w.source === 'Valeur') ? haEtat.valeurs[w.index - 1] : null;
+        var t = (texte.value || nom.value || '').replace('{n}', nom.value).replace('{v}', v && v.valide ? v.texte : '--').replace('{u}', src().unite || '');
+        ap4.textContent = 'Aperçu : ' + t;
+      }
+      texte.oninput = apercuTexte; nom.oninput = apercuTexte; apercuTexte();
+      suivant('Continuer', function () { w.nom = nom.value; w.priorite = parseInt(prio.value, 10); w.texte = texte.value; w.duree_s = parseInt(duree.value, 10) || 30; w.rappel_s = parseInt(rappel.value, 10) || 300; wizardAlerte(4, w); });
+    } else {
+      var sd5 = src();
+      var cible = (w.source === 'Valeur' || w.source === 'DonneePerimee') ? ('la valeur ' + w.index) : w.source;
+      var cond = sd5.booleen ? ('est ' + w.comparaison) : (w.comparaison === 'change' ? 'change' : ('est ' + w.comparaison + ' ' + w.seuil + (sd5.unite ? ' ' + sd5.unite : '')));
+      var phrase = 'Si ' + cible + ' ' + cond + (w.confirmation_s ? ' pendant ' + w.confirmation_s + ' s' : '') + ', afficher « ' + (w.texte || w.nom) + ' » en priorité ' + w.priorite + ', ' + w.duree_s + ' s toutes les ' + w.rappel_s + ' s, tant que la condition tient.';
+      boite.appendChild(el('p', {}, '5/5 — Récapitulatif'));
+      boite.appendChild(el('p', {}, phrase));
+      var slot = el('select'); for (var k2 = 0; k2 < (m.regles_max || 16); k2++) { slot.appendChild(el('option', { value: k2 }, 'Règle ' + (k2 + 1))); }
+      fetch('/api/alertes').then(function (r) { return r.json(); }).then(function (a) {
+        var libre = -1; (a.regles || []).forEach(function (r, k3) { if (libre < 0 && !r.actif && !r.nom) { libre = k3; } });
+        if (libre >= 0) { slot.value = libre; }
+        Array.prototype.forEach.call(slot.options, function (o, k4) { var r = (a.regles || [])[k4]; if (r && r.nom) { o.textContent = 'Règle ' + (k4 + 1) + ' — ' + r.nom + (r.actif ? ' (active, sera remplacée)' : ''); } });
+      });
+      boite.appendChild(el('label', {}, 'Enregistrer dans')); boite.appendChild(slot);
+      var msg5 = el('p', { class: 'msg' }); boite.appendChild(msg5);
+      suivant('Enregistrer et activer', function () {
+        var corps = 'actif=1&nom=' + encodeURIComponent(w.nom) + '&source=' + encodeURIComponent(w.source) + '&index=' + w.index + '&comparaison=' + encodeURIComponent(w.comparaison) + '&seuil=' + encodeURIComponent(w.seuil) + '&hysteresis=' + encodeURIComponent(w.hysteresis) + '&confirmation_s=' + w.confirmation_s + '&priorite=' + w.priorite + '&texte=' + encodeURIComponent(w.texte) + '&couleur=&icone=Aucune&duree_s=' + w.duree_s + '&rappel_s=' + w.rappel_s + '&outrepasse_silence=0';
+        post('/api/alertes/regle/' + slot.value, corps).then(function (r) {
+          if (r.ok) { boutonWizard('wiz-alerte', 'Créer une autre règle', function () { wizardAlerte(0); }, 'Règle enregistrée et active.', true); chargerReglesAlertes(); }
+          else { dire(msg5, erreurTexte(r.texte), false); }
+        });
+      });
+      suivant('Recommencer', function () { wizardAlerte(0); });
+    }
+    boite.appendChild(box);
+  }
+
   // ---- dashboard
   var etatTimer = null;
   function tuile(titre, valeur) { var t = el('div', { class: 'tuile' }); t.appendChild(el('b', {}, valeur)); t.appendChild(el('span', {}, titre)); return t; }
@@ -652,6 +819,7 @@ table.liste select { max-width:11rem; }
       g.appendChild(tuile('Courant estimé', c.estime_ma + ' mA / ' + c.budget_ma + (c.ecretage ? ' (écrêté)' : '')));
       g.appendChild(tuile('Réseau', n.etat + (n.ip ? ' — ' + n.ip : '')));
       g.appendChild(tuile('Scène', e.scene));
+      if (e.alertes) { g.appendChild(tuile('Alertes en cours', String((e.alertes.file || []).length) + (e.alertes.silence ? ' (silence)' : ''))); }
       g.appendChild(tuile('En marche depuis', Math.floor(e.fonctionnement_s / 60) + ' min'));
       document.getElementById('remplaces').textContent = e.reglages_remplaces ? 'Attention : des réglages invalides en mémoire ont été remplacés par les défauts.' : '';
     }).catch(function () {});
@@ -842,12 +1010,14 @@ table.liste select { max-width:11rem; }
     if (airTimer) { clearInterval(airTimer); airTimer = null; }
     if (haTimer) { clearInterval(haTimer); haTimer = null; }
     if (mqttTimer) { clearInterval(mqttTimer); mqttTimer = null; }
+    if (alertesTimer) { clearInterval(alertesTimer); alertesTimer = null; }
     if (page === 'tableau') { lireEtat(); etatTimer = setInterval(lireEtat, 2000); }
     if (page === 'affichage') { chargerDomaine('affichage'); boutonWizard('wiz-map', 'Lancer le wizard', function () { wizardMap(0); }); }
     if (page === 'luminosite') { chargerDomaine('luminosite'); lireBrut(); brutTimer = setInterval(lireBrut, 1000); boutonWizard('wiz-lum', 'Lancer le wizard', function () { wizardLum(0); }); }
     if (page === 'air') { chargerDomaine('air'); lireAir(); airTimer = setInterval(lireAir, 2000); boutonWizard('wiz-air', 'Lancer le wizard', function () { wizardAir(0); }); }
     if (page === 'ha') { chargerDomaine('ha'); chargerValeursHa(); lireHa(); haTimer = setInterval(lireHa, 2000); boutonWizard('wiz-ha', 'Lancer le wizard', function () { wizardHa(0); }); }
     if (page === 'mqtt') { chargerDomaine('mqtt'); lireMqtt(); mqttTimer = setInterval(lireMqtt, 2000); boutonWizard('wiz-mqtt', 'Lancer le wizard', function () { wizardMqtt(0); }); }
+    if (page === 'alertes') { chargerDomaine('alertes'); chargerReglesAlertes(); lireAlertes(); alertesTimer = setInterval(lireAlertes, 2000); boutonWizard('wiz-alerte', 'Lancer le wizard', function () { wizardAlerte(0); }); }
     if (page === 'systeme') { chargerDomaine('systeme'); }
   }
   var initiale = chemins[location.pathname] || 'tableau';

@@ -20,11 +20,14 @@
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "air_quality/levels.hpp"
 #include "air_quality/sensor.hpp"
 #include "alerts/notification.hpp"
+#include "alerts/queue.hpp"
+#include "alerts/rules.hpp"
 #include "brightness/brightness.hpp"
 #include "clock_board/board.hpp"
 #include "clock_display/led_panel.hpp"
@@ -124,8 +127,28 @@ display::TimeInfo time_info_from(const clock_time::Snapshot& s) noexcept {
 // Cross-task hand-over: one slot each, under a critical section. The real
 // notification queue comes with the `alerts` engine.
 portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
-alerts::Notification s_pending_notification{};
-bool s_pending_valid = false;
+/// Alerts: every entry point (HTTP, Home Assistant) pushes into one queue; the display task
+/// runs the rule engine at 1 Hz and plays the passes. Both under one mutex (never on the frame path for long).
+SemaphoreHandle_t s_alerts_mutex = nullptr;
+alerts::NotificationQueue s_queue;
+alerts::RuleEngine s_engine;
+bool s_quiet = false;            ///< Quiet hours active (1 Hz).
+
+// FreeRTOS macros carry C casts; the three calls below are the only ones in this file.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+bool alerts_lock() {
+    return (s_alerts_mutex != nullptr) && (xSemaphoreTake(s_alerts_mutex, portMAX_DELAY) == pdTRUE);
+}
+
+void alerts_unlock() {
+    (void)xSemaphoreGive(s_alerts_mutex);
+}
+
+SemaphoreHandle_t create_alerts_mutex() {
+    return xSemaphoreCreateMutex();
+}
+#pragma GCC diagnostic pop
 char s_test_pattern[16] = {};
 bool s_test_pattern_set = false;
 uint8_t s_ota_percent = 0U;
@@ -165,13 +188,21 @@ bool on_air_raw_temperature(int16_t& centi) {
 }
 
 bool on_notification(const alerts::Notification& n) {
-    taskENTER_CRITICAL(&s_mux);
-    s_pending_notification = n;
-    s_pending_valid = true;
-    taskEXIT_CRITICAL(&s_mux);
-    ESP_LOGI(kTag, "notification \"%s\": priority %u, %u s%s%s", n.key, static_cast<unsigned>(n.priority),
-             static_cast<unsigned>(n.duration_s), n.persistent ? ", held" : "", n.clear ? ", clear" : "");
-    return true;
+    if (!alerts_lock()) {
+        return false;
+    }
+    const alerts::PushStatus st = s_queue.push(n, now_ms());
+    alerts_unlock();
+    ESP_LOGI(kTag, "notification \"%s\": priority %u, %u s%s%s -> %s", n.key, static_cast<unsigned>(n.priority),
+             static_cast<unsigned>(n.duration_s), n.persistent ? ", held" : "", n.clear ? ", clear" : "",
+             (st == alerts::PushStatus::Rejected) ? "REJECTED (queue full)" : "queued");
+    return st != alerts::PushStatus::Rejected;
+}
+
+/// 6x6 "!" in the icon zone: an alert is held (its passes come back every repeat_s).
+void draw_alert_mark(display::FrameBuffer& fb, uint8_t x, uint8_t y, display::Rgb color) {
+    fb.fill_rect(static_cast<uint8_t>(x + 2U), y, 2U, 4U, color);
+    fb.fill_rect(static_cast<uint8_t>(x + 2U), static_cast<uint8_t>(y + 5U), 2U, 1U, color);
 }
 
 bool on_test_pattern(const char* name) {
@@ -300,6 +331,39 @@ std::size_t status_json(char* out, std::size_t size) {
     ok = ok && w.key("meteo") && w.begin_object() && w.field("actif", ha.weather_enabled) &&
          w.field("valide", ha.weather_valid) && w.field("temperature_deci", static_cast<int64_t>(ha.weather_deci)) &&
          w.field("age_s", static_cast<int64_t>(ha.weather_age_s)) && w.end_object();
+    // Alerts: rules with their live state, the queue as it is (listed, never acknowledged).
+    if (ok && alerts_lock()) {
+        ok = w.key("alertes") && w.begin_object() && w.field("silence", s_quiet) &&
+             w.field("levees", static_cast<int64_t>(s_engine.raised_count())) &&
+             w.field("tenues", s_queue.has_held()) && w.field("rejets", static_cast<int64_t>(s_queue.rejected())) &&
+             w.key("regles") && w.begin_array();
+        for (std::size_t i = 0U; ok && (i < alerts::kRulesMax); ++i) {
+            alerts::RuleView v{};
+            (void)s_engine.view(i, v);
+            const alerts::Rule& rule = s_engine.rules()[i];
+            char value[20] = "";
+            if (v.sample_valid) {
+                (void)settings::fixed_to_text(v.sample, rule.decimals, value, sizeof(value));
+            }
+            ok = w.begin_object() && w.field("nom", rule.name) && w.field("actif", rule.enabled) &&
+                 w.field("etat", alerts::rule_state_name(v.state)) && w.field("valeur", value) && w.field("texte", v.text) &&
+                 w.field("priorite", static_cast<int64_t>(rule.priority)) && w.end_object();
+        }
+        ok = ok && w.end_array() && w.key("file") && w.begin_array();
+        const uint32_t now = now_ms();
+        for (std::size_t i = 0U; ok && (i < alerts::kQueueMax); ++i) {
+            const alerts::Entry* e = s_queue.at(i);
+            if ((e == nullptr) || !e->used) {
+                continue;
+            }
+            ok = w.begin_object() && w.field("cle", e->key) && w.field("titre", e->title) && w.field("texte", e->text) &&
+                 w.field("priorite", static_cast<int64_t>(e->priority)) && w.field("tenue", e->held) &&
+                 w.field("age_s", static_cast<int64_t>((now - e->arrival_ms) / 1000U)) &&
+                 w.field("passages", e->passed) && w.end_object();
+        }
+        ok = ok && w.end_array() && w.end_object();
+        alerts_unlock();
+    }
     ok = ok && w.field("scene", sh.scene) && w.field("reglages_remplaces", clock_settings::replaced_on_boot()) &&
          w.field("fonctionnement_s", static_cast<int64_t>(esp_timer_get_time() / 1000000)) && w.end_object();
     return ok ? w.length() : 0U;
@@ -424,7 +488,8 @@ void display_task(void* /*arg*/) {
     static char value_scroll_text[display::kTextMax + 1U];
     static char status_text[display::kTextMax + 1U];
     static char notif_text[display::kTextMax + 1U];
-    static alerts::Notification notif{};
+    static alerts::Pass pass{};
+    uint16_t pass_width = 0U;
     static settings::Settings cfg;
     settings::default_settings_into(cfg);
     static brightness::Controller brightness_ctl(cfg.brightness);
@@ -455,6 +520,9 @@ void display_task(void* /*arg*/) {
     uint8_t applied = kInitialBrightness;
     brightness::Sample sample{0U, false};
     brightness::Output lum{};
+    display::RenderStats stats{};
+    static clock_homeassistant::LinkSnapshot ha;
+    AirShared air{};
 
     for (;;) {
         const uint32_t now = now_ms();
@@ -468,6 +536,10 @@ void display_task(void* /*arg*/) {
             clock_settings::get(cfg);
             brightness_ctl = brightness::Controller(cfg.brightness);
             scheduler = display::Scheduler(cfg.display.scenes, now);
+            if (alerts_lock()) {
+                s_engine.configure(cfg.alerts.rules);
+                alerts_unlock();
+            }
             const char* posix = timekeeping::posix_for_zone(cfg.system.timezone);
             if ((posix != nullptr) && !clock_time::set_timezone(posix)) {
                 ESP_LOGW(kTag, "time zone %s rejected", cfg.system.timezone);
@@ -488,6 +560,11 @@ void display_task(void* /*arg*/) {
                      ts.local.is_dst ? " DST" : "");
         }
 
+        clock_homeassistant::snapshot(ha);
+        taskENTER_CRITICAL(&s_mux);
+        air = s_air;
+        taskEXIT_CRITICAL(&s_mux);
+
         // Sensor and brightness at 1 Hz.
         if ((now - last_sensor) >= kSensorPeriodMs) {
             last_sensor = now;
@@ -498,6 +575,47 @@ void display_task(void* /*arg*/) {
 
             // Network status: once on each change, every minute in portal mode.
             const clock_web::NetworkInfo net = clock_web::info();
+
+            // Alert rules on what the clock knows right now (invalid = unavailable, never a stale value).
+            alerts::Inputs in{};
+            for (std::size_t i = 0U; i < homeassistant::kValuesMax; ++i) {
+                const clock_homeassistant::ValueSnapshot& v = ha.values[i];
+                in.value_enabled[i] = v.enabled;
+                in.value_decimals[i] = v.decimals;
+                std::strncpy(in.value_units[i], v.unit, alerts::kUnitMax);
+                if (v.type == homeassistant::ValueType::Number) {
+                    in.values[i] = alerts::Sample{v.valid, v.number};
+                } else if (v.type == homeassistant::ValueType::Boolean) {
+                    in.values[i] = alerts::Sample{v.valid, v.boolean ? 1 : 0};
+                } else {
+                    in.values[i] = alerts::Sample{false, 0};  // a text has no number to compare
+                }
+            }
+            in.time_sure = ts.sure;
+            in.ha_enabled = ha.enabled;
+            in.ha_link_up = ha.state == homeassistant::LinkState::Running;
+            in.token_rejected = ha.state == homeassistant::LinkState::TokenRejected;
+            in.network_up = net.connected;
+            in.lease_missing = (std::strcmp(net.state, "waiting_lease") == 0) || (std::strcmp(net.state, "lease_desperate") == 0);
+            in.ldr_fault = lum.sensor_fault;
+            in.current_limited = stats.limited;
+            in.air_enabled = air.enabled;
+            in.air_present = air.reading.present;
+            in.air_fault = air.reading.fault;
+            in.air_warming_up = air.reading.warming_up || air.reading.initial_start;
+            in.air_compensation_default = air.reading.compensation_default;
+            const bool air_ok = air.reading.air_valid;
+            in.air_aqi = alerts::Sample{air_ok, static_cast<int32_t>(air.reading.aqi)};
+            in.air_eco2 = alerts::Sample{air_ok, static_cast<int32_t>(air.reading.eco2_ppm)};
+            in.air_tvoc = alerts::Sample{air_ok, static_cast<int32_t>(air.reading.tvoc_ppb)};
+            in.air_temperature = alerts::Sample{air.reading.climate_valid, static_cast<int32_t>(air.reading.temperature_centi)};
+            in.air_humidity = alerts::Sample{air.reading.climate_valid, static_cast<int32_t>(air.reading.humidity_pct10)};
+            if (alerts_lock()) {
+                s_quiet = alerts::quiet_now(cfg.alerts.quiet, ts.sure, minute_of_day);
+                s_engine.step(in, now, s_queue);
+                s_queue.step(now);
+                alerts_unlock();
+            }
             const bool portal_changed = net.portal != last_portal;
             const bool connected_changed = net.connected != last_connected;
             if ((net.connected && connected_changed) || (net.portal && portal_changed) ||
@@ -510,16 +628,18 @@ void display_task(void* /*arg*/) {
             last_connected = net.connected;
         }
 
-        // Inbound notification (one slot). It wins over a status pass, which is re-armed for later.
-        if (s_pending_valid) {
-            taskENTER_CRITICAL(&s_mux);
-            notif = s_pending_notification;
-            s_pending_valid = false;
-            taskEXIT_CRITICAL(&s_mux);
-            if (!notif.clear) {
-                (void)display::transliterate((notif.text[0] != '\0') ? notif.text : notif.title, notif_text, sizeof(notif_text));
+        // Next pass of the queue (priority then age; suspended during quiet hours). It wins over a
+        // status pass, which is re-armed for later. One pass at a time: the next one is picked when it ends.
+        if (!real_queued && alerts_lock()) {
+            alerts::Pass next{};
+            const bool got = s_queue.next_pass(now, s_quiet, cfg.alerts.quiet.p3_overrides, next);
+            alerts_unlock();
+            if (got) {
+                pass = next;
+                (void)display::transliterate(pass.text, notif_text, sizeof(notif_text));
+                pass_width = display::text_width(display::kFont5x7, notif_text);
                 const bool on_screen_now =
-                    scheduler.notify(notif.priority, static_cast<uint32_t>(notif.duration_s) * 1000U, now);
+                    scheduler.notify(pass.priority, static_cast<uint32_t>(pass.duration_s) * 1000U, now);
                 real_queued = true;
                 if (status_queued || showing_status) {
                     status_queued = false;
@@ -530,6 +650,8 @@ void display_task(void* /*arg*/) {
                     notif_shown = false;  // restart the scroller with this text
                     scroller_running = false;
                 }
+                ESP_LOGI(kTag, "alert pass \"%s\": P%u, %u s, %s", pass.key, static_cast<unsigned>(pass.priority),
+                         static_cast<unsigned>(pass.duration_s), pass.held ? "held" : "one-shot");
             }
         }
         // Status text: a priority-0 pass that waits for the end of the scene.
@@ -566,10 +688,6 @@ void display_task(void* /*arg*/) {
         ota_active = s_ota_active;
         taskEXIT_CRITICAL(&s_mux);
 
-        AirShared air{};
-        taskENTER_CRITICAL(&s_mux);
-        air = s_air;
-        taskEXIT_CRITICAL(&s_mux);
         const air_quality::LevelColor lc = air_quality::level_color(air.level);
         const display::Rgb air_color{lc.r, lc.g, lc.b};
         const bool air_shown = air.enabled && air.reading.present;
@@ -577,8 +695,6 @@ void display_task(void* /*arg*/) {
         avail.date = time_info.sure;
         avail.scroll = false;
         avail.air = air_shown && (cfg.air.logo == settings::AirLogoMode::Scene);
-        static clock_homeassistant::LinkSnapshot ha;
-        clock_homeassistant::snapshot(ha);
         for (std::size_t i = 0U; i < homeassistant::kValuesMax; ++i) {
             avail.values[i] = ha.values[i].enabled && ha.values[i].valid;
         }
@@ -588,6 +704,7 @@ void display_task(void* /*arg*/) {
         scene_finished = false;
 
         const char* scene_name = "Heure";
+        uint8_t frame_level = applied;
         fb.clear();
         if (ota_active) {
             // Progress bar: the only feedback if the browser is gone.
@@ -610,17 +727,47 @@ void display_task(void* /*arg*/) {
                 showing_status = status_queued && !real_queued;
                 notif_shown = true;
             }
-            display::Scroller& sc = showing_status ? status_scroller : notif_scroller;
-            if (!scroller_running) {
-                sc.start(showing_status ? status_text : notif_text, display::kFont5x7, cfg.display.scroll_speed_px_s,
-                         showing_status ? 1U : 0U);
-                scroller_running = true;
+            if (showing_status) {
+                if (!scroller_running) {
+                    status_scroller.start(status_text, display::kFont5x7, cfg.display.scroll_speed_px_s, 1U);
+                    scroller_running = true;
+                } else {
+                    status_scroller.step(dt);
+                }
+                status_scroller.draw(fb, 0, kStatusColor);
+                scene_name = "Etat";
             } else {
-                sc.step(dt);
+                // Alert pass: the queue decided the rendering (priority, quiet hours); here we only draw it.
+                const alerts::Rendering& rd = pass.rendering;
+                const display::Rgb color{pass.color[0], pass.color[1], pass.color[2]};
+                const uint32_t half_ms = (rd.blink_hz == 2U) ? 250U : 500U;
+                const bool blink_off = rd.blink && (((now / half_ms) % 2U) == 1U);
+                const display::Icon icon = static_cast<display::Icon>(pass.icon);
+                const int16_t x = (icon != display::Icon::None) ? 10 : 0;
+                const bool scrolling = rd.scroll && (pass_width > static_cast<uint16_t>(display::kWidth - x));
+                if (scrolling) {
+                    if (!scroller_running) {
+                        notif_scroller.start(notif_text, display::kFont5x7, cfg.display.scroll_speed_px_s, 0U);
+                        scroller_running = true;
+                    } else {
+                        notif_scroller.step(dt);
+                    }
+                }
+                if (!blink_off) {
+                    if (scrolling) {
+                        notif_scroller.draw(fb, 0, color);
+                    } else {
+                        if (icon != display::Icon::None) {
+                            display::draw_icon(fb, icon, 0, 0, color);
+                        }
+                        display::draw_text(fb, display::kFont5x7, x, 0, notif_text, color);
+                    }
+                }
+                if (rd.raise_floor && (frame_level < alerts::kCriticalFloor)) {
+                    frame_level = alerts::kCriticalFloor;
+                }
+                scene_name = "Alerte";
             }
-            const uint8_t p = (notif.priority > 3U) ? 3U : notif.priority;
-            sc.draw(fb, 0, showing_status ? kStatusColor : kPriorityColor[p]);
-            scene_name = showing_status ? "Etat" : "Notification";
         } else {
             if (notif_shown) {
                 // The notification on screen just ended.
@@ -724,20 +871,31 @@ void display_task(void* /*arg*/) {
                 case display::SceneKind::Clock:
                 default: {
                     const bool colon_on = !cfg.display.colon_blink || (((now / kColonHalfPeriodMs) % 2U) == 0U);
-                    const bool icon = air_shown && (cfg.air.logo == settings::AirLogoMode::IconZone);
+                    // Icon zone: a held alert first (the "!" stays between two passes), else the air logo.
+                    uint8_t held_priority = 0U;
+                    bool held = false;
+                    if (alerts_lock()) {
+                        held = s_queue.has_held();
+                        held_priority = s_queue.held_priority();
+                        alerts_unlock();
+                    }
+                    const bool icon = held || (air_shown && (cfg.air.logo == settings::AirLogoMode::IconZone));
                     display::draw_clock(fb, time_info, icon ? 0U : display::kClockCentredX, colon_on, cfg.display.seconds_bar,
                                         kClockColors);
-                    if (icon) {
+                    if (held) {
+                        draw_alert_mark(fb, kAirLogoX, kAirLogoY, kPriorityColor[(held_priority > 3U) ? 3U : held_priority]);
+                    } else if (icon) {
                         display::draw_air_logo_6(fb, kAirLogoX, kAirLogoY, air_color);
+                    } else {
+                        // centred clock, nothing in the zone
                     }
                     break;
                 }
             }
         }
 
-        display::RenderStats stats{};
         if (!chaser) {
-            (void)display::render(fb, applied, cfg.display.budget_ma, cfg.display.map, frame, stats);
+            (void)display::render(fb, frame_level, cfg.display.budget_ma, cfg.display.map, frame, stats);
         }
         const esp_err_t show_err = panel.show(frame);
         if (show_err != ESP_OK) {
@@ -776,6 +934,10 @@ extern "C" void app_main(void) {
     ESP_LOGI(kTag, "matrix_clock, board %s, LED data GPIO%u, LDR GPIO%u", clock_board::kName,
              static_cast<unsigned>(clock_board::kLedDataGpio), static_cast<unsigned>(clock_board::kLdrAdcGpio));
 
+    s_alerts_mutex = create_alerts_mutex();
+    if (s_alerts_mutex == nullptr) {
+        ESP_LOGE(kTag, "alert mutex not created: notifications disabled");
+    }
     if (xTaskCreatePinnedToCore(display_task, "display", kDisplayTaskStack, nullptr, kDisplayTaskPriority, nullptr,
                                 kDisplayCore) != pdPASS) {
         ESP_LOGE(kTag, "display task not created");

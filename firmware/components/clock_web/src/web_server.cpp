@@ -22,6 +22,7 @@
 
 #include "air_quality/levels.hpp"
 #include "alerts/notification.hpp"
+#include "alerts/rules.hpp"
 #include "brightness/brightness.hpp"
 #include "clock_board/board.hpp"
 #include "clock_settings/store.hpp"
@@ -50,6 +51,8 @@ constexpr size_t kOtaChunk = 4096U;
 constexpr uint32_t kRebootDelayMs = 500U;
 
 httpd_handle_t s_server = nullptr;
+/// One JSON buffer for every GET handler: the HTTP server runs its handlers one at a time.
+char s_json[settings::kJsonMax];
 Hooks s_hooks{};
 
 size_t embedded_size(const char* start, const char* end) {
@@ -193,13 +196,13 @@ esp_err_t handle_wifi_forget(httpd_req_t* req) {
 // ------------------------------------------------------------ settings API
 
 esp_err_t handle_display_model(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::display_model_json(body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::display_model_json(body, settings::kJsonMax));
 }
 
 esp_err_t handle_display_get(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::display_json(clock_settings::display(), body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::display_json(clock_settings::display(), body, settings::kJsonMax));
 }
 
 esp_err_t handle_display_post(httpd_req_t* req) {
@@ -238,13 +241,13 @@ esp_err_t handle_display_test(httpd_req_t* req) {
 }
 
 esp_err_t handle_brightness_model(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::brightness_model_json(body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::brightness_model_json(body, settings::kJsonMax));
 }
 
 esp_err_t handle_brightness_get(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::brightness_json(clock_settings::brightness(), body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::brightness_json(clock_settings::brightness(), body, settings::kJsonMax));
 }
 
 esp_err_t handle_brightness_post(httpd_req_t* req) {
@@ -316,13 +319,13 @@ esp_err_t handle_brightness_wizard(httpd_req_t* req) {
 }
 
 esp_err_t handle_system_model(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::system_model_json(body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::system_model_json(body, settings::kJsonMax));
 }
 
 esp_err_t handle_system_get(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::system_json(clock_settings::system(), body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::system_json(clock_settings::system(), body, settings::kJsonMax));
 }
 
 esp_err_t handle_system_post(httpd_req_t* req) {
@@ -344,13 +347,13 @@ esp_err_t handle_system_post(httpd_req_t* req) {
 }
 
 esp_err_t handle_air_model(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::air_model_json(body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::air_model_json(body, settings::kJsonMax));
 }
 
 esp_err_t handle_air_get(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::air_json(clock_settings::air(), body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::air_json(clock_settings::air(), body, settings::kJsonMax));
 }
 
 esp_err_t handle_air_post(httpd_req_t* req) {
@@ -405,15 +408,15 @@ esp_err_t handle_air_wizard(httpd_req_t* req) {
 }
 
 esp_err_t handle_ha_model(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::ha_model_json(body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::ha_model_json(body, settings::kJsonMax));
 }
 
 esp_err_t handle_ha_get(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
+    char* const body = s_json;
     static settings::HaSettings ha;
     clock_settings::ha(ha);
-    return send_json(req, body, settings::ha_json(ha, body, sizeof(body)));
+    return send_json(req, body, settings::ha_json(ha, body, settings::kJsonMax));
 }
 
 esp_err_t handle_ha_post(httpd_req_t* req) {
@@ -463,14 +466,14 @@ esp_err_t handle_ha_value_post(httpd_req_t* req) {
 }
 
 esp_err_t handle_mqtt_model(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
-    return send_json(req, body, settings::mqtt_model_json(body, sizeof(body)));
+    char* const body = s_json;
+    return send_json(req, body, settings::mqtt_model_json(body, settings::kJsonMax));
 }
 
 esp_err_t handle_mqtt_get(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
+    char* const body = s_json;
     const homeassistant::MqttConfig m = clock_settings::mqtt();
-    return send_json(req, body, settings::mqtt_json(m, body, sizeof(body)));
+    return send_json(req, body, settings::mqtt_json(m, body, settings::kJsonMax));
 }
 
 esp_err_t handle_mqtt_post(httpd_req_t* req) {
@@ -486,6 +489,80 @@ esp_err_t handle_mqtt_post(httpd_req_t* req) {
         return send_form_error(req, err);
     }
     if (!clock_settings::save_mqtt(next)) {
+        return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
+esp_err_t handle_alerts_model(httpd_req_t* req) {
+    char* const body = s_json;
+    return send_json(req, body, settings::alert_model_json(body, settings::kJsonMax));
+}
+
+esp_err_t handle_alerts_get(httpd_req_t* req) {
+    char* const body = s_json;
+    static settings::AlertSettings al;
+    clock_settings::alerts(al);
+    return send_json(req, body, settings::alert_json(al, body, settings::kJsonMax));
+}
+
+esp_err_t handle_alerts_post(httpd_req_t* req) {
+    char body[kFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kFormMax, got)) {
+        return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+    }
+    static settings::AlertSettings current;
+    static settings::AlertSettings next;
+    clock_settings::alerts(current);
+    next = current;
+    settings::FormError err{};
+    if (!settings::apply_alert_form(body, got, current, next, err)) {
+        return send_form_error(req, err);
+    }
+    if (!clock_settings::save_alerts(next)) {
+        return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
+/// POST /api/alertes/regle/<0..15>
+esp_err_t handle_alert_rule_post(httpd_req_t* req) {
+    const char* tail = std::strrchr(req->uri, '/');
+    std::size_t index = alerts::kRulesMax;
+    if ((tail != nullptr) && (tail[1] >= '0') && (tail[1] <= '9')) {
+        index = static_cast<std::size_t>(tail[1] - '0');
+        if ((tail[2] >= '0') && (tail[2] <= '9') && (tail[3] == '\0')) {
+            index = (index * 10U) + static_cast<std::size_t>(tail[2] - '0');
+        } else if (tail[2] != '\0') {
+            index = alerts::kRulesMax;
+        } else {
+            // one digit
+        }
+    }
+    if (index >= alerts::kRulesMax) {
+        return send_text(req, "404 Not Found", "Règle 0 à 15 attendue.");
+    }
+    static char body[kSettingsFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kSettingsFormMax, got)) {
+        return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+    }
+    static settings::AlertSettings current;
+    static settings::AlertSettings next;
+    static settings::HaSettings ha;
+    clock_settings::alerts(current);
+    clock_settings::ha(ha);
+    uint8_t decimals[homeassistant::kValuesMax];
+    for (std::size_t i = 0U; i < homeassistant::kValuesMax; ++i) {
+        decimals[i] = ha.values[i].decimals;
+    }
+    next = current;
+    settings::FormError err{};
+    if (!settings::apply_alert_rule_form(body, got, index, current, next, decimals, err)) {
+        return send_form_error(req, err);
+    }
+    if (!clock_settings::save_alerts(next)) {
         return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
     }
     return send_text(req, "200 OK", "{\"ok\":true}");
@@ -642,11 +719,11 @@ esp_err_t handle_info(httpd_req_t* req) {
 }
 
 esp_err_t handle_status(httpd_req_t* req) {
-    static char body[settings::kJsonMax];
+    char* const body = s_json;
     if (s_hooks.status_json == nullptr) {
         return send_text(req, "503 Service Unavailable", "{\"ok\":false}");
     }
-    return send_json(req, body, s_hooks.status_json(body, sizeof(body)));
+    return send_json(req, body, s_hooks.status_json(body, settings::kJsonMax));
 }
 
 bool init_nvs() {
@@ -662,7 +739,7 @@ bool init_nvs() {
 
 bool start_http() {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 53;
+    cfg.max_uri_handlers = 58;
     cfg.max_open_sockets = kHttpClientsMax;
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
@@ -678,6 +755,7 @@ bool start_http() {
         {"/air", HTTP_GET, handle_app_page, nullptr},
         {"/ha", HTTP_GET, handle_app_page, nullptr},
         {"/mqtt", HTTP_GET, handle_app_page, nullptr},
+        {"/alertes", HTTP_GET, handle_app_page, nullptr},
         {"/wifi", HTTP_GET, handle_wifi_page, nullptr},
         {"/api/info", HTTP_GET, handle_info, nullptr},
         {"/api/etat", HTTP_GET, handle_status, nullptr},
@@ -706,6 +784,10 @@ bool start_http() {
         {"/api/mqtt", HTTP_GET, handle_mqtt_get, nullptr},
         {"/api/mqtt", HTTP_POST, handle_mqtt_post, nullptr},
         {"/api/mqtt/decouverte", HTTP_POST, handle_mqtt_discovery, nullptr},
+        {"/api/alertes/modele", HTTP_GET, handle_alerts_model, nullptr},
+        {"/api/alertes", HTTP_GET, handle_alerts_get, nullptr},
+        {"/api/alertes", HTTP_POST, handle_alerts_post, nullptr},
+        {"/api/alertes/regle/*", HTTP_POST, handle_alert_rule_post, nullptr},
         {"/api/systeme/modele", HTTP_GET, handle_system_model, nullptr},
         {"/api/systeme", HTTP_GET, handle_system_get, nullptr},
         {"/api/systeme", HTTP_POST, handle_system_post, nullptr},

@@ -12,6 +12,8 @@
 #include <cstdint>
 
 #include "air_quality/levels.hpp"
+#include "alerts/queue.hpp"
+#include "alerts/rules.hpp"
 #include "air_quality/sensor.hpp"
 #include "brightness/brightness.hpp"
 #include "display/current_limit.hpp"
@@ -76,6 +78,12 @@ struct HaSettings {
 
 inline constexpr uint16_t kHaPortDefault = 8123U;
 
+/// Alerts domain (page /alertes): the 16 rules and the quiet hours.
+struct AlertSettings {
+    alerts::RuleList rules;
+    alerts::QuietConfig quiet;
+};
+
 /// Everything the clock remembers.
 struct Settings {
     DisplaySettings display;
@@ -84,6 +92,7 @@ struct Settings {
     AirSettings air;
     HaSettings ha;
     homeassistant::MqttConfig mqtt;   ///< MQTT publication (page /mqtt).
+    AlertSettings alerts;
 };
 
 DisplaySettings default_display_settings() noexcept;
@@ -93,12 +102,14 @@ HaSettings default_ha_settings() noexcept;
 Settings default_settings() noexcept;
 /// In-place variants for the firmware: the structures are ~4 KB, never built on a task stack.
 void default_ha_settings_into(HaSettings& out) noexcept;
+void default_alert_settings_into(AlertSettings& out) noexcept;
 void default_settings_into(Settings& out) noexcept;
 
 bool is_valid(const DisplaySettings& s) noexcept;
 bool is_valid(const SystemSettings& s) noexcept;
 bool is_valid(const AirSettings& s) noexcept;
 bool is_valid(const HaSettings& s) noexcept;
+bool is_valid(const AlertSettings& s) noexcept;
 
 /// @return true if @p host is a plausible host name or IPv4: [A-Za-z0-9.-], no edge dot/dash, 1..kHostMax.
 bool is_valid_host(const char* host) noexcept;

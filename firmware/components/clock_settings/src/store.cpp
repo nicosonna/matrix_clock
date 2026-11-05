@@ -24,6 +24,7 @@ constexpr char kKeySystem[] = "system";
 constexpr char kKeyAir[] = "air";
 constexpr char kKeyHa[] = "ha";
 constexpr char kKeyMqtt[] = "mqtt";
+constexpr char kKeyAlerts[] = "alerts";
 /// Wi-Fi credentials live in their own namespace (clock_web); erased by the factory reset too.
 constexpr char kWifiNamespace[] = "clk_wifi";
 
@@ -33,6 +34,7 @@ constexpr uint8_t kSystemVersion = 1U;
 constexpr uint8_t kAirVersion = 1U;
 constexpr uint8_t kHaVersion = 1U;
 constexpr uint8_t kMqttVersion = 1U;
+constexpr uint8_t kAlertsVersion = 1U;
 
 SemaphoreHandle_t s_mutex = nullptr;
 settings::Settings s_current{};
@@ -151,6 +153,15 @@ esp_err_t init() noexcept {
                 replaced = true;
             }
         }
+        static settings::AlertSettings al{};  // 16 rules: not on the stack
+        if (read_blob(h, kKeyAlerts, kAlertsVersion, al)) {
+            if (settings::is_valid(al)) {
+                loaded.alerts = al;
+            } else {
+                ESP_LOGW(kTag, "alert settings invalid: defaults");
+                replaced = true;
+            }
+        }
         nvs_close(h);
     } else if (open != ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGW(kTag, "NVS open: %s (defaults)", esp_err_to_name(open));
@@ -215,6 +226,13 @@ settings::AirSettings air() noexcept {
 void ha(settings::HaSettings& out) noexcept {
     if (lock()) {
         out = s_current.ha;
+        unlock();
+    }
+}
+
+void alerts(settings::AlertSettings& out) noexcept {
+    if (lock()) {
+        out = s_current.alerts;
         unlock();
     }
 }
@@ -321,6 +339,19 @@ bool save_mqtt(const homeassistant::MqttConfig& c) noexcept {
         unlock();
     }
     ESP_LOGI(kTag, "mqtt settings saved");
+    return true;
+}
+
+bool save_alerts(const settings::AlertSettings& a) noexcept {
+    if (!settings::is_valid(a) || !write_blob(kKeyAlerts, kAlertsVersion, a)) {
+        return false;
+    }
+    if (lock()) {
+        s_current.alerts = a;
+        ++s_version;
+        unlock();
+    }
+    ESP_LOGI(kTag, "alert settings saved");
     return true;
 }
 

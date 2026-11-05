@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "alerts/rules.hpp"
 #include "homeassistant/values.hpp"
 #include "network/credentials.hpp"
 #include "timekeeping/tz.hpp"
@@ -37,6 +38,12 @@ const std::size_t kHaValueFieldCount = sizeof(kHaValueFields) / sizeof(kHaValueF
 const char* const kMqttFields[] = {"actif", "hote", "port", "utilisateur", "mot_de_passe", "effacer_mdp", "prefixe",
                                    "periode_s"};
 const std::size_t kMqttFieldCount = sizeof(kMqttFields) / sizeof(kMqttFields[0]);
+const char* const kAlertFields[] = {"silence_actif", "silence_debut", "silence_fin", "silence_outrepasse_par_p3"};
+const std::size_t kAlertFieldCount = sizeof(kAlertFields) / sizeof(kAlertFields[0]);
+const char* const kAlertRuleFields[] = {"actif", "nom", "source", "index", "comparaison", "seuil", "hysteresis",
+                                        "confirmation_s", "priorite", "texte", "couleur", "icone", "duree_s", "rappel_s",
+                                        "outrepasse_silence"};
+const std::size_t kAlertRuleFieldCount = sizeof(kAlertRuleFields) / sizeof(kAlertRuleFields[0]);
 const std::size_t kSystemFieldCount = sizeof(kSystemFields) / sizeof(kSystemFields[0]);
 
 namespace {
@@ -1041,6 +1048,333 @@ bool apply_mqtt_form(const char* body, std::size_t len, const homeassistant::Mqt
         return fail(err, field, homeassistant::mqtt_status_reason(st));
     }
     out = m;
+    return true;
+}
+
+// ------------------------------------------------------------------ fixed point and colours
+
+bool parse_fixed(const char* s, uint8_t decimals, int32_t& out) noexcept {
+    if ((s == nullptr) || (s[0] == '\0') || (decimals > alerts::kDecimalsMax)) {
+        return false;
+    }
+    std::size_t i = 0U;
+    bool neg = false;
+    if ((s[0] == '-') || (s[0] == '+')) {
+        neg = s[0] == '-';
+        i = 1U;
+    }
+    int64_t v = 0;
+    std::size_t int_digits = 0U;
+    for (; (s[i] >= '0') && (s[i] <= '9'); ++i) {
+        if (int_digits >= 10U) {
+            return false;
+        }
+        v = (v * 10) + (s[i] - '0');
+        ++int_digits;
+    }
+    std::size_t frac_digits = 0U;
+    if ((s[i] == '.') || (s[i] == ',')) {
+        ++i;
+        for (; (s[i] >= '0') && (s[i] <= '9'); ++i) {
+            if (frac_digits >= decimals) {
+                return false;  // more decimals than the source has: refused, not rounded
+            }
+            v = (v * 10) + (s[i] - '0');
+            ++frac_digits;
+        }
+    }
+    if ((s[i] != '\0') || ((int_digits == 0U) && (frac_digits == 0U))) {
+        return false;
+    }
+    for (; frac_digits < decimals; ++frac_digits) {
+        v *= 10;
+    }
+    if (neg) {
+        v = -v;
+    }
+    if ((v > alerts::kThresholdMax) || (v < -alerts::kThresholdMax)) {
+        return false;
+    }
+    out = static_cast<int32_t>(v);
+    return true;
+}
+
+std::size_t fixed_to_text(int32_t v, uint8_t decimals, char* out, std::size_t size) noexcept {
+    if ((out == nullptr) || (size == 0U)) {
+        return 0U;
+    }
+    int32_t div = 1;
+    for (uint8_t i = 0U; (i < decimals) && (i < alerts::kDecimalsMax); ++i) {
+        div *= 10;
+    }
+    const bool neg = v < 0;
+    const uint32_t a = neg ? static_cast<uint32_t>(-static_cast<int64_t>(v)) : static_cast<uint32_t>(v);
+    const uint32_t d = static_cast<uint32_t>(div);
+    int n;
+    if (decimals == 0U) {
+        n = std::snprintf(out, size, "%s%lu", neg ? "-" : "", static_cast<unsigned long>(a));
+    } else {
+        n = std::snprintf(out, size, "%s%lu.%0*lu", neg ? "-" : "", static_cast<unsigned long>(a / d),
+                          static_cast<int>(decimals), static_cast<unsigned long>(a % d));
+    }
+    if ((n <= 0) || (static_cast<std::size_t>(n) >= size)) {
+        out[0] = '\0';
+        return 0U;
+    }
+    return static_cast<std::size_t>(n);
+}
+
+namespace {
+bool hex_nibble(char c, uint8_t& out) noexcept {
+    if ((c >= '0') && (c <= '9')) {
+        out = static_cast<uint8_t>(c - '0');
+        return true;
+    }
+    if ((c >= 'a') && (c <= 'f')) {
+        out = static_cast<uint8_t>(10 + (c - 'a'));
+        return true;
+    }
+    if ((c >= 'A') && (c <= 'F')) {
+        out = static_cast<uint8_t>(10 + (c - 'A'));
+        return true;
+    }
+    return false;
+}
+}  // namespace
+
+bool parse_color(const char* s, uint8_t rgb[3]) noexcept {
+    if ((s == nullptr) || (s[0] != '#') || (std::strlen(s) != 7U)) {
+        return false;
+    }
+    for (std::size_t i = 0U; i < 3U; ++i) {
+        uint8_t hi = 0U;
+        uint8_t lo = 0U;
+        if (!hex_nibble(s[1U + (2U * i)], hi) || !hex_nibble(s[2U + (2U * i)], lo)) {
+            return false;
+        }
+        rgb[i] = static_cast<uint8_t>((hi << 4U) | lo);
+    }
+    return true;
+}
+
+// ------------------------------------------------------------------ alerts forms
+
+bool apply_alert_form(const char* body, std::size_t len, const AlertSettings& current, AlertSettings& out,
+                      FormError& err) noexcept {
+    alerts::QuietConfig q = current.quiet;
+    char v[kFieldMax];
+    int8_t r = 0;
+    int32_t i = 0;
+    if ((r = fetch(body, len, kAlertFields[0], v, sizeof(v))) < 0) {
+        return fail(err, kAlertFields[0], kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, q.enabled)) {
+        return fail(err, kAlertFields[0], "0 ou 1");
+    }
+    if ((r = fetch(body, len, kAlertFields[1], v, sizeof(v))) < 0) {
+        return fail(err, kAlertFields[1], kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 0, alerts::kMinutesPerDay - 1, i)) {
+            return fail(err, kAlertFields[1], "heure du jour (0 à 1439 minutes)");
+        }
+        q.start_min = static_cast<uint16_t>(i);
+    }
+    if ((r = fetch(body, len, kAlertFields[2], v, sizeof(v))) < 0) {
+        return fail(err, kAlertFields[2], kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 0, alerts::kMinutesPerDay - 1, i)) {
+            return fail(err, kAlertFields[2], "heure du jour (0 à 1439 minutes)");
+        }
+        q.end_min = static_cast<uint16_t>(i);
+    }
+    if ((r = fetch(body, len, kAlertFields[3], v, sizeof(v))) < 0) {
+        return fail(err, kAlertFields[3], kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, q.p3_overrides)) {
+        return fail(err, kAlertFields[3], "0 ou 1");
+    }
+    if (!alerts::is_valid(q)) {
+        return fail(err, "", "heures silencieuses incohérentes");
+    }
+    out = current;
+    out.quiet = q;
+    return true;
+}
+
+bool apply_alert_rule_form(const char* body, std::size_t len, std::size_t index, const AlertSettings& current,
+                           AlertSettings& out, const uint8_t* value_decimals, FormError& err) noexcept {
+    if ((index >= alerts::kRulesMax) || (value_decimals == nullptr)) {
+        return fail(err, "", "index de règle hors de 0..15");
+    }
+    alerts::Rule rule = current.rules[index];
+    char v[kFieldMax];
+    int8_t r = 0;
+    int32_t i = 0;
+    bool present = false;
+    const char* const f_actif = kAlertRuleFields[0];
+    const char* const f_nom = kAlertRuleFields[1];
+    const char* const f_source = kAlertRuleFields[2];
+    const char* const f_index = kAlertRuleFields[3];
+    const char* const f_cmp = kAlertRuleFields[4];
+    const char* const f_seuil = kAlertRuleFields[5];
+    const char* const f_hyst = kAlertRuleFields[6];
+    const char* const f_conf = kAlertRuleFields[7];
+    const char* const f_prio = kAlertRuleFields[8];
+    const char* const f_texte = kAlertRuleFields[9];
+    const char* const f_couleur = kAlertRuleFields[10];
+    const char* const f_icone = kAlertRuleFields[11];
+    const char* const f_duree = kAlertRuleFields[12];
+    const char* const f_rappel = kAlertRuleFields[13];
+    const char* const f_outrepasse = kAlertRuleFields[14];
+
+    if ((r = fetch(body, len, f_actif, v, sizeof(v))) < 0) {
+        return fail(err, f_actif, kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, rule.enabled)) {
+        return fail(err, f_actif, "0 ou 1");
+    }
+    if (!text_field(body, len, f_nom, rule.name, sizeof(rule.name), present, err)) {
+        return false;
+    }
+    if ((r = fetch(body, len, f_source, v, sizeof(v))) < 0) {
+        return fail(err, f_source, kBadEncoding);
+    }
+    if ((r > 0) && !alerts::source_from_name(v, rule.source)) {
+        return fail(err, f_source, "source inconnue");
+    }
+    if ((r = fetch(body, len, f_index, v, sizeof(v))) < 0) {
+        return fail(err, f_index, kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 0, static_cast<int32_t>(alerts::kValuesCount) - 1, i)) {
+            return fail(err, f_index, "valeur 1 à 8");
+        }
+        rule.index = static_cast<uint8_t>(i);
+    }
+    if (!alerts::source_has_index(rule.source)) {
+        rule.index = 0U;  // the page may send the last chosen value: meaningless here
+    }
+    if ((r = fetch(body, len, f_cmp, v, sizeof(v))) < 0) {
+        return fail(err, f_cmp, kBadEncoding);
+    }
+    if ((r > 0) && !alerts::comparison_from_name(v, rule.comparison)) {
+        return fail(err, f_cmp, "comparaison inconnue");
+    }
+    // Fixed point of the source, then threshold and hysteresis in it.
+    const uint8_t decimals = alerts::source_decimals(rule.source, value_decimals[rule.index]);
+    if (decimals != rule.decimals) {
+        // Source changed: the stored numbers are meaningless unless re-posted.
+        rule.decimals = decimals;
+        rule.threshold = 0;
+        rule.hysteresis = 0;
+    }
+    if ((r = fetch(body, len, f_seuil, v, sizeof(v))) < 0) {
+        return fail(err, f_seuil, kBadEncoding);
+    }
+    if ((r > 0) && !parse_fixed(v, decimals, rule.threshold)) {
+        return fail(err, f_seuil, "nombre dans l'unité de la source, au plus autant de décimales qu'elle");
+    }
+    if ((r = fetch(body, len, f_hyst, v, sizeof(v))) < 0) {
+        return fail(err, f_hyst, kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_fixed(v, decimals, rule.hysteresis) || (rule.hysteresis < 0)) {
+            return fail(err, f_hyst, "nombre positif ou nul, au plus autant de décimales que la source");
+        }
+    }
+    if ((r = fetch(body, len, f_conf, v, sizeof(v))) < 0) {
+        return fail(err, f_conf, kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 0, alerts::kConfirmationMaxS, i)) {
+            return fail(err, f_conf, "de 0 à 3600 s");
+        }
+        rule.confirmation_s = static_cast<uint16_t>(i);
+    }
+    if ((r = fetch(body, len, f_prio, v, sizeof(v))) < 0) {
+        return fail(err, f_prio, kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 0, alerts::kPriorityMax, i)) {
+            return fail(err, f_prio, "de 0 à 3");
+        }
+        rule.priority = static_cast<uint8_t>(i);
+    }
+    if (!text_field(body, len, f_texte, rule.text, sizeof(rule.text), present, err)) {
+        return false;
+    }
+    if ((r = fetch(body, len, f_couleur, v, sizeof(v))) < 0) {
+        return fail(err, f_couleur, kBadEncoding);
+    }
+    if (r > 0) {
+        if (v[0] == '\0') {
+            rule.color_set = false;
+        } else if (parse_color(v, rule.color)) {
+            rule.color_set = true;
+        } else {
+            return fail(err, f_couleur, "#RRGGBB, ou vide pour la couleur de la priorité");
+        }
+    }
+    if ((r = fetch(body, len, f_icone, v, sizeof(v))) < 0) {
+        return fail(err, f_icone, kBadEncoding);
+    }
+    if (r > 0) {
+        homeassistant::ValueIcon icon = homeassistant::ValueIcon::None;
+        if (!homeassistant::value_icon_from_name(v, icon)) {
+            return fail(err, f_icone, "icône inconnue");
+        }
+        rule.icon = static_cast<uint8_t>(icon);
+    }
+    if ((r = fetch(body, len, f_duree, v, sizeof(v))) < 0) {
+        return fail(err, f_duree, kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, alerts::kDurationMin, alerts::kDurationMax, i)) {
+            return fail(err, f_duree, "de 1 à 3600 s");
+        }
+        rule.duration_s = static_cast<uint16_t>(i);
+    }
+    if ((r = fetch(body, len, f_rappel, v, sizeof(v))) < 0) {
+        return fail(err, f_rappel, kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, alerts::kRepeatMin, alerts::kRepeatMax, i)) {
+            return fail(err, f_rappel, "de 10 à 3600 s");
+        }
+        rule.repeat_s = static_cast<uint16_t>(i);
+    }
+    if ((r = fetch(body, len, f_outrepasse, v, sizeof(v))) < 0) {
+        return fail(err, f_outrepasse, kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, rule.override_quiet)) {
+        return fail(err, f_outrepasse, "0 ou 1");
+    }
+    const alerts::RuleStatus st = alerts::validate(rule);
+    if (st != alerts::RuleStatus::Ok) {
+        const char* field = "";
+        switch (st) {
+            case alerts::RuleStatus::NameInvalid: field = f_nom; break;
+            case alerts::RuleStatus::SourceInvalid: field = f_source; break;
+            case alerts::RuleStatus::IndexInvalid: field = f_index; break;
+            case alerts::RuleStatus::ComparisonInvalid: field = f_cmp; break;
+            case alerts::RuleStatus::ThresholdInvalid: field = f_seuil; break;
+            case alerts::RuleStatus::HysteresisInvalid: field = f_hyst; break;
+            case alerts::RuleStatus::ConfirmationInvalid: field = f_conf; break;
+            case alerts::RuleStatus::PriorityInvalid: field = f_prio; break;
+            case alerts::RuleStatus::TextInvalid: field = f_texte; break;
+            case alerts::RuleStatus::IconInvalid: field = f_icone; break;
+            case alerts::RuleStatus::DurationInvalid: field = f_duree; break;
+            case alerts::RuleStatus::RepeatInvalid: field = f_rappel; break;
+            case alerts::RuleStatus::DecimalsInvalid:
+            case alerts::RuleStatus::Ok:
+            default: break;
+        }
+        return fail(err, field, alerts::rule_status_reason(st));
+    }
+    out = current;
+    out.rules[index] = rule;
     return true;
 }
 

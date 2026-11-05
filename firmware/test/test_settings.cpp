@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "alerts/rules.hpp"
 #include "settings/forms.hpp"
 #include "settings/json.hpp"
 #include "settings/json_writer.hpp"
@@ -467,6 +468,177 @@ const char* read_page() {
 /// The page builds the form of @p domain from the firmware model: it must carry
 /// `data-domaine="<domain>"` and fetch `/api/<domain>/modele`, and no field of
 /// that domain may be hard-coded as a static input (a name="..." attribute).
+// ALR-08 (form side) / ALR-18: quiet hours and rule forms, fixed point, colours, JSON views.
+void test_alert_form() {
+    // Fixed point.
+    int32_t v = 0;
+    CHECK(settings::parse_fixed("0.5", 1U, v) && (v == 5));
+    CHECK(settings::parse_fixed("-0.5", 1U, v) && (v == -5));
+    CHECK(settings::parse_fixed("12", 2U, v) && (v == 1200));
+    CHECK(settings::parse_fixed("12.3", 2U, v) && (v == 1230));
+    CHECK(settings::parse_fixed("-,5", 1U, v) && (v == -5));
+    CHECK(settings::parse_fixed(".5", 1U, v) && (v == 5));
+    CHECK(settings::parse_fixed("+7", 0U, v) && (v == 7));
+    CHECK(!settings::parse_fixed("0.55", 1U, v));   // more decimals than the source
+    CHECK(!settings::parse_fixed("abc", 1U, v));
+    CHECK(!settings::parse_fixed("", 1U, v));
+    CHECK(!settings::parse_fixed(nullptr, 1U, v));
+    CHECK(!settings::parse_fixed(".", 1U, v));
+    CHECK(!settings::parse_fixed("1e3", 0U, v));
+    CHECK(!settings::parse_fixed("99999999999", 0U, v));
+    CHECK(!settings::parse_fixed("2000000001", 0U, v));
+    CHECK(!settings::parse_fixed("1", 7U, v));
+    char t[20];
+    CHECK(settings::fixed_to_text(-5, 1U, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "-0.5") == 0);
+    CHECK(settings::fixed_to_text(1230, 2U, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "12.30") == 0);
+    CHECK(settings::fixed_to_text(7, 0U, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "7") == 0);
+    CHECK_EQ(settings::fixed_to_text(123456, 0U, t, 4U), 0U);
+    CHECK_EQ(settings::fixed_to_text(1, 0U, nullptr, 0U), 0U);
+    uint8_t rgb[3] = {0U, 0U, 0U};
+    CHECK(settings::parse_color("#ff8000", rgb) && (rgb[0] == 255U) && (rgb[1] == 128U) && (rgb[2] == 0U));
+    CHECK(settings::parse_color("#0A0b0C", rgb) && (rgb[0] == 10U) && (rgb[1] == 11U) && (rgb[2] == 12U));
+    CHECK(!settings::parse_color("ff8000", rgb));
+    CHECK(!settings::parse_color("#ff80", rgb));
+    CHECK(!settings::parse_color("#gg8000", rgb));
+    CHECK(!settings::parse_color("", rgb));
+    CHECK(!settings::parse_color(nullptr, rgb));
+
+    // Quiet hours form.
+    static settings::AlertSettings current;
+    static settings::AlertSettings out;
+    settings::default_alert_settings_into(current);
+    CHECK(settings::is_valid(current));
+    settings::FormError err{};
+    const char* body = "silence_actif=0&silence_debut=1380&silence_fin=390&silence_outrepasse_par_p3=0";
+    CHECK(settings::apply_alert_form(body, std::strlen(body), current, out, err));
+    CHECK(!out.quiet.enabled && (out.quiet.start_min == 1380U) && (out.quiet.end_min == 390U) && !out.quiet.p3_overrides);
+    CHECK(std::memcmp(&out.rules, &current.rules, sizeof(out.rules)) == 0);  // rules untouched
+    const char* bad_quiet[] = {"silence_debut=1440", "silence_fin=-1", "silence_actif=2", "silence_outrepasse_par_p3=x", "silence_debut=%ZZ"};
+    for (const char* b : bad_quiet) {
+        CHECK(!settings::apply_alert_form(b, std::strlen(b), current, out, err));
+    }
+
+    // Rule form: the GEL rule on value 1 (one decimal), threshold in tenths.
+    const uint8_t decimals[8] = {1U, 2U, 0U, 0U, 0U, 0U, 0U, 0U};
+    body = "actif=1&nom=GEL&source=Valeur&index=0&comparaison=%3C&seuil=-0.5&hysteresis=0.5&confirmation_s=300&priorite=2&texte=GEL+%7Bv%7D%7Bu%7D&couleur=%23ff0000&icone=Thermometre&duree_s=20&rappel_s=120&outrepasse_silence=1";
+    CHECK(settings::apply_alert_rule_form(body, std::strlen(body), 12U, current, out, decimals, err));
+    const alerts::Rule& r = out.rules[12];
+    CHECK(r.enabled && (std::strcmp(r.name, "GEL") == 0) && (r.source == alerts::Source::Value) && (r.index == 0U));
+    CHECK(r.comparison == alerts::Comparison::Less);
+    CHECK_EQ(r.threshold, -5);
+    CHECK_EQ(r.hysteresis, 5);
+    CHECK_EQ(r.decimals, 1U);
+    CHECK_EQ(r.confirmation_s, 300U);
+    CHECK_EQ(r.priority, 2U);
+    CHECK(std::strcmp(r.text, "GEL {v}{u}") == 0);
+    CHECK(r.color_set && (r.color[0] == 255U) && (r.color[1] == 0U));
+    CHECK_EQ(r.icon, 1U);
+    CHECK_EQ(r.duration_s, 20U);
+    CHECK_EQ(r.repeat_s, 120U);
+    CHECK(r.override_quiet);
+    CHECK(std::memcmp(&out.rules[0], &current.rules[0], sizeof(alerts::Rule)) == 0);  // other rules untouched
+    // Value 2 has two decimals: the same text means hundredths. Changing the source resets the numbers.
+    static settings::AlertSettings saved;
+    saved = out;
+    body = "index=1&seuil=-0.5";
+    CHECK(settings::apply_alert_rule_form(body, std::strlen(body), 12U, saved, out, decimals, err));
+    CHECK_EQ(out.rules[12].decimals, 2U);
+    CHECK_EQ(out.rules[12].threshold, -50);
+    CHECK_EQ(out.rules[12].hysteresis, 0);  // reset: the old tenths meant nothing in hundredths
+    // Boolean source: index forced to 0, numeric comparison refused.
+    body = "source=HeureNonSure&comparaison=vrai&index=3";
+    CHECK(settings::apply_alert_rule_form(body, std::strlen(body), 12U, saved, out, decimals, err));
+    CHECK_EQ(out.rules[12].index, 0U);
+    CHECK_EQ(out.rules[12].decimals, 0U);
+    body = "source=HeureNonSure&comparaison=%3C";
+    CHECK(!settings::apply_alert_rule_form(body, std::strlen(body), 12U, saved, out, decimals, err));
+    CHECK(std::strcmp(err.field, "comparaison") == 0);
+    // Air temperature: centi-degrees, two decimals accepted.
+    body = "source=AirTemperature&comparaison=%3E&seuil=28.25";
+    CHECK(settings::apply_alert_rule_form(body, std::strlen(body), 12U, saved, out, decimals, err));
+    CHECK_EQ(out.rules[12].threshold, 2825);
+    // Empty colour: back to the priority's.
+    body = "couleur=";
+    CHECK(settings::apply_alert_rule_form(body, std::strlen(body), 12U, saved, out, decimals, err));
+    CHECK(!out.rules[12].color_set);
+    // Refusals, all or nothing.
+    const char* bad[] = {"actif=2", "nom=abcdefghijklmnopq", "source=Inconnue", "index=8", "index=-1", "comparaison=~",
+                         "seuil=0.55", "seuil=abc", "hysteresis=-1", "hysteresis=0.55", "confirmation_s=3601", "priorite=4",
+                         "texte=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "couleur=rouge",
+                         "couleur=%23ff", "icone=Licorne", "duree_s=0", "rappel_s=9", "rappel_s=3601", "outrepasse_silence=oui_non",
+                         "nom=%ZZ", "comparaison=vrai"};
+    for (const char* b : bad) {
+        err = settings::FormError{};
+        out = saved;
+        const bool ok = settings::apply_alert_rule_form(b, std::strlen(b), 12U, saved, out, decimals, err);
+        if (ok) {
+            std::printf("  corps de regle accepte a tort : %s\n", b);
+        }
+        CHECK(!ok);
+        CHECK((err.reason != nullptr) && (err.reason[0] != '\0'));
+        CHECK(std::memcmp(&out, &saved, sizeof(out)) == 0);
+    }
+    CHECK(!settings::apply_alert_rule_form("actif=1", 7U, 16U, saved, out, decimals, err));
+    CHECK(!settings::apply_alert_rule_form("actif=1", 7U, 0U, saved, out, nullptr, err));
+    // A badly encoded value in any field is refused by that field's name (never repaired).
+    for (std::size_t i = 0U; i < settings::kAlertRuleFieldCount; ++i) {
+        char b[64];
+        (void)std::snprintf(b, sizeof(b), "%s=%%ZZ", settings::kAlertRuleFields[i]);
+        err = settings::FormError{};
+        CHECK(!settings::apply_alert_rule_form(b, std::strlen(b), 12U, saved, out, decimals, err));
+        CHECK((err.field != nullptr) && (std::strcmp(err.field, settings::kAlertRuleFields[i]) == 0));
+    }
+    for (std::size_t i = 0U; i < settings::kAlertFieldCount; ++i) {
+        char b[64];
+        (void)std::snprintf(b, sizeof(b), "%s=%%ZZ", settings::kAlertFields[i]);
+        err = settings::FormError{};
+        CHECK(!settings::apply_alert_form(b, std::strlen(b), current, out, err));
+        CHECK((err.field != nullptr) && (std::strcmp(err.field, settings::kAlertFields[i]) == 0));
+    }
+
+    // Model JSON: quiet fields + every rule field with a label, sources with their kind, new types.
+    static char json[settings::kJsonMax];
+    std::size_t len = settings::alert_model_json(json, sizeof(json));
+    CHECK(len > 0U);
+    for (std::size_t i = 0U; i < settings::kAlertFieldCount; ++i) {
+        char needle[64];
+        (void)std::snprintf(needle, sizeof(needle), "\"%s\":{\"type\":\"", settings::kAlertFields[i]);
+        CHECK(std::strstr(json, needle) != nullptr);
+    }
+    const char* regle = std::strstr(json, "\"regle\":{");
+    CHECK(regle != nullptr);
+    for (std::size_t i = 0U; (regle != nullptr) && (i < settings::kAlertRuleFieldCount); ++i) {
+        char needle[64];
+        (void)std::snprintf(needle, sizeof(needle), "\"%s\":{\"type\":\"", settings::kAlertRuleFields[i]);
+        const char* f = std::strstr(regle, needle);
+        if (f == nullptr) {
+            std::printf("  champ absent du modele de regle : %s\n", settings::kAlertRuleFields[i]);
+        }
+        CHECK(f != nullptr);
+        CHECK((f != nullptr) && (std::strstr(f, "\"libelle\":\"") != nullptr));
+    }
+    CHECK(std::strstr(json, "\"seuil\":{\"type\":\"decimal\"") != nullptr);
+    CHECK(std::strstr(json, "\"couleur\":{\"type\":\"couleur\"") != nullptr);
+    CHECK(std::strstr(json, "\"silence_debut\":{\"type\":\"heure\"") != nullptr);
+    CHECK(std::strstr(json, "\"regles_max\":16") != nullptr);
+    CHECK(std::strstr(json, "{\"nom\":\"Valeur\",\"booleen\":false,\"index\":true,\"unite\":\"\",\"decimales\":-1}") != nullptr);
+    CHECK(std::strstr(json, "{\"nom\":\"AirTemperature\",\"booleen\":false,\"index\":false,\"unite\":\"C\",\"decimales\":2}") != nullptr);
+    CHECK(std::strstr(json, "{\"nom\":\"HeureNonSure\",\"booleen\":true,") != nullptr);
+    CHECK(std::strstr(json, "\"acquitt") == nullptr);  // no acknowledgement field anywhere
+    CHECK_EQ(settings::alert_model_json(json, 256U), 0U);
+    // Values JSON: the GEL rule as decimal texts, index 1-based for the page.
+    len = settings::alert_json(saved, json, sizeof(json));
+    CHECK(len > 0U);
+    CHECK(std::strstr(json, "\"nom\":\"GEL\",\"source\":\"Valeur\",\"index\":1,\"comparaison\":\"<\",\"seuil\":\"-0.5\",\"hysteresis\":\"0.5\",\"decimales\":1") != nullptr);
+    CHECK(std::strstr(json, "\"couleur\":\"#ff0000\",\"icone\":\"Thermometre\"") != nullptr);
+    CHECK(std::strstr(json, "\"silence_actif\":true,\"silence_debut\":1350,\"silence_fin\":420") != nullptr);
+    CHECK_EQ(settings::alert_json(saved, json, 64U), 0U);
+    CHECK_EQ(settings::kAlertRuleFieldCount, 15U);
+}
+
 void check_domain_dynamic(const char* page, const char* const* fields, std::size_t count, const char* domain) {
     char needle[64];
     (void)std::snprintf(needle, sizeof(needle), "data-domaine=\"%s\"", domain);
@@ -494,13 +666,14 @@ struct PageLiteral {
 
 bool is_model_field(const char* name) {
     const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kSystemFields,
-                                  settings::kAirFields, settings::kHaFields, settings::kHaValueFields, settings::kMqttFields};
+                                  settings::kAirFields, settings::kHaFields, settings::kHaValueFields, settings::kMqttFields,
+                                  settings::kAlertFields, settings::kAlertRuleFields};
     const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kSystemFieldCount,
                                   settings::kAirFieldCount, settings::kHaFieldCount, settings::kHaValueFieldCount,
-                                  settings::kMqttFieldCount};
+                                  settings::kMqttFieldCount, settings::kAlertFieldCount, settings::kAlertRuleFieldCount};
     const char* const extra[] = {"ssid", "password", "cle", "texte", "priorite", "duree_s", "confirme", "motif",
                                  "brut_nuit", "brut_nuit_allume", "brut_soir", "brut_jour", "firmware", "reference"};
-    for (std::size_t l = 0U; l < 7U; ++l) {
+    for (std::size_t l = 0U; l < 9U; ++l) {
         for (std::size_t i = 0U; i < counts[l]; ++i) {
             if (std::strcmp(lists[l][i], name) == 0) {
                 return true;
@@ -528,6 +701,7 @@ void test_page_orphans() {
     check_domain_dynamic(page, settings::kAirFields, settings::kAirFieldCount, "air");
     check_domain_dynamic(page, settings::kHaFields, settings::kHaFieldCount, "ha");
     check_domain_dynamic(page, settings::kMqttFields, settings::kMqttFieldCount, "mqtt");
+    check_domain_dynamic(page, settings::kAlertFields, settings::kAlertFieldCount, "alertes");
 
     // Every name="..." left in the page (uploads, portal) is a known field.
     const char* p = page;
@@ -561,6 +735,7 @@ void test_page_orphans() {
         {settings::kAirFields, settings::kAirFieldCount, {"air:", "air_seuils:", nullptr}},
         {settings::kHaFields, settings::kHaFieldCount, {"ha:", "ha_avance:", "meteo:"}},
         {settings::kMqttFields, settings::kMqttFieldCount, {"mqtt:", "mqtt_avance:", nullptr}},
+        {settings::kAlertFields, settings::kAlertFieldCount, {"alertes:", nullptr, nullptr}},
     };
     const char* groups = std::strstr(page, "var groupes = {");
     CHECK(groups != nullptr);
@@ -610,10 +785,39 @@ void test_page_orphans() {
         }
         CHECK(once);
     }
+    // ALR-18: one card per rule built from `modele.regle`, every rule field in the alerte_regle group once,
+    // and the wizard posts exactly the rule fields (no orphan on either side).
+    CHECK(std::strstr(page, "modele.regle") != nullptr);
+    CHECK(std::strstr(page, "'alertes/regle/' + i") != nullptr);
+    const char* rg = std::strstr(groups, "alerte_regle:");
+    CHECK(rg != nullptr);
+    const char* rg_end = (rg != nullptr) ? std::strstr(rg, "]") : nullptr;
+    const char* wiz = std::strstr(page, "post('/api/alertes/regle/' + slot.value, corps)");
+    CHECK(wiz != nullptr);
+    const char* wiz_body = std::strstr(page, "var corps = 'actif=1&nom='");
+    CHECK(wiz_body != nullptr);
+    for (std::size_t i = 0U; (rg != nullptr) && (rg_end != nullptr) && (i < settings::kAlertRuleFieldCount); ++i) {
+        char needle[64];
+        (void)std::snprintf(needle, sizeof(needle), "'%s'", settings::kAlertRuleFields[i]);
+        const char* hit = std::strstr(rg, needle);
+        const bool once = (hit != nullptr) && (hit < rg_end) && (std::strstr(hit + 1, needle) == nullptr || std::strstr(hit + 1, needle) > rg_end);
+        if (!once) {
+            std::printf("  champ de regle absent ou en double dans alerte_regle : %s\n", settings::kAlertRuleFields[i]);
+        }
+        CHECK(once);
+        // The wizard's final POST carries every rule field, as `name=`.
+        char key[64];
+        (void)std::snprintf(key, sizeof(key), "%s=", settings::kAlertRuleFields[i]);
+        const bool posted = (wiz_body != nullptr) && (std::strstr(wiz_body, key) != nullptr) && (std::strstr(wiz_body, key) < wiz);
+        if (!posted) {
+            std::printf("  le wizard d'alerte n'envoie pas le champ %s\n", settings::kAlertRuleFields[i]);
+        }
+        CHECK(posted);
+    }
     // Every type the model emits has a widget in the page, and every field carries a label.
     const char* const types[] = {"m.type === 'booleen'", "m.type === 'choix'", "m.type === 'heure'", "m.type === 'entier'",
                                  "m.type === 'scenes'", "m.type === 'courbe'", "m.type === 'temperature'",
-                                 "m.type === 'secret'", "m.type === 'coordonnee'"};
+                                 "m.type === 'secret'", "m.type === 'coordonnee'", "m.type === 'decimal'", "m.type === 'couleur'"};
     for (const char* t : types) {
         CHECK(std::strstr(page, t) != nullptr);
     }
@@ -722,5 +926,6 @@ void run_settings_tests() {
     test_system_form();
     test_air_form();
     test_ha_form();
+    test_alert_form();
     test_page_orphans();
 }

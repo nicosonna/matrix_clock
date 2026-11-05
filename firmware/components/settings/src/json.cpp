@@ -4,6 +4,9 @@
  */
 #include "settings/json.hpp"
 
+#include <cstdio>
+
+#include "alerts/rules.hpp"
 #include "settings/forms.hpp"
 #include "settings/json_writer.hpp"
 #include "timekeeping/tz.hpp"
@@ -371,6 +374,112 @@ std::size_t mqtt_json(const homeassistant::MqttConfig& c, char* out, std::size_t
                     w.field(kMqttFields[5], false) && w.field(kMqttFields[6], c.prefix) &&
                     w.field(kMqttFields[7], static_cast<int64_t>(c.period_s)) && w.end_object();
     return ok ? finish(w) : 0U;
+}
+
+std::size_t alert_model_json(char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    const alerts::QuietConfig q = alerts::default_quiet_config();
+    const alerts::Rule d = alerts::default_rule();
+    bool ok = w.begin_object() && w.key("champs") && w.begin_object();
+    ok = ok && bool_field(w, kAlertFields[0], "Heures silencieuses", q.enabled,
+                          "La nuit : pas de clignotement, pas de défilement, passages suspendus (les alertes tenues reprennent au matin).");
+    ok = ok && time_field(w, kAlertFields[1], "Début du silence", q.start_min, "Peut franchir minuit.");
+    ok = ok && time_field(w, kAlertFields[2], "Fin du silence", q.end_min, "");
+    ok = ok && bool_field(w, kAlertFields[3], "Une alerte critique passe quand même", q.p3_overrides,
+                          "Priorité 3 avec « outrepasse le silence » coché sur la règle.");
+    ok = ok && w.end_object();
+    // Sub-model of one rule.
+    const char* sources[static_cast<std::size_t>(alerts::Source::Count)];
+    for (std::size_t i = 0U; i < static_cast<std::size_t>(alerts::Source::Count); ++i) {
+        sources[i] = alerts::source_name(static_cast<alerts::Source>(i));
+    }
+    const char* comparisons[static_cast<std::size_t>(alerts::Comparison::Count)];
+    for (std::size_t i = 0U; i < static_cast<std::size_t>(alerts::Comparison::Count); ++i) {
+        comparisons[i] = alerts::comparison_name(static_cast<alerts::Comparison>(i));
+    }
+    const char* const icons[] = {"Aucune", "Thermometre", "Goutte", "Eclair", "Porte", "Vent", "Soleil", "Maison"};
+    ok = ok && w.key("regle") && w.begin_object();
+    ok = ok && bool_field(w, kAlertRuleFields[0], "Règle active", d.enabled, "Décochée : jamais évaluée.");
+    ok = ok && text_field(w, kAlertRuleFields[1], "texte", "Nom", static_cast<int64_t>(alerts::kRuleNameMax), d.name,
+                          "Libellé sur la page ; titre de l'alerte.");
+    ok = ok && choice_field(w, kAlertRuleFields[2], "Quoi surveiller", sources, static_cast<std::size_t>(alerts::Source::Count),
+                            alerts::source_name(d.source),
+                            "Valeur : une des 8 valeurs Home Assistant ; les autres sont des états internes (vrai/faux) ou le capteur d'air.");
+    ok = ok && int_field(w, kAlertRuleFields[3], "Valeur n°", "", 1, static_cast<int64_t>(alerts::kValuesCount), 1,
+                         "Pour Valeur et DonneePerimee : la valeur suivie (1 à 8) de l'onglet Home Assistant.");
+    ok = ok && choice_field(w, kAlertRuleFields[4], "Condition", comparisons, static_cast<std::size_t>(alerts::Comparison::Count),
+                            alerts::comparison_name(d.comparison),
+                            "vrai / faux pour un état ; change : à chaque changement de valeur (alerte ponctuelle).");
+    ok = ok && head(w, kAlertRuleFields[5], "decimal", "Seuil") && w.field("defaut", "0") &&
+         w.field("aide", "Dans l'unité de la source, avec au plus ses décimales (ex. 0.5 pour une température à une décimale).") &&
+         w.end_object();
+    ok = ok && head(w, kAlertRuleFields[6], "decimal", "Hystérésis") && w.field("defaut", "0") &&
+         w.field("aide", "Écart à repasser avant que l'alerte retombe : évite le papillonnement autour du seuil.") &&
+         w.end_object();
+    ok = ok && int_field(w, kAlertRuleFields[7], "Confirmation", "s", 0, alerts::kConfirmationMaxS, d.confirmation_s,
+                         "La condition doit tenir sans interruption pendant ce temps avant de lever l'alerte.");
+    ok = ok && int_field(w, kAlertRuleFields[8], "Priorité", "", 0, alerts::kPriorityMax, d.priority,
+                         "0 information (attend la fin de la scène), 1 à savoir, 2 important (clignote), 3 critique (clignote vite, luminosité relevée).");
+    ok = ok && text_field(w, kAlertRuleFields[9], "texte", "Texte affiché", static_cast<int64_t>(alerts::kTemplateMax), d.text,
+                          "{n} nom, {v} valeur, {u} unité. Vide : le nom. Accents et minuscules sont translittérés sur la dalle.");
+    ok = ok && head(w, kAlertRuleFields[10], "couleur", "Couleur") && w.field("defaut", "") &&
+         w.field("aide", "#RRGGBB ; vide : la couleur de la priorité (bleu, ambre, orange, rouge).") && w.end_object();
+    ok = ok && choice_field(w, kAlertRuleFields[11], "Icône", icons, 8U, icons[d.icon], "Icône 8×8 devant le texte (bandeau statique).");
+    ok = ok && int_field(w, kAlertRuleFields[12], "Durée d'un passage", "s", alerts::kDurationMin, alerts::kDurationMax, d.duration_s, "");
+    ok = ok && int_field(w, kAlertRuleFields[13], "Rappel", "s", alerts::kRepeatMin, alerts::kRepeatMax, d.repeat_s,
+                         "Intervalle entre deux passages tant que la condition tient. Il n'y a pas d'acquittement : l'alerte tombe quand la condition retombe.");
+    ok = ok && bool_field(w, kAlertRuleFields[14], "Outrepasse le silence", d.override_quiet,
+                          "Avec la priorité 3 : rendu normal pendant les heures silencieuses (si elles l'autorisent).");
+    ok = ok && w.end_object();
+    ok = ok && w.field("regles_max", static_cast<int64_t>(alerts::kRulesMax));
+    // Sources: what the wizard needs to phrase the condition (unit, fixed point, boolean or not).
+    ok = ok && w.key("sources") && w.begin_array();
+    for (std::size_t i = 0U; ok && (i < static_cast<std::size_t>(alerts::Source::Count)); ++i) {
+        const alerts::Source src = static_cast<alerts::Source>(i);
+        const bool value = src == alerts::Source::Value;
+        ok = w.begin_object() && w.field("nom", alerts::source_name(src)) && w.field("booleen", alerts::source_is_boolean(src)) &&
+             w.field("index", alerts::source_has_index(src)) && w.field("unite", alerts::source_unit(src)) &&
+             w.field("decimales", value ? static_cast<int64_t>(-1) : static_cast<int64_t>(alerts::source_decimals(src, 0U))) &&
+             w.end_object();
+    }
+    ok = ok && w.end_array() && w.end_object();
+    return finish(w);
+}
+
+std::size_t alert_json(const AlertSettings& a, char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    const char* const icons[] = {"Aucune", "Thermometre", "Goutte", "Eclair", "Porte", "Vent", "Soleil", "Maison"};
+    bool ok = w.begin_object() && w.field(kAlertFields[0], a.quiet.enabled) &&
+              w.field(kAlertFields[1], static_cast<int64_t>(a.quiet.start_min)) &&
+              w.field(kAlertFields[2], static_cast<int64_t>(a.quiet.end_min)) && w.field(kAlertFields[3], a.quiet.p3_overrides);
+    ok = ok && w.key("regles") && w.begin_array();
+    for (std::size_t i = 0U; ok && (i < alerts::kRulesMax); ++i) {
+        const alerts::Rule& r = a.rules[i];
+        char threshold[20];
+        char hysteresis[20];
+        char color[8];
+        (void)fixed_to_text(r.threshold, r.decimals, threshold, sizeof(threshold));
+        (void)fixed_to_text(r.hysteresis, r.decimals, hysteresis, sizeof(hysteresis));
+        if (r.color_set) {
+            (void)std::snprintf(color, sizeof(color), "#%02x%02x%02x", static_cast<unsigned>(r.color[0]),
+                                static_cast<unsigned>(r.color[1]), static_cast<unsigned>(r.color[2]));
+        } else {
+            color[0] = '\0';
+        }
+        ok = w.begin_object() && w.field(kAlertRuleFields[0], r.enabled) && w.field(kAlertRuleFields[1], r.name) &&
+             w.field(kAlertRuleFields[2], alerts::source_name(r.source)) &&
+             w.field(kAlertRuleFields[3], static_cast<int64_t>(r.index) + 1) &&
+             w.field(kAlertRuleFields[4], alerts::comparison_name(r.comparison)) && w.field(kAlertRuleFields[5], threshold) &&
+             w.field(kAlertRuleFields[6], hysteresis) && w.field("decimales", static_cast<int64_t>(r.decimals)) &&
+             w.field(kAlertRuleFields[7], static_cast<int64_t>(r.confirmation_s)) &&
+             w.field(kAlertRuleFields[8], static_cast<int64_t>(r.priority)) && w.field(kAlertRuleFields[9], r.text) &&
+             w.field(kAlertRuleFields[10], color) && w.field(kAlertRuleFields[11], icons[(r.icon < 8U) ? r.icon : 0U]) &&
+             w.field(kAlertRuleFields[12], static_cast<int64_t>(r.duration_s)) &&
+             w.field(kAlertRuleFields[13], static_cast<int64_t>(r.repeat_s)) && w.field(kAlertRuleFields[14], r.override_quiet) &&
+             w.end_object();
+    }
+    ok = ok && w.end_array() && w.end_object();
+    return finish(w);
 }
 
 }  // namespace settings

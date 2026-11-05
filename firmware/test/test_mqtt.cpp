@@ -642,6 +642,14 @@ void test_form() {
         CHECK(err.reason != nullptr);
         CHECK(std::memcmp(&untouched, &saved, sizeof(saved)) == 0);
     }
+    // A badly encoded value in any field is refused by that field's name.
+    for (std::size_t i = 0U; i < settings::kMqttFieldCount; ++i) {
+        char b[64];
+        (void)std::snprintf(b, sizeof(b), "%s=%%ZZ", settings::kMqttFields[i]);
+        err = settings::FormError{};
+        CHECK(!settings::apply_mqtt_form(b, std::strlen(b), saved, next, err));
+        CHECK((err.field != nullptr) && (std::strcmp(err.field, settings::kMqttFields[i]) == 0));
+    }
     // The defaults as current: enabling without a host is refused by name.
     body = "actif=1";
     CHECK(!settings::apply_mqtt_form(body, std::strlen(body), current, next, err));

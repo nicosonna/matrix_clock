@@ -1,6 +1,11 @@
 # Spec — Canal d'alerte et moteur de règles (2026-11-05)
 
-> **Statut : spécifié, rien d'implémenté.** Composant pur `alerts`.
+> **Statut : implémenté le 2026-11-05** (`alerts/rules.hpp`, `alerts/queue.hpp`, domaine `alertes` des
+> réglages, page `/alertes` avec wizard, rendu dans `app_main`). Les identifiants du code sont anglais
+> (`Source::StaleValue` pour `DonneePerimee`, `RuleState::Raised` pour `Levee`…) ; les noms français
+> restent ceux de l'API (`/api/alertes`). Écart assumé : `seuil` et `hysteresis` se saisissent en
+> **texte décimal** dans l'unité de la source (`-0.5`), le firmware les convertit dans sa virgule fixe
+> (`decimales` dérivé, non saisi) ; une règle `change` produit une notification **ponctuelle**.
 > Phase 2 (règles poussées par le hub) : `spec-liaison-hub.md`.
 
 ---

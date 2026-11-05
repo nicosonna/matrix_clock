@@ -26,6 +26,7 @@ add_executable(test_clock
     test_brightness.cpp
     test_network.cpp
     test_alerts.cpp
+    test_alert_engine.cpp
     test_timekeeping.cpp
     test_settings.cpp
     test_air_quality.cpp
@@ -51,6 +52,8 @@ add_executable(test_clock
     ${TIME}/src/local_time.cpp
     ${TIME}/src/validity.cpp
     ${ALERTS}/src/notification.cpp
+    ${ALERTS}/src/queue.cpp
+    ${ALERTS}/src/rules.cpp
     ${BRIGHT}/src/filters.cpp
     ${BRIGHT}/src/brightness.cpp
     ${NET}/src/credentials.cpp

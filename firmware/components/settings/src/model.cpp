@@ -61,6 +61,15 @@ HaSettings default_ha_settings() noexcept {
     return h;
 }
 
+void default_alert_settings_into(AlertSettings& a) noexcept {
+    a.rules = alerts::default_rules();
+    a.quiet = alerts::default_quiet_config();
+}
+
+bool is_valid(const AlertSettings& s) noexcept {
+    return alerts::is_valid(s.rules) && alerts::is_valid(s.quiet);
+}
+
 void default_settings_into(Settings& s) noexcept {
     s.display = default_display_settings();
     s.brightness = brightness::default_config();
@@ -68,6 +77,7 @@ void default_settings_into(Settings& s) noexcept {
     s.air = default_air_settings();
     default_ha_settings_into(s.ha);
     s.mqtt = homeassistant::default_mqtt_config();
+    default_alert_settings_into(s.alerts);
 }
 
 Settings default_settings() noexcept {

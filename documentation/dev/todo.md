@@ -71,10 +71,10 @@
       SSID + mot de passe sur la dalle, `POST /api/notification`~~ (2026-11-05).
       Reste : **vérifier au téléphone** (HW-RES-05/06/07), coupure secteur
       (HW-RES-01/02), DHCP coupé (HW-RES-03).
-- [ ] `alerts` : le décodeur de notification existe (`ALR-15`) ; moteur de
-      règles, file bornée, heures silencieuses, rendu par priorité à écrire
-      (`ALR-01` → `ALR-14`, `ALR-16` → `ALR-18`). En attendant, `app_main` ne
-      garde qu'**une** notification en attente et ignore `effacer`.
+- [x] ~~`alerts` : moteur de règles, file bornée, heures silencieuses, rendu
+      par priorité, page `/alertes` et wizard~~ (`ALR-01` → `ALR-18`,
+      2026-11-05). Reste : HW-ALR-01 (sonde refroidie), HW-ALR-03 (une nuit
+      complète), passages `AERER` observés sur une heure.
 - [x] ~~`timekeeping` pur (règles POSIX, heure locale + DST, validité) +
       `clock_time` (SNTP)~~ — `TIME-01` → `TIME-08`, HW-TIME-01 (2026-11-05).
       Reste : serveur NTP et fuseau en **NVS** via la page `/systeme` (liste
@@ -106,9 +106,9 @@
 - [ ] `campagne_ha_docker.py` + `ha_docker/` : Home Assistant de **test** en
       Docker **avec Mosquitto** (WebSocket **et** MQTT). **On ne pilote jamais
       celui de la maison depuis les tests.**
-- [ ] `alerts` pur : règles, file, heures silencieuses (`ALR-01` → `ALR-18`) ;
-      rendu par priorité dans `display` ; canal entrant partagé par les trois
-      portes d'entrée.
+- [x] ~~`alerts` pur : règles, file, heures silencieuses ; rendu par
+      priorité ; canal entrant partagé~~ (2026-11-05). Phase 2 : la porte
+      d'entrée du hub (`commande notifier`).
 - [ ] Maquette web autonome dans `documentation/maquette-web/index.html` (base de
       design, pas la page du firmware).
 - [ ] Campagne de banc, puis les vérifications `HW-*` du plan de test.

@@ -5,6 +5,62 @@
 
 ---
 
+## 2026-11-05 (suite 14) — Moteur de règles d'alerte, file de notifications, heures silencieuses, page `/alertes`
+
+**Quoi.** Étape 10 de la phase 1 (`spec-alertes.md`), composant pur `alerts` :
+
+- `queue.hpp/.cpp` : **file de 16** dédoublonnée par clé (remplacement sans
+  changer le rang, expiration repoussée), éviction de la plus basse priorité
+  la plus ancienne **seulement** si strictement inférieure, sinon rejet
+  compté ; tenues (règle levée, externe `persistante`) rejouées toutes les
+  `rappel_s`, ponctuelles jouées une fois ; **heures silencieuses** (fenêtre
+  franchissant minuit, jamais silencieux sans heure sûre) qui suspendent les
+  passages sans rien perdre, P3 `outrepasse_silence` exempte ; rendu par
+  priorité (P0 attend la scène, P2 clignote 1 Hz, P3 2 Hz + plancher 64).
+- `rules.hpp/.cpp` : **17 sources** (8 valeurs HA, heure, liaison, jeton,
+  réseau, bail, donnée périmée, LDR, écrêtage, 5 grandeurs d'air, capteur
+  en défaut, préchauffage, compensation), 9 comparaisons, hystérésis selon
+  le sens, confirmation remise à zéro à la moindre coupure, `Unavailable`
+  dès que la source ne vaut rien (liaison désactivée ⇒ `LiaisonHaPerdue`
+  indisponible, pas « levée »), gabarit `{n}` `{v}` `{u}`, synchronisation
+  avec la file : la règle **seule** pousse et retire sa notification
+  `regle_<i>` (un `clear` extérieur est annulé au pas suivant). Règles par
+  défaut de la spec (8 internes actives, GEL / CANICULE / CO2 / HUMIDITE
+  prêtes mais inactives).
+- `settings` : domaine **alertes** (silence + 16 règles par
+  `POST /api/alertes/regle/<i>`), seuil et hystérésis saisis en **décimal
+  de l'unité de la source** (refusés s'ils ont plus de décimales qu'elle,
+  remis à zéro quand la source change), couleur `#RRGGBB` ou vide, blob NVS
+  `alerts` v1. Tampon JSON porté à 8 Ko et **partagé** entre tous les GET
+  (13 × 4 Ko de statiques en moins).
+- `app_main` : file + moteur sous un **mutex** (portes HTTP et WebSocket),
+  pas de 1 Hz avec les entrées réelles, passage suivant choisi par la file
+  (priorité, âge, silence), rendu : couleur, clignotement, défilement ou
+  bandeau avec icône, plancher relevé ; **`!` dans la zone d'icône** tant
+  qu'une alerte est tenue (prend le pas sur le logo air) ; `/api/etat.alertes`
+  (règles avec état et valeur, file, silence, rejets).
+- Page : onglet **Alertes** (file **listée, sans bouton**, règles en direct,
+  silence, 16 cartes depuis `modele.regle`, widgets `decimal` et `couleur`),
+  **wizard en 5 étapes** (source avec valeur actuelle → condition avec
+  aperçu « se lèverait / ne se lèverait pas » → stabilité → rendu avec
+  aperçu du texte → récapitulatif en français et choix de l'emplacement).
+  Le tableau de bord compte les alertes en cours.
+
+**Résultats.** Tests host : **12 100+ vérifications, 0 échec, couverture
+96,7 %** (5 012 lignes ; `rules.cpp` 95,3 %, `queue.cpp` 98,9 %). Image
+1 334 Ko (32 % libre). Sur la carte (OTA) : à 23 h le silence est actif,
+`AERER` en `confirmation` à AQI 4 puis `surveille` à AQI 3 ; silence coupé
+le temps du banc : ponctuelle P1 ⇒ scène `Alerte` puis `Heure` ; tenue P2
+⇒ passage puis `tenues:true` jusqu'à `effacer` par sa source ; règle
+`CO2 >= 900` posée par l'API ⇒ `levee`, `CO2 906 ppm` tenu ; `seuil=0.55`
+refusé par son nom ; réglages remis (règle 12 inactive, silence actif).
+
+**Reste.** HW-ALR-01 (sonde refroidie), HW-ALR-03 (une nuit), HW-AIR-01
+(aucun `AERER` au préchauffage, logique couverte par AIR-20), plan de test
+final consolidé.
+
+---
+
 ## 2026-11-05 (suite 13) — Publication MQTT vers Home Assistant : découverte, état `null`, page `/mqtt`, broker de banc
 
 **Quoi.** Étape 9 bis de la phase 1 (`spec-home-assistant.md` §6 bis) :

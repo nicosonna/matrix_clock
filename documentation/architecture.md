@@ -4,8 +4,8 @@
 > tampon, correspondance, gamma, plafond de courant, rendu, polices, texte,
 > scènes Heure/Date, défilement, ordonnanceur, motifs), `brightness` (pur :
 > filtres, courbe, contrôleur, wizard), `network` (pur : identifiants, DNS
-> captif, superviseur avec grâce et bail), `alerts` (pur, décodeur de
-> notification seulement), `timekeeping` (pur : règles POSIX, heure locale avec
+> captif, superviseur avec grâce et bail), `alerts` (pur : décodeur de
+> notification, file bornée, moteur de règles, heures silencieuses), `timekeeping` (pur : règles POSIX, heure locale avec
 > DST, validité — 99,1 % couvert ensemble), `clock_display` (vérifié sur la
 > dalle), `clock_hal` (ADC1 de la LDR), `clock_web` (Wi-Fi, portail, HTTP,
 > mDNS, canal de notification) et `clock_time` (SNTP) existent ; **le reste est
@@ -65,7 +65,7 @@ dans `firmware/test/`.
 | `brightness` | idem | oui |
 | `network` | idem (repris de ThermoSync) | oui |
 | `homeassistant` (`ws_client` + `mqtt`) | idem | oui, transports moqués ; `mqtt` repris de ThermoSync |
-| `alerts` | idem | oui |
+| `alerts` | idem (16 règles, file de 16, heures silencieuses) | oui, `ALR-01` → `ALR-18` |
 | `air_quality` | idem, bus I²C moqué | oui |
 | `settings` | idem | oui |
 
@@ -93,6 +93,7 @@ volontaire.
 | `display` | **la plus haute** des tâches applicatives | 25 Hz (40 ms) | Compose la scène depuis le **dernier état publié**, applique gamma et plafond de courant, pousse la trame. **Aucune attente réseau, aucun verrou long.** |
 | `periodique` | moyenne | 1 Hz | Lit l'ADC et le bus I²C (AHT21 puis ENS160, ~100 ms), fait avancer `brightness`, `air_quality`, `network`, `alerts`, publie l'état. L'I²C ne vit **jamais** dans la tâche d'affichage. |
 | `homeassistant` | basse | événementielle | WebSocket Home Assistant, météo de repli. |
+| *(dans `display`, à 1 Hz)* | — | 1 Hz | `RuleEngine::step()` sur les entrées de la seconde (valeurs HA, air, heure, liaisons, LDR, écrêtage), `NotificationQueue::step()`, choix du prochain passage ; file et moteur sous **un mutex** partagé avec les portes d'entrée HTTP / WebSocket. |
 | `mqtt` | basse | 250 ms | Lit l'état air / lumière / heure, fait avancer `MqttPublisher`, publie par `esp-mqtt`. |
 | `web` | **la plus basse** | événementielle | HTTP, DNS captif. |
 

@@ -27,6 +27,10 @@
 
 ## Phase 1 — à faire, dans l'ordre
 
+- [x] ~~Plan de test final consolidé~~ : `dev/plan-de-test-final.md`
+      (2026-11-05). Reste : **jouer la campagne matérielle** de son §4 et
+      dater chaque ligne dans `test-plan-hw.md`.
+
 - [x] ~~Squelette ESP-IDF~~ : `CMakeLists.txt`, `main/`, `partitions.csv`,
       `sdkconfig.defaults` + surcouche `horloge-v1`, build propre (2026-11-05).
 - [x] ~~`clock_board`~~ : profils `horloge-v1` et `devkit`, I²C sur 27/26

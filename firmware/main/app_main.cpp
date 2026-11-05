@@ -44,6 +44,7 @@
 #include "display/color.hpp"
 #include "display/current_limit.hpp"
 #include "display/frame_buffer.hpp"
+#include "display/icon_zone.hpp"
 #include "display/panel_map.hpp"
 #include "display/render.hpp"
 #include "display/scheduler.hpp"
@@ -199,11 +200,7 @@ bool on_notification(const alerts::Notification& n) {
     return st != alerts::PushStatus::Rejected;
 }
 
-/// 6x6 "!" in the icon zone: an alert is held (its passes come back every repeat_s).
-void draw_alert_mark(display::FrameBuffer& fb, uint8_t x, uint8_t y, display::Rgb color) {
-    fb.fill_rect(static_cast<uint8_t>(x + 2U), y, 2U, 4U, color);
-    fb.fill_rect(static_cast<uint8_t>(x + 2U), static_cast<uint8_t>(y + 5U), 2U, 1U, color);
-}
+
 
 bool on_test_pattern(const char* name) {
     const char* const known[] = {"aucun", "pixel", "colonne", "diagonale", "plein", "chenillard"};
@@ -879,12 +876,13 @@ void display_task(void* /*arg*/) {
                         held_priority = s_queue.held_priority();
                         alerts_unlock();
                     }
-                    const bool icon = held || (air_shown && (cfg.air.logo == settings::AirLogoMode::IconZone));
-                    display::draw_clock(fb, time_info, icon ? 0U : display::kClockCentredX, colon_on, cfg.display.seconds_bar,
-                                        kClockColors);
-                    if (held) {
-                        draw_alert_mark(fb, kAirLogoX, kAirLogoY, kPriorityColor[(held_priority > 3U) ? 3U : held_priority]);
-                    } else if (icon) {
+                    const display::IconZone zone =
+                        display::choose_icon_zone(held, air_shown && (cfg.air.logo == settings::AirLogoMode::IconZone));
+                    display::draw_clock(fb, time_info, (zone != display::IconZone::None) ? 0U : display::kClockCentredX, colon_on,
+                                        cfg.display.seconds_bar, kClockColors);
+                    if (zone == display::IconZone::Alert) {
+                        display::draw_alert_mark(fb, kAirLogoX, kAirLogoY, kPriorityColor[(held_priority > 3U) ? 3U : held_priority]);
+                    } else if (zone == display::IconZone::Air) {
                         display::draw_air_logo_6(fb, kAirLogoX, kAirLogoY, air_color);
                     } else {
                         // centred clock, nothing in the zone

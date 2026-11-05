@@ -1,6 +1,8 @@
 # Cadrage fonctionnel — Horloge (2026-11-05)
 
-> **Statut : cadrage en cours, rien d'implémenté.** Ce fichier est la référence
+> **Statut : phase 1 implémentée le 2026-11-05** (étapes 1 à 10 ci-dessous,
+> vérifiées sur host et sur la carte ; l'étape 11 — campagne matérielle — est
+> décrite dans `plan-de-test-final.md`). Ce fichier reste la référence
 > fonctionnelle : vision, exigences, affectation du matériel, phases, questions
 > ouvertes. **À lire avant toute implémentation**, et à mettre à jour dès qu'un
 > choix est arrêté.
@@ -163,7 +165,7 @@ Affichage, luminosité automatique, SNTP, portail captif avec reprise après
 coupure, page web de paramétrage, moteur de règles local et canal d'alerte
 entrant, liaison Home Assistant en lecture.
 
-Ordre d'implémentation proposé — chaque étape finit par ses tests host à jour :
+Ordre d'implémentation — chaque étape finit par ses tests host à jour. **Étapes 1 à 10 faites le 2026-11-05** (journal `suite 1` à `suite 14`) ; l'étape 11 est en cours :
 
 1. Squelette ESP-IDF, `clock_board`, partitions, build propre.
 2. `display` pur (tampon, correspondance, gamma, plafond de courant) + tests ;
@@ -184,7 +186,10 @@ Ordre d'implémentation proposé — chaque étape finit par ses tests host à j
    test en Docker pour la vérification.
 10. `alerts` pur (règles, file) + tests ; rendu dans `display` ; canal
     entrant ; règles air par défaut.
-11. Campagne de banc, puis vérifications matérielles du plan de test.
+11. Campagne de banc, puis vérifications matérielles du plan de test —
+    **en cours** : broker MQTT de banc, canal d'alerte, OTA et rollback,
+    capteur d'air réel vérifiés ; le reste (vrai Home Assistant, nuit,
+    coupures) listé dans `plan-de-test-final.md` §4.
 
 ### Phase 2 — liaison au hub `app-house`
 

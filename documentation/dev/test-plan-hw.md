@@ -4,9 +4,12 @@
 > procédure ↔ attendu ↔ statut/date. Couvre les **tests host** (sur PC) **et** les
 > **vérifications matérielles** (étape séparée, hors CI).
 >
-> Statut au **2026-11-05** : specs seules, **aucun test écrit**. Tous les tests
-> sont `À ÉCRIRE`. Lancement prévu : `bash firmware/test/run_host_tests.sh`
-> (couverture : `--coverage`, objectif ≥ 95 %, échec en dessous).
+> Statut au **2026-11-05 (soir)** : **130 tests host, tous `PASSE`**
+> (12 175 vérifications, couverture 96,8 % sur 5 022 lignes), 43 vérifications
+> matérielles dont 8 `PASSE`, 6 « mécanique vérifiée » sur banc, le reste à
+> jouer. Lancement : `bash firmware/test/run_host_tests.sh` (couverture :
+> `--coverage`, objectif ≥ 95 %, échec en dessous). Vue d'ensemble et campagne
+> finale : `dev/plan-de-test-final.md`.
 
 ---
 
@@ -34,7 +37,7 @@ chaque cas est dans la spec citée.
 | AFF-13 | `Scheduler::notify()` | P≥1 interrompt puis rend la main **au temps restant** ; P0 attend la fin de scène ; remplacement seulement par priorité ≥ | **PASSE** 2026-11-05 |
 | AFF-14 | `Scroller` | 20 px/s = 20 px/s exactement à 40 ms comme à 33 ms (pas de dérive), sortie par la gauche à 3,05 s, 2 passages, infini, bornes 5–60, troncature à 128 car., texte vide fini d'emblée | **PASSE** 2026-11-05 |
 | AFF-15 | `Scheduler` | Débordement 32 bits : construction à 0xFFFFF000, transitions et notification à travers le passage à zéro | **PASSE** 2026-11-05 |
-| AFF-16 | zone d'icônes | Alternance 3 s, priorité alerte > logo air > liaison, glyphes du logo air | À ÉCRIRE |
+| AFF-16 | `display::choose_icon_zone()`, `draw_alert_mark()` | Priorité **alerte tenue > logo air > rien** (pas d'alternance : une chose à la fois, décision du 2026-11-05) ; marque `!` 6×6 de 10 pixels dans la couleur de la priorité, logo air (AIR-19) | **PASSE** 2026-11-05 |
 | AFF-18 | `draw_test_pattern()`, `chaser_frame()` | Pixel = 1, colonne = 8, diagonale = 32 avec (4,1), plein = 256 ; chenillard : marqueurs 0/255, traîne 48/24/12/6, repli modulo 256 | **PASSE** 2026-11-05 |
 | AFF-17 | `display::render()` | Chaîne complète : luminosité **avant** gamma (128 → 56), pixel (1,0) sur la LED 15, luminosité 0 ⇒ tout éteint, blanc plein écrêté même à 15 A, mapping invalide ⇒ trame noire et `false` ; **aucune allocation** (GEN-04) | **PASSE** 2026-11-05 |
 

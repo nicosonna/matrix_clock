@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-11-05 (suite 15) — Zone d'icône testable (AFF-16) et plan de test final
+
+**Quoi.**
+
+- `display/icon_zone` : le choix de la zone d'icône devient une fonction pure
+  (`choose_icon_zone`) : **alerte tenue > logo air > rien**, et la marque `!`
+  (10 pixels) a son dessin et son test. Décision : pas d'alternance de 3 s
+  (une chose à la fois, la plus importante), la spec affichage §4 est
+  amendée par le plan de test.
+- `dev/plan-de-test-final.md` : vue consolidée de toute la phase 1 — comment
+  tout lancer (host, couverture, build, flash, OTA, série, broker de banc,
+  canal d'alerte), état par spec (130 tests host, 43 vérifications
+  matérielles), garde-fous du projet ↔ tests, **campagne matérielle** à jouer
+  dans l'ordre (établi, vrai Home Assistant, durée), trous connus (watchdog,
+  charge CPU, heure d'été réelle), critères de sortie de phase 1.
+- `test-plan-hw.md` (en-tête à jour, AFF-16 `PASSE`), `CLAUDE.md` (état du
+  dépôt : phase 1 implémentée), `cadrage-fonctionnel.md` (statut, étapes 1 à
+  10 faites), `README.md` (statut, layout), `todo.md`.
+
+**Résultats.** 12 175 vérifications, 0 échec, couverture 96,8 % (5 022
+lignes). Image flashée par OTA, démarrage propre, scène `Etat` à la
+connexion, aucune alerte levée (air redescendu à AQI 3), MQTT désactivé.
+
+**Reste.** La campagne du §4 du plan final ; pousser le dépôt quand Nicolas
+le demande ; licence.
+
+---
+
 ## 2026-11-05 (suite 14) — Moteur de règles d'alerte, file de notifications, heures silencieuses, page `/alertes`
 
 **Quoi.** Étape 10 de la phase 1 (`spec-alertes.md`), composant pur `alerts` :

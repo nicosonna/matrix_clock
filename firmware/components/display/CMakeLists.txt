@@ -2,6 +2,7 @@
 idf_component_register(
     SRCS
         "src/air_logo.cpp"
+        "src/icon_zone.cpp"
         "src/value_icons.cpp"
         "src/frame_buffer.cpp"
         "src/panel_map.cpp"

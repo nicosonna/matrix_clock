@@ -27,18 +27,17 @@ Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
 > avant toute implémentation**. Quand un dossier est créé/renommé ou qu'un choix
 > est arrêté, **mettre à jour ce fichier** pour qu'il reste fidèle au dépôt.
 
-> ⚠️ **État du dépôt (2026-11-05)** : squelette ESP-IDF, `clock_board`,
-> composants purs **`display`** (tampon, correspondance, gamma, plafond de
-> courant, rendu, polices, scènes, défilement, ordonnanceur) et
-> **`brightness`** (filtres, courbe, contrôleur, wizard), **`network`**
-> (identifiants, DNS captif, superviseur avec grâce au démarrage et attente de
-> bail), **`alerts`** (décodeur de notification seulement), **`timekeeping`**
-> (règles POSIX, heure locale avec heure d'été, validité 48 h), pilote
-> `clock_display` vérifié sur la dalle, `clock_hal` (ADC1 de la LDR),
-> **`clock_web`** (Wi-Fi APSTA, portail captif, HTTP `/wifi` + `/api/*`, mDNS,
-> `POST /api/notification`), **`clock_time`** (SNTP). **Tout le reste** des
-> composants décrits ci-dessous est la **cible**, pas l'existant.
-> `dev/journal.md` et `dev/todo.md` disent où on en est.
+> ⚠️ **État du dépôt (2026-11-05, soir)** : la **phase 1 est implémentée** —
+> tous les composants décrits ci-dessous existent et tournent sur la carte :
+> `display`, `brightness`, `network`, `timekeeping`, `settings`,
+> `air_quality`, `homeassistant` (`ws_client` + `mqtt`), `alerts` (règles,
+> file, heures silencieuses), et les adaptateurs `clock_board`,
+> `clock_display`, `clock_hal` (ADC + I²C), `clock_time`, `clock_settings`,
+> `clock_homeassistant` (WebSocket + esp-mqtt), `clock_web` (portail, 7
+> domaines de réglage, wizards, OTA). 130 tests host `PASSE`, couverture
+> 96,8 %. Ce qui reste : la **campagne matérielle** de
+> `dev/plan-de-test-final.md` §4 (vrai Home Assistant, nuit, coupures) et la
+> phase 2. `dev/journal.md` et `dev/todo.md` disent où on en est.
 
 ## Structure du dépôt
 
@@ -110,6 +109,8 @@ Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
   - `dev/journal.md` — **historique des modifications** (récent en haut).
   - `dev/todo.md` — **backlog** : tâches identifiées, décisions en suspens.
   - `dev/test-plan-hw.md` — **plan de test** (matrice de traçabilité).
+  - `dev/plan-de-test-final.md` — **plan de test final** : vue d'ensemble par
+    spec, garde-fous ↔ tests, campagne matérielle à jouer, critères de sortie.
   - `dev/cadrage-fonctionnel.md` — vision, exigences, phases, questions ouvertes.
   - `dev/spec-affichage.md` — dalle, correspondance, gamma, plafond de courant,
     polices, scènes, défilement.

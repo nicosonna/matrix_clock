@@ -6,6 +6,7 @@
 #include "test_support.hpp"
 
 #include "display/frame_buffer.hpp"
+#include "display/icon_zone.hpp"
 #include "display/scheduler.hpp"
 #include "display/scroll.hpp"
 #include "display/test_patterns.hpp"
@@ -326,9 +327,35 @@ void test_patterns_and_chaser() {
     CHECK((frame[44] == Rgb{48U, 48U, 48U}));
 }
 
+// AFF-16: the icon zone shows one thing, the most important: a held alert, else the air logo, else nothing.
+void test_icon_zone() {
+    CHECK_ENUM(display::choose_icon_zone(false, false), display::IconZone::None);
+    CHECK_ENUM(display::choose_icon_zone(false, true), display::IconZone::Air);
+    CHECK_ENUM(display::choose_icon_zone(true, false), display::IconZone::Alert);
+    CHECK_ENUM(display::choose_icon_zone(true, true), display::IconZone::Alert);  // alert > air logo
+    display::FrameBuffer fb;
+    const Rgb c{255U, 30U, 30U};
+    display::draw_alert_mark(fb, 26U, 1U, c);
+    uint32_t lit = 0U;
+    for (uint8_t y = 0U; y < display::kHeight; ++y) {
+        for (uint8_t x = 0U; x < display::kWidth; ++x) {
+            const Rgb p = fb.get(x, y);
+            if ((p.r | p.g | p.b) != 0U) {
+                ++lit;
+                CHECK((p.r == c.r) && (p.g == c.g) && (p.b == c.b));
+                CHECK((x >= 28U) && (x < 30U) && (y >= 1U) && (y < 7U));
+                CHECK(y != 5U);  // the gap between the bar and the dot
+            }
+        }
+    }
+    CHECK_EQ(lit, display::alert_mark_pixels());
+    CHECK_EQ(lit, 10U);
+}
+
 }  // namespace
 
 void run_scenes_tests() {
+    test_icon_zone();
     test_scroller();
     test_scheduler_rotation();
     test_scheduler_notifications();

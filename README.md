@@ -63,8 +63,9 @@ documentation/
     cadrage-fonctionnel.md    requirements (EX-nn), phases, open questions
     spec-*.md                 one spec per domain
     test-plan-hw.md           traceability matrix (host tests + hardware checks)
+    plan-de-test-final.md     final test plan: per-spec coverage, bench campaign, exit criteria
     journal.md, todo.md       living history and backlog
-firmware/                     ESP-IDF project (to be created)
+firmware/                     ESP-IDF project (components/, main/, test/ host tests and bench tools)
 ```
 
 ## Languages
@@ -72,13 +73,21 @@ firmware/                     ESP-IDF project (to be created)
 Code, comments, Doxygen, logs and commit messages are in **English**.
 The embedded web UI and the design documentation are in **French**.
 
-## Building (planned)
+## Building and testing
 
 ```
 . $HOME/esp/esp-idf/export.ps1      # ESP-IDF v5.3.x, PowerShell on Windows
 idf.py -C firmware build
 bash firmware/test/run_host_tests.sh --coverage   # pure logic, on the PC, ≥ 95 %
 ```
+
+Status (2026-11-05): phase 1 implemented and running on the board — display,
+automatic brightness, captive portal with power-cut recovery, SNTP with local
+DST rules, settings pages with wizards, OTA, ENS160 + AHT21 air quality, Home
+Assistant WebSocket link, MQTT discovery publication, local alert rules with a
+bounded notification queue and quiet hours. 130 host tests pass, 96.8 %
+coverage. The remaining hardware campaign is listed in
+`documentation/dev/plan-de-test-final.md`.
 
 ## Engineering rules in one paragraph
 

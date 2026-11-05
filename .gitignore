@@ -1,0 +1,28 @@
+# ESP-IDF
+firmware/build/
+firmware/build-*/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock
+firmware/test/build/
+firmware/test/coverage/
+
+# Host tests / tooling
+*.gcda
+*.gcno
+*.gcov
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Local, never committed (secrets, per-machine settings)
+.claude/settings.local.json
+*.local.*

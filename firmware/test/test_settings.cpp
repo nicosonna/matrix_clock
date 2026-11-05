@@ -224,7 +224,7 @@ void test_system_form() {
     CHECK(settings::apply_system_form(ok, slen(ok), cur, out, err));
     CHECK(std::strcmp(out.timezone, "America/New_York") == 0);
     CHECK(std::strcmp(out.ntp_server, "time.cloudflare.com") == 0);
-    const char* ip = "serveur_ntp=10.10.0.1";
+    const char* ip = "serveur_ntp=192.0.2.1";
     CHECK(settings::apply_system_form(ip, slen(ip), cur, out, err));
     const char* encs[] = {"fuseau=%ZZ", "serveur_ntp=%ZZ"};
     for (const char* b : encs) {

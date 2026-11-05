@@ -245,7 +245,7 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-RES-04 | Phrase de passe changée sur la box | Portail en moins de 2 min | À FAIRE |
 | HW-RES-05 | Portail ouvert, iPhone / Android / Windows | Fenêtre captive qui s'ouvre seule ; SSID et phrase de passe **lisibles sur la dalle** | **EN COURS** 2026-11-05 : AP `Horloge-XXXX` WPA2, DNS captif, sondes et page `/wifi` en place, SSID + mot de passe défilent sur la dalle — **essai au téléphone en attente** |
 | HW-RES-06 | Identifiants saisis au portail | Connexion **sans redémarrage** | **PASSE** 2026-11-05 : box jointe depuis le portail au téléphone, état `connected` sans reset (2 min de fonctionnement dans les logs), point d'accès éteint (absent du scan Wi-Fi du PC) |
-| HW-RES-07 | `horloge.local` depuis PC et téléphone | Résolu | **PASSE (PC)** 2026-11-05 : `http://horloge.local/api/info` répond depuis le PC Windows (`"ip":"10.10.0.85"`, `"reseau":"connected"`). Téléphone non testé. |
+| HW-RES-07 | `horloge.local` depuis PC et téléphone | Résolu | **PASSE (PC)** 2026-11-05 : `http://horloge.local/api/info` répond depuis le PC Windows (`"ip"` de la carte, `"reseau":"connected"`). Téléphone non testé. |
 | HW-HA-01 | Liaison au Home Assistant **de la maison**, en lecture | Valeur affichée = valeur de l'interface | À FAIRE par Nicolas (jeton d'un utilisateur dédié, wizard `/ha`) ; **mécanique vérifiée** le 2026-11-05 : hôte fictif ⇒ `connecting` → `waiting` avec coupures comptées, valeur 1 enregistrée, jeton jamais renvoyé par l'API, désactivation ⇒ `disabled` |
 | HW-HA-02 | Home Assistant redémarré | Reconnexion seule, valeurs retrouvées | À FAIRE |
 | HW-HA-03 | Jeton révoqué | `JetonRefuse` visible sur la page, pas de martèlement | À FAIRE |

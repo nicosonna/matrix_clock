@@ -13,6 +13,7 @@
 #include "air_quality/sensor.hpp"
 #include "display/air_logo.hpp"
 #include "display/frame_buffer.hpp"
+#include "display/value_icons.hpp"
 
 using namespace air_quality;
 
@@ -656,6 +657,31 @@ void test_logo() {
     // Clipping: partly off-panel glyph draws only the visible part and never corrupts the buffer.
     fb.clear();
     display::draw_air_logo_8(fb, 28, -2, c);
+    CHECK_EQ(fb.out_of_bounds_count(), 0U);
+    // Value icons: every icon lights the announced number of pixels inside its 8x8 box; None lights nothing.
+    for (uint8_t i = 0U; i < static_cast<uint8_t>(display::Icon::Count); ++i) {
+        fb.clear();
+        const display::Icon icon = static_cast<display::Icon>(i);
+        display::draw_icon(fb, icon, 2, 0, c);
+        uint32_t count = 0U;
+        for (uint8_t y = 0U; y < display::kHeight; ++y) {
+            for (uint8_t x = 0U; x < display::kWidth; ++x) {
+                const display::Rgb p = fb.get(x, y);
+                if ((p.r | p.g | p.b) != 0U) {
+                    ++count;
+                    CHECK((x >= 2U) && (x < 10U));
+                }
+            }
+        }
+        CHECK_EQ(count, display::icon_pixels(icon));
+        if (i > 0U) {
+            CHECK(count >= 8U);  // a recognisable glyph, not a dot
+        }
+    }
+    CHECK_EQ(display::icon_pixels(display::Icon::Count), 0U);
+    fb.clear();
+    display::draw_icon(fb, display::Icon::Count, 0, 0, c);
+    display::draw_icon(fb, display::Icon::Sun, 30, 6, c);  // clipped
     CHECK_EQ(fb.out_of_bounds_count(), 0U);
 }
 

@@ -64,6 +64,7 @@ table.liste select { max-width:11rem; }
   <a href="/affichage" data-page="affichage">Affichage</a>
   <a href="/luminosite" data-page="luminosite">Luminosité</a>
   <a href="/air" data-page="air">Air</a>
+  <a href="/ha" data-page="ha">Home Assistant</a>
   <a href="/systeme" data-page="systeme">Système</a>
   <a href="/wifi">WiFi</a>
 </nav>
@@ -132,6 +133,36 @@ table.liste select { max-width:11rem; }
   </div>
 </section>
 
+<section id="ha">
+  <div class="carte">
+    <h2>Liaison Home Assistant</h2>
+    <div class="grille" id="tuiles-ha"></div>
+    <p class="aide" id="ha-etat"></p>
+  </div>
+  <div class="carte">
+    <h2>Mise en service — wizard</h2>
+    <p class="aide">Adresse et port, jeton avec test de connexion, valeurs à suivre, notifications.</p>
+    <div id="wiz-ha"></div>
+  </div>
+  <div class="carte">
+    <h2>Connexion</h2>
+    <form id="form-ha" data-domaine="ha" data-groupe="ha"></form>
+  </div>
+  <div class="carte">
+    <h2>Valeurs suivies</h2>
+    <p class="aide">Chaque valeur est un abonnement : Home Assistant envoie la valeur tout de suite, puis à chaque changement. Elles s'affichent avec les scènes « Valeur Home Assistant n » de l'onglet Affichage.</p>
+    <div id="ha-valeurs"></div>
+  </div>
+  <div class="carte">
+    <h2>Météo de repli</h2>
+    <form id="form-ha-meteo" data-domaine="ha" data-groupe="meteo"></form>
+  </div>
+  <div class="carte">
+    <h2>Réglages avancés</h2>
+    <form id="form-ha-2" data-domaine="ha" data-groupe="ha_avance"></form>
+  </div>
+</section>
+
 <section id="systeme">
   <div class="carte">
     <h2>Heure</h2>
@@ -160,8 +191,8 @@ table.liste select { max-width:11rem; }
 <script>
 (function () {
   'use strict';
-  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'systeme'];
-  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/systeme': 'systeme' };
+  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'ha', 'systeme'];
+  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/ha': 'ha', '/systeme': 'systeme' };
   // Which fields each form shows (the model stays the single source of truth for everything else).
   var groupes = {
     scenes: ['scenes', 'vitesse_defilement', 'clignotement', 'barre_secondes'],
@@ -169,6 +200,10 @@ table.liste select { max-width:11rem; }
     reglage: ['mode', 'lum_manuelle', 'lum_min', 'lum_max', 'extinction_active', 'extinction_debut', 'extinction_fin'],
     avance: ['pas_lum', 'montee_s', 'descente_s', 'compensation_counts', 'courbe'],
     air: ['actif', 'adresse', 'logo_air', 'decalage_temperature'],
+    ha: ['actif', 'securise', 'hote', 'port', 'jeton', 'effacer_jeton', 'notifications'],
+    ha_avance: ['ping_s', 'pong_ms'],
+    meteo: ['meteo_actif', 'latitude', 'longitude', 'meteo_periode_s'],
+    ha_valeur: ['actif', 'nom', 'mode', 'entite', 'attribut', 'gabarit', 'type', 'decimales', 'unite', 'icone', 'peremption_s'],
     air_seuils: ['grandeur_pilote', 'seuil_eco2_bon', 'seuil_eco2_moyen', 'seuil_eco2_mauvais', 'seuil_eco2_tres_mauvais', 'seuil_tvoc_bon', 'seuil_tvoc_moyen', 'seuil_tvoc_mauvais', 'seuil_tvoc_tres_mauvais', 'hysteresis_eco2', 'hysteresis_tvoc', 'confirmation_s']
   };
   var libelleScene = { Heure: 'Heure', Date: 'Date', Valeur: 'Valeur Home Assistant', DeuxLignes: 'Heure + valeur (deux lignes)', Defilement: 'Texte défilant', Nuit: 'Nuit (dalle sombre)', Test: 'Motif de test', Air: 'Qualité de l\u2019air (logo + valeur)' };
@@ -309,6 +344,7 @@ table.liste select { max-width:11rem; }
   }
 
   // ---- generic field from the firmware model (type, label, unit, bounds, help): nothing is copied by hand
+  var valeurs_defini = null;
   function champ(nom, m, valeur, form) {
     if (m.type === 'scenes') { return editeurScenes(nom, m, valeur, form); }
     if (m.type === 'courbe') { return editeurCourbe(nom, m, valeur, form); }
@@ -330,6 +366,19 @@ table.liste select { max-width:11rem; }
         ctrl = el('input', { type: 'time', id: id, value: minutesVersHeure(valeur), step: 60 });
         boite.appendChild(ctrl);
         form.lecteurs.push(function () { return nom + '=' + heureVersMinutes(ctrl.value); });
+        if (m.aide) { boite.appendChild(el('p', { class: 'aide' }, m.aide)); }
+        return boite;
+      } else if (m.type === 'secret') {
+        ctrl = el('input', { type: 'password', id: id, maxLength: m.max, value: '', autocomplete: 'off', placeholder: (valeurs_defini && valeurs_defini[nom + '_defini']) ? '(jeton enregistré — laisser vide pour le garder)' : '' });
+        boite.appendChild(ctrl);
+        form.lecteurs.push(function () { return nom + '=' + encodeURIComponent(ctrl.value); });
+        if (m.aide) { boite.appendChild(el('p', { class: 'aide' }, m.aide)); }
+        return boite;
+      } else if (m.type === 'coordonnee') {
+        ctrl = el('input', { type: 'number', id: id, min: m.min / 10000, max: m.max / 10000, step: 0.0001, value: (parseInt(valeur, 10) || 0) / 10000 });
+        boite.appendChild(ctrl);
+        boite.appendChild(el('span', { class: 'unite' }, m.unite || '°'));
+        form.lecteurs.push(function () { return nom + '=' + Math.round(parseFloat(ctrl.value || '0') * 10000); });
         if (m.aide) { boite.appendChild(el('p', { class: 'aide' }, m.aide)); }
         return boite;
       } else if (m.type === 'temperature') {
@@ -354,13 +403,16 @@ table.liste select { max-width:11rem; }
     return boite;
   }
 
-  function construire(form, modele, valeurs) {
+  function construire(form, modele, valeurs, champs, domaine) {
     form.innerHTML = '';
     form.lecteurs = [];
+    valeurs_defini = valeurs;
     var groupe = form.getAttribute('data-groupe');
-    var noms = groupe ? groupes[groupe] : Object.keys(modele.champs);
+    var modeleChamps = champs || modele.champs;
+    var noms = groupe ? groupes[groupe] : Object.keys(modeleChamps);
+    domaine = domaine || form.getAttribute('data-domaine');
     noms.forEach(function (nom) {
-      var m = modele.champs[nom];
+      var m = modeleChamps[nom];
       if (!m) { return; }
       var valeur = (valeurs && valeurs[nom] !== undefined) ? valeurs[nom] : m.defaut;
       form.appendChild(champ(nom, m, valeur, form));
@@ -372,7 +424,7 @@ table.liste select { max-width:11rem; }
     form.onsubmit = function (e) {
       e.preventDefault();
       var corps = form.lecteurs.map(function (f) { return f(); }).join('&');
-      post('/api/' + form.getAttribute('data-domaine'), corps).then(function (r) {
+      post('/api/' + domaine, corps).then(function (r) {
         dire(msg, r.ok ? 'Enregistré et appliqué.' : erreurTexte(r.texte), r.ok);
       }).catch(function () { dire(msg, 'Envoi impossible.', false); });
     };
@@ -383,6 +435,111 @@ table.liste select { max-width:11rem; }
                  fetch('/api/' + domaine).then(function (r) { return r.json(); })])
       .then(function (res) { forms.forEach(function (f) { construire(f, res[0], res[1]); }); })
       .catch(function () { forms.forEach(function (f) { f.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; }); });
+  }
+
+  // ---- Home Assistant: value cards, live status, wizard
+  function chargerValeursHa() {
+    var boite = document.getElementById('ha-valeurs');
+    Promise.all([fetch('/api/ha/modele').then(function (r) { return r.json(); }), fetch('/api/ha').then(function (r) { return r.json(); })])
+      .then(function (res) {
+        boite.innerHTML = '';
+        var modele = res[0], valeurs = res[1].valeurs || [];
+        for (var i = 0; i < (modele.valeurs_max || 8); i++) {
+          var carte = el('div', { class: 'carte' });
+          carte.appendChild(el('h2', {}, 'Valeur ' + (i + 1) + (valeurs[i] && valeurs[i].nom ? ' — ' + valeurs[i].nom : '')));
+          var form = el('form', { id: 'form-ha-valeur-' + i });
+          form.setAttribute('data-groupe', 'ha_valeur');
+          carte.appendChild(form);
+          boite.appendChild(carte);
+          construire(form, modele, valeurs[i] || {}, modele.valeur, 'ha/valeur/' + i);
+        }
+      }).catch(function () { boite.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; });
+  }
+  var haTimer = null;
+  var haEtat = null;
+  function lireHa() {
+    fetch('/api/etat').then(function (r) { return r.json(); }).then(function (e) {
+      var h = e.ha; haEtat = h;
+      var g = document.getElementById('tuiles-ha'); g.innerHTML = '';
+      if (!h) { return; }
+      g.appendChild(tuile('Liaison', h.etat));
+      g.appendChild(tuile('Connexions / coupures', h.connexions + ' / ' + h.coupures));
+      g.appendChild(tuile('Événements reçus', h.evenements));
+      g.appendChild(tuile('Notifications', h.notifications + (h.notifications_refusees ? ' (' + h.notifications_refusees + ' refusées)' : '')));
+      (h.valeurs || []).forEach(function (v, i) {
+        if (!v.actif) { return; }
+        g.appendChild(tuile(v.nom || ('Valeur ' + (i + 1)), v.valide ? v.texte : '--' + (v.erreur ? ' (' + v.erreur + ')' : '')));
+      });
+      if (e.meteo && e.meteo.actif) { g.appendChild(tuile('Météo (Open-Meteo)', e.meteo.valide ? (e.meteo.temperature_deci / 10).toFixed(1) + ' °C' : '--')); }
+      document.getElementById('ha-etat').textContent = h.erreur ? 'Dernière erreur : ' + h.erreur : '';
+    }).catch(function () {});
+  }
+  function wizardHa(i) {
+    var boite = document.getElementById('wiz-ha');
+    boite.innerHTML = '';
+    var box = el('div', { class: 'etapes' });
+    if (i === 0) {
+      boite.appendChild(el('p', {}, '1/4 — Adresse IP de Home Assistant et port (8123 en général).'));
+      var hote = el('input', { type: 'text', placeholder: '10.0.0.10' }); var port = el('input', { type: 'number', value: 8123, min: 1, max: 65535 });
+      boite.appendChild(hote); boite.appendChild(el('span', { class: 'unite' }, ':')); boite.appendChild(port);
+      var ok = el('button', { type: 'button', class: 'second' }, 'Continuer');
+      ok.onclick = function () {
+        post('/api/ha', 'hote=' + encodeURIComponent(hote.value) + '&port=' + encodeURIComponent(port.value)).then(function (r) {
+          if (r.ok) { wizardHa(1); } else { boite.appendChild(el('p', { class: 'msg ko' }, erreurTexte(r.texte))); }
+        });
+      };
+      box.appendChild(ok);
+    } else if (i === 1) {
+      boite.appendChild(el('p', {}, '2/4 — Jeton d\u2019accès longue durée (profil Home Assistant d\u2019un utilisateur dédié à l\u2019horloge). La liaison est activée et testée.'));
+      var jeton = el('input', { type: 'password', autocomplete: 'off', placeholder: 'eyJ…' });
+      boite.appendChild(jeton);
+      var msg = el('p', { class: 'msg' }); boite.appendChild(msg);
+      var ok2 = el('button', { type: 'button', class: 'second' }, 'Activer et tester');
+      ok2.onclick = function () {
+        post('/api/ha', 'actif=1&jeton=' + encodeURIComponent(jeton.value)).then(function (r) {
+          if (!r.ok) { dire(msg, erreurTexte(r.texte), false); return; }
+          dire(msg, 'Connexion en cours…', true);
+          var essais = 0;
+          var t = setInterval(function () {
+            fetch('/api/etat').then(function (x) { return x.json(); }).then(function (e) {
+              essais++;
+              var etat = e.ha ? e.ha.etat : '?';
+              if (etat === 'running') { clearInterval(t); dire(msg, 'Connecté et authentifié.', true); setTimeout(function () { wizardHa(2); }, 1000); }
+              else if (etat === 'token_rejected') { clearInterval(t); dire(msg, 'Jeton refusé : ' + (e.ha.erreur || 'auth_invalid'), false); }
+              else if (essais > 20) { clearInterval(t); dire(msg, 'Injoignable (' + etat + '). Vérifiez l\u2019adresse, le port et le réseau.', false); }
+              else { dire(msg, 'État : ' + etat + '…', true); }
+            });
+          }, 1000);
+        });
+      };
+      box.appendChild(ok2);
+    } else if (i === 2) {
+      boite.appendChild(el('p', {}, '3/4 — Première valeur : l\u2019entité à suivre (ex. sensor.temperature_exterieure), son nom, son unité. Les autres se règlent dans les cartes ci-dessous.'));
+      var nom = el('input', { type: 'text', placeholder: 'Exterieur', maxLength: 16 }); var ent = el('input', { type: 'text', placeholder: 'sensor.temperature_exterieure' }); var unite = el('input', { type: 'text', placeholder: '°C', maxLength: 8 });
+      boite.appendChild(el('label', {}, 'Nom')); boite.appendChild(nom); boite.appendChild(el('label', {}, 'Entité')); boite.appendChild(ent); boite.appendChild(el('label', {}, 'Unité')); boite.appendChild(unite);
+      var msg3 = el('p', { class: 'msg' }); boite.appendChild(msg3);
+      var ok3 = el('button', { type: 'button', class: 'second' }, 'Enregistrer la valeur 1');
+      ok3.onclick = function () {
+        post('/api/ha/valeur/0', 'actif=1&mode=Entite&type=Nombre&decimales=1&icone=Thermometre&nom=' + encodeURIComponent(nom.value) + '&entite=' + encodeURIComponent(ent.value) + '&unite=' + encodeURIComponent(unite.value)).then(function (r) {
+          if (r.ok) { chargerValeursHa(); wizardHa(3); } else { dire(msg3, erreurTexte(r.texte), false); }
+        });
+      };
+      var saut = el('button', { type: 'button', class: 'second' }, 'Passer'); saut.onclick = function () { wizardHa(3); };
+      box.appendChild(ok3); box.appendChild(saut);
+    } else {
+      boite.appendChild(el('p', {}, '4/4 — Recevoir les notifications envoyées par les automatisations (événement horloge_notification) ?'));
+      [['Oui', '1'], ['Non', '0']].forEach(function (c) {
+        var b = el('button', { type: 'button', class: 'second' }, c[0]);
+        b.onclick = function () {
+          post('/api/ha', 'notifications=' + c[1]).then(function (r) {
+            boutonWizard('wiz-ha', 'Relancer le wizard', function () { wizardHa(0); }, r.ok ? 'Mise en service terminée. Ajoutez une scène « Valeur Home Assistant 1 » dans l\u2019onglet Affichage pour la voir sur la dalle.' : erreurTexte(r.texte), r.ok);
+            chargerDomaine('ha');
+          });
+        };
+        box.appendChild(b);
+      });
+    }
+    boite.appendChild(box);
   }
 
   // ---- dashboard
@@ -587,10 +744,12 @@ table.liste select { max-width:11rem; }
     if (etatTimer) { clearInterval(etatTimer); etatTimer = null; }
     if (brutTimer) { clearInterval(brutTimer); brutTimer = null; }
     if (airTimer) { clearInterval(airTimer); airTimer = null; }
+    if (haTimer) { clearInterval(haTimer); haTimer = null; }
     if (page === 'tableau') { lireEtat(); etatTimer = setInterval(lireEtat, 2000); }
     if (page === 'affichage') { chargerDomaine('affichage'); boutonWizard('wiz-map', 'Lancer le wizard', function () { wizardMap(0); }); }
     if (page === 'luminosite') { chargerDomaine('luminosite'); lireBrut(); brutTimer = setInterval(lireBrut, 1000); boutonWizard('wiz-lum', 'Lancer le wizard', function () { wizardLum(0); }); }
     if (page === 'air') { chargerDomaine('air'); lireAir(); airTimer = setInterval(lireAir, 2000); boutonWizard('wiz-air', 'Lancer le wizard', function () { wizardAir(0); }); }
+    if (page === 'ha') { chargerDomaine('ha'); chargerValeursHa(); lireHa(); haTimer = setInterval(lireHa, 2000); boutonWizard('wiz-ha', 'Lancer le wizard', function () { wizardHa(0); }); }
     if (page === 'systeme') { chargerDomaine('systeme'); }
   }
   var initiale = chemins[location.pathname] || 'tableau';

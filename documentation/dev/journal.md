@@ -5,6 +5,64 @@
 
 ---
 
+## 2026-11-05 (suite 12) — Home Assistant : lecteur JSON, client WebSocket pur, liaison, page `/ha`, scènes Valeur
+
+**Quoi.** Étape 8 de la phase 1 :
+
+- `components/homeassistant/` (pur) : `json_reader` (repris de
+  `energie/json_path` de ThermoSync, traduit, profondeur bornée à 16, chaînes
+  désechappées), `values` (configuration d'une valeur suivie, gabarit
+  `states()` / `state_attr()` / expert échappé JSON, décodage `Nombre` en
+  virgule fixe, `Booleen` avec alias, `Texte` ; `unknown` / `unavailable` /
+  `none` ⇒ **invalide**), `reassembler` (2 Ko statiques, trame trop longue
+  **abandonnée**, jamais tronquée), **`WsClient`** (auth, `render_template`
+  avec `report_errors`, `subscribe_events(horloge_notification)` décodé par
+  le **même** décodeur que `POST /api/notification`, ping/pong, attente
+  5 → 60 s, jeton refusé 5 min, péremption appliquée **seulement liaison
+  tombée** — dette D6 tranchée), `weather` (Open-Meteo, fixture réelle).
+- `settings` : domaine **ha** (liaison, 8 valeurs par `POST /api/ha/valeur/<i>`,
+  météo), jeton en **écriture seule** (`jeton_defini` sur l'API, vide = gardé,
+  `effacer_jeton`), types de modèle `secret` et `coordonnee`.
+- `clock_homeassistant` : tâche `ha`, `esp_websocket_client` (`^1.2.3`,
+  reconnexion automatique **désactivée** : c'est le client pur qui décide),
+  `wss` par le paquet de certificats, météo par `esp_http_client`, notifications
+  remises à `app_main` comme celles du web.
+- `display/value_icons` : 7 icônes 8×8 ; `app_main` : scènes **Valeur**
+  (icône + valeur, `--` si invalide), **DeuxLignes** (valeurs 1 et 2 en 3×4),
+  **Defilement** (toutes les valeurs valides, une passe), **Nuit** (heure
+  atténuée fixe) ; disponibilité par valeur ⇒ une scène sans donnée est
+  sautée ; `/api/etat.ha` et `.meteo`.
+- Page : onglet **Home Assistant** (liaison, statistiques, valeurs vivantes,
+  météo), **wizard** en 4 étapes (adresse/port → jeton avec test de connexion
+  qui suit l'état `running` / `token_rejected` / injoignable → première
+  valeur → notifications), 8 cartes de valeur construites depuis
+  `modele.valeur`, météo de repli, réglages avancés.
+
+**Défaut trouvé et corrigé.** Avec le domaine `ha`, `settings::Settings`
+pèse ~4 Ko : `clock_settings::get()` par valeur et `default_settings()` dans
+`init()` faisaient **déborder la pile de la tâche `main`** (3,5 Ko) avant tout
+journal — boucle de redémarrage, image rejetée par le rollback (ce qui est le
+comportement attendu, et une bonne nouvelle pour HW-WEB-03). Correctifs :
+accès **par domaine** (`display()`, `brightness()`, `system()`, `air()`,
+`ha(out&)`, `get(out&)`), défauts construits **en place**, snapshots copiés
+dans des statiques, pile de `main` à 6 Ko (`sdkconfig`, pas seulement les
+defaults : le fichier généré garde l'ancienne valeur).
+
+**Résultats.** Tests host : **10 761 vérifications, 0 échec, couverture
+96,7 %** (3 613 lignes). Image 1 262 Ko (36 % libre : le paquet de certificats
+et le client WebSocket pèsent ~250 Ko). Sur la carte (flash série après la
+boucle) : démarrage propre, liaison `disabled` par défaut, hôte fictif ⇒
+`connecting` → `waiting` avec coupures comptées, valeur enregistrée, jeton
+jamais relu, désactivation à chaud. **ENS160 sorti de sa première heure** :
+AQI 3, eCO2 764 ppm, TVOC 261 ppb, 27,9 °C (auto-échauffement visible : le
+wizard de décalage a son utilité), niveau `Moyen`.
+
+**Reste** (phase 1) : publication **MQTT** (étape 9 bis), **moteur de règles**
+d'alerte (étape 10), plan de test final consolidé, liaison avec le vrai Home
+Assistant (jeton de Nicolas).
+
+---
+
 ## 2026-11-05 (suite 11) — Qualité de l'air : ENS160 + AHT21 sur I²C, niveaux, logo, page `/air`
 
 **Quoi.** Étape 9 de la phase 1 (« oublie pas la partie I²C ») :

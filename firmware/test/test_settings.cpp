@@ -22,6 +22,7 @@ using settings::DisplaySettings;
 using settings::FormError;
 using settings::SystemSettings;
 using settings::AirSettings;
+using settings::HaSettings;
 
 std::size_t slen(const char* s) { return std::strlen(s); }
 
@@ -304,6 +305,149 @@ void test_air_form() {
     CHECK_EQ(settings::air_model_json(small, sizeof(small)), 0);
 }
 
+// ----------------------------------------------------------------- WEB-02/03, HA-15 (home assistant)
+
+void test_ha_form() {
+    static HaSettings cur = settings::default_ha_settings();
+    CHECK(settings::is_valid(cur));
+    static HaSettings out;
+    out = cur;
+    FormError err{};
+    // A link needs a host and a token.
+    const char* no_host = "actif=1";
+    CHECK(!settings::apply_ha_form(no_host, slen(no_host), cur, out, err));
+    CHECK(std::strcmp(err.field, "hote") == 0);
+    const char* no_token = "actif=1&hote=10.0.0.5";
+    CHECK(!settings::apply_ha_form(no_token, slen(no_token), cur, out, err));
+    CHECK(std::strcmp(err.field, "jeton") == 0);
+    const char* ok = "actif=1&hote=10.0.0.5&port=8123&jeton=eyJ.abc&notifications=0&ping_s=20&pong_ms=5000"
+                     "&meteo_actif=1&latitude=462000&longitude=61400&meteo_periode_s=900";
+    CHECK(settings::apply_ha_form(ok, slen(ok), cur, out, err));
+    CHECK(out.enabled);
+    CHECK(std::strcmp(out.host, "10.0.0.5") == 0);
+    CHECK_EQ(out.port, 8123U);
+    CHECK(std::strcmp(out.token, "eyJ.abc") == 0);
+    CHECK(!out.notifications);
+    CHECK_EQ(out.ping_s, 20U);
+    CHECK_EQ(out.pong_ms, 5000U);
+    CHECK(out.weather.enabled);
+    CHECK_EQ(out.weather.latitude_e4, 462000);
+    CHECK_EQ(out.weather.longitude_e4, 61400);
+    CHECK_EQ(out.weather.period_s, 900U);
+    char uri[128];
+    CHECK(settings::ha_uri(out, uri, sizeof(uri)) > 0U);
+    CHECK(std::strcmp(uri, "ws://10.0.0.5:8123/api/websocket") == 0);
+    out.secure = true;
+    CHECK(settings::ha_uri(out, uri, sizeof(uri)) > 0U);
+    CHECK(std::strcmp(uri, "wss://10.0.0.5:8123/api/websocket") == 0);
+    CHECK_EQ(settings::ha_uri(out, uri, 10U), 0U);
+    CHECK_EQ(settings::ha_uri(cur, uri, sizeof(uri)), 0U);  // no host
+    const homeassistant::WsConfig wc = settings::ws_config(out);
+    CHECK(wc.enabled && (wc.token == out.token) && (wc.ping_s == 20U));
+    // Empty token keeps the stored one; effacer_jeton clears it (and a live link is then refused).
+    static HaSettings keep;
+    keep = out;
+    const char* same_token = "jeton=";
+    CHECK(settings::apply_ha_form(same_token, slen(same_token), out, keep, err));
+    CHECK(std::strcmp(keep.token, "eyJ.abc") == 0);
+    const char* clear = "effacer_jeton=1&actif=0";
+    CHECK(settings::apply_ha_form(clear, slen(clear), out, keep, err));
+    CHECK_EQ(keep.token[0], '\0');
+    const char* clear_live = "effacer_jeton=1";
+    CHECK(!settings::apply_ha_form(clear_live, slen(clear_live), out, keep, err));
+    // Bad fields: all or nothing.
+    static HaSettings untouched;
+    untouched = out;
+    const char* bads[] = {"hote=bad host", "hote=-x", "port=0", "port=70000", "jeton=with space", "ping_s=5", "pong_ms=100",
+                          "latitude=900001", "longitude=-1800001", "meteo_periode_s=10", "actif=%ZZ", "securise=x",
+                          "notifications=x", "meteo_actif=x", "effacer_jeton=x", "hote=%ZZ", "port=%ZZ", "ping_s=%ZZ",
+                          "pong_ms=%ZZ", "latitude=%ZZ", "longitude=%ZZ", "meteo_periode_s=%ZZ", "jeton=%ZZ"};
+    for (const char* b : bads) {
+        CHECK(!settings::apply_ha_form(b, slen(b), out, untouched, err));
+        CHECK(std::strcmp(untouched.host, out.host) == 0);
+    }
+    static char longtoken[600];
+    std::memcpy(longtoken, "jeton=", 6U);
+    std::memset(longtoken + 6, 'a', 520U);
+    longtoken[526] = '\0';
+    CHECK(!settings::apply_ha_form(longtoken, 526U, out, untouched, err));
+    CHECK(std::strcmp(err.field, "jeton") == 0);
+    static char longhost[120];
+    std::memcpy(longhost, "hote=", 5U);
+    std::memset(longhost + 5, 'a', 100U);
+    longhost[105] = '\0';
+    CHECK(!settings::apply_ha_form(longhost, 105U, out, untouched, err));
+    CHECK(settings::apply_ha_form("", 0U, out, untouched, err));
+
+    // Tracked values.
+    const char* v0 = "actif=1&nom=Exterieur&mode=Entite&entite=sensor.temperature_exterieure&type=Nombre&decimales=1"
+                     "&unite=%C2%B0C&icone=Thermometre&peremption_s=600";
+    CHECK(settings::apply_ha_value_form(v0, slen(v0), 0U, out, keep, err));
+    CHECK(keep.values[0].enabled);
+    CHECK(std::strcmp(keep.values[0].name, "Exterieur") == 0);
+    CHECK(std::strcmp(keep.values[0].entity, "sensor.temperature_exterieure") == 0);
+    CHECK(keep.values[0].type == homeassistant::ValueType::Number);
+    CHECK_EQ(keep.values[0].decimals, 1U);
+    CHECK(keep.values[0].icon == homeassistant::ValueIcon::Thermometer);
+    CHECK_EQ(keep.values[0].expiry_s, 600U);
+    CHECK(!keep.values[1].enabled);
+    const char* v7 = "actif=1&nom=Expert&mode=Gabarit&gabarit=%7B%7B%20states('a.b')%20%7D%7D&type=Texte";
+    CHECK(settings::apply_ha_value_form(v7, slen(v7), 7U, keep, keep, err));
+    CHECK(keep.values[7].mode == homeassistant::ValueMode::Template);
+    CHECK(std::strcmp(keep.values[7].tmpl, "{{ states('a.b') }}") == 0);
+    const char* vbad[] = {"actif=1", "actif=1&entite=Sensor.X", "mode=Hybride", "type=Float", "decimales=3", "icone=Licorne",
+                          "peremption_s=10", "attribut=%ZZ", "nom=%ZZ", "actif=x", "decimales=%ZZ", "peremption_s=%ZZ",
+                          "mode=%ZZ", "type=%ZZ", "icone=%ZZ", "actif=1&mode=Gabarit&gabarit=", "gabarit=a%09b"};
+    for (const char* b : vbad) {
+        static HaSettings before;
+        before = keep;
+        CHECK(!settings::apply_ha_value_form(b, slen(b), 1U, keep, keep, err));
+        CHECK(!keep.values[1].enabled);
+        CHECK(std::memcmp(&before, &keep, sizeof(before)) == 0);
+    }
+    CHECK(!settings::apply_ha_value_form(v0, slen(v0), 8U, keep, keep, err));
+    // Model and values JSON.
+    static char json[settings::kJsonMax];
+    CHECK(settings::ha_model_json(json, sizeof(json)) > 0U);
+    for (std::size_t i = 0U; i < settings::kHaFieldCount; ++i) {
+        char needle[96];
+        (void)std::snprintf(needle, sizeof(needle), "\"%s\":{\"type\":\"", settings::kHaFields[i]);
+        CHECK(std::strstr(json, needle) != nullptr);
+    }
+    const char* valeur = std::strstr(json, "\"valeur\":{");
+    CHECK(valeur != nullptr);
+    for (std::size_t i = 0U; (valeur != nullptr) && (i < settings::kHaValueFieldCount); ++i) {
+        char needle[96];
+        (void)std::snprintf(needle, sizeof(needle), "\"%s\":{\"type\":\"", settings::kHaValueFields[i]);
+        CHECK(std::strstr(valeur, needle) != nullptr);
+    }
+    CHECK(std::strstr(json, "\"jeton\":{\"type\":\"secret\"") != nullptr);
+    CHECK(std::strstr(json, "\"latitude\":{\"type\":\"coordonnee\"") != nullptr);
+    CHECK(std::strstr(json, "\"valeurs_max\":8") != nullptr);
+    CHECK(settings::ha_json(keep, json, sizeof(json)) > 0U);
+    CHECK(std::strstr(json, "\"jeton\":\"\"") != nullptr);          // never written back
+    CHECK(std::strstr(json, "eyJ") == nullptr);
+    CHECK(std::strstr(json, "\"jeton_defini\":true") != nullptr);
+    CHECK(std::strstr(json, "\"entite\":\"sensor.temperature_exterieure\"") != nullptr);
+    char small[64];
+    CHECK_EQ(settings::ha_model_json(small, sizeof(small)), 0);
+    CHECK_EQ(settings::ha_json(keep, small, sizeof(small)), 0);
+    // Validation of the whole settings.
+    static HaSettings inv;
+    inv = keep;
+    inv.token[homeassistant::kTokenMax] = 'x';
+    CHECK(!settings::is_valid(inv));
+    inv = keep;
+    inv.port = 0U;
+    CHECK(!settings::is_valid(inv));
+    inv = keep;
+    inv.weather.period_s = 1U;
+    CHECK(!settings::is_valid(inv));
+    inv = keep;
+    std::strcpy(inv.host, "a b");
+    CHECK(!settings::is_valid(inv));
+}
+
 // --------------------------------------------------------------------- WEB-04
 
 /// Reads the embedded page into a static buffer (host only).
@@ -350,12 +494,12 @@ struct PageLiteral {
 
 bool is_model_field(const char* name) {
     const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kSystemFields,
-                                  settings::kAirFields};
+                                  settings::kAirFields, settings::kHaFields, settings::kHaValueFields};
     const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kSystemFieldCount,
-                                  settings::kAirFieldCount};
+                                  settings::kAirFieldCount, settings::kHaFieldCount, settings::kHaValueFieldCount};
     const char* const extra[] = {"ssid", "password", "cle", "texte", "priorite", "duree_s", "confirme", "motif",
                                  "brut_nuit", "brut_nuit_allume", "brut_soir", "brut_jour", "firmware", "reference"};
-    for (std::size_t l = 0U; l < 4U; ++l) {
+    for (std::size_t l = 0U; l < 6U; ++l) {
         for (std::size_t i = 0U; i < counts[l]; ++i) {
             if (std::strcmp(lists[l][i], name) == 0) {
                 return true;
@@ -381,6 +525,7 @@ void test_page_orphans() {
     check_domain_dynamic(page, settings::kBrightnessFields, settings::kBrightnessFieldCount, "luminosite");
     check_domain_dynamic(page, settings::kSystemFields, settings::kSystemFieldCount, "systeme");
     check_domain_dynamic(page, settings::kAirFields, settings::kAirFieldCount, "air");
+    check_domain_dynamic(page, settings::kHaFields, settings::kHaFieldCount, "ha");
 
     // Every name="..." left in the page (uploads, portal) is a known field.
     const char* p = page;
@@ -402,31 +547,70 @@ void test_page_orphans() {
 
     // The page distributes the fields over its forms by name: every model field of the three domains
     // must appear in exactly one group list, and every listed name must be a model field.
-    const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kAirFields};
-    const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kAirFieldCount};
+    // Each domain owns a set of groups; a field must appear exactly once inside its domain's groups.
+    struct Domain {
+        const char* const* fields;
+        std::size_t count;
+        const char* groups[3];
+    };
+    const Domain domains[] = {
+        {settings::kDisplayFields, settings::kDisplayFieldCount, {"scenes:", "dalle:", nullptr}},
+        {settings::kBrightnessFields, settings::kBrightnessFieldCount, {"reglage:", "avance:", nullptr}},
+        {settings::kAirFields, settings::kAirFieldCount, {"air:", "air_seuils:", nullptr}},
+        {settings::kHaFields, settings::kHaFieldCount, {"ha:", "ha_avance:", "meteo:"}},
+    };
     const char* groups = std::strstr(page, "var groupes = {");
     CHECK(groups != nullptr);
     const char* groups_end = (groups != nullptr) ? std::strstr(groups, "};") : nullptr;
     CHECK(groups_end != nullptr);
-    for (std::size_t l = 0U; l < 3U; ++l) {
-        for (std::size_t i = 0U; i < counts[l]; ++i) {
+    for (const Domain& d : domains) {
+        for (std::size_t i = 0U; i < d.count; ++i) {
             char needle[64];
-            (void)std::snprintf(needle, sizeof(needle), "'%s'", lists[l][i]);
+            (void)std::snprintf(needle, sizeof(needle), "'%s'", d.fields[i]);
             uint32_t seen = 0U;
-            for (const char* p2 = groups; (p2 = std::strstr(p2, needle)) != nullptr; ++p2) {
-                if (p2 < groups_end) {
-                    ++seen;
+            for (const char* g : d.groups) {
+                if ((g == nullptr) || (groups == nullptr)) {
+                    continue;
+                }
+                const char* start = std::strstr(groups, g);
+                const char* end = (start != nullptr) ? std::strstr(start, "]") : nullptr;
+                if ((start == nullptr) || (end == nullptr) || (start > groups_end)) {
+                    std::printf("  groupe absent de la page : %s\n", g);
+                    CHECK(false);
+                    continue;
+                }
+                for (const char* p2 = start; (p2 = std::strstr(p2, needle)) != nullptr; ++p2) {
+                    if (p2 < end) {
+                        ++seen;
+                    }
                 }
             }
             if (seen != 1U) {
-                std::printf("  champ %s : %lu fois dans les groupes de la page\n", lists[l][i], static_cast<unsigned long>(seen));
+                std::printf("  champ %s : %lu fois dans les groupes de la page\n", d.fields[i], static_cast<unsigned long>(seen));
             }
             CHECK_EQ(seen, 1U);
         }
     }
+    // Tracked values: one card per value built from `modele.valeur`, every value field in the ha_valeur group once.
+    CHECK(std::strstr(page, "modele.valeur") != nullptr);
+    CHECK(std::strstr(page, "'ha/valeur/' + i") != nullptr);
+    const char* vg = std::strstr(groups, "ha_valeur:");
+    CHECK(vg != nullptr);
+    const char* vg_end = (vg != nullptr) ? std::strstr(vg, "]") : nullptr;
+    for (std::size_t i = 0U; (vg != nullptr) && (vg_end != nullptr) && (i < settings::kHaValueFieldCount); ++i) {
+        char needle[64];
+        (void)std::snprintf(needle, sizeof(needle), "'%s'", settings::kHaValueFields[i]);
+        const char* hit = std::strstr(vg, needle);
+        const bool once = (hit != nullptr) && (hit < vg_end) && (std::strstr(hit + 1, needle) == nullptr || std::strstr(hit + 1, needle) > vg_end);
+        if (!once) {
+            std::printf("  champ de valeur absent ou en double dans ha_valeur : %s\n", settings::kHaValueFields[i]);
+        }
+        CHECK(once);
+    }
     // Every type the model emits has a widget in the page, and every field carries a label.
     const char* const types[] = {"m.type === 'booleen'", "m.type === 'choix'", "m.type === 'heure'", "m.type === 'entier'",
-                                 "m.type === 'scenes'", "m.type === 'courbe'", "m.type === 'temperature'"};
+                                 "m.type === 'scenes'", "m.type === 'courbe'", "m.type === 'temperature'",
+                                 "m.type === 'secret'", "m.type === 'coordonnee'"};
     for (const char* t : types) {
         CHECK(std::strstr(page, t) != nullptr);
     }
@@ -534,5 +718,6 @@ void run_settings_tests() {
     test_brightness_form();
     test_system_form();
     test_air_form();
+    test_ha_form();
     test_page_orphans();
 }

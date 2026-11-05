@@ -9,7 +9,7 @@ idf_component_register(
         "src/forms.cpp"
         "src/json.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES display brightness network timekeeping air_quality
+    REQUIRES display brightness network timekeeping air_quality homeassistant
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE

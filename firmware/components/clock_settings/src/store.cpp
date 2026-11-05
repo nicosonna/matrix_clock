@@ -22,6 +22,7 @@ constexpr char kKeyDisplay[] = "display";
 constexpr char kKeyBrightness[] = "bright";
 constexpr char kKeySystem[] = "system";
 constexpr char kKeyAir[] = "air";
+constexpr char kKeyHa[] = "ha";
 /// Wi-Fi credentials live in their own namespace (clock_web); erased by the factory reset too.
 constexpr char kWifiNamespace[] = "clk_wifi";
 
@@ -29,6 +30,7 @@ constexpr uint8_t kDisplayVersion = 1U;
 constexpr uint8_t kBrightnessVersion = 1U;
 constexpr uint8_t kSystemVersion = 1U;
 constexpr uint8_t kAirVersion = 1U;
+constexpr uint8_t kHaVersion = 1U;
 
 SemaphoreHandle_t s_mutex = nullptr;
 settings::Settings s_current{};
@@ -46,7 +48,7 @@ void unlock() {
 /// Reads a versioned blob; false if absent, wrong version or wrong size.
 template <typename T>
 bool read_blob(nvs_handle_t h, const char* key, uint8_t version, T& out) {
-    uint8_t buf[sizeof(T) + 1U];
+    static uint8_t buf[sizeof(T) + 1U];  // one per type; the store is serialised by its callers at boot
     size_t size = sizeof(buf);
     if (nvs_get_blob(h, key, buf, &size) != ESP_OK) {
         return false;
@@ -67,7 +69,7 @@ bool write_blob(const char* key, uint8_t version, const T& value) {
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) {
         return false;
     }
-    uint8_t buf[sizeof(T) + 1U];
+    static uint8_t buf[sizeof(T) + 1U];
     buf[0] = version;
     std::memcpy(buf + 1, &value, sizeof(T));
     const bool ok = (nvs_set_blob(h, key, buf, sizeof(buf)) == ESP_OK) && (nvs_commit(h) == ESP_OK);
@@ -87,7 +89,8 @@ esp_err_t init() noexcept {
             return ESP_ERR_NO_MEM;
         }
     }
-    settings::Settings loaded = settings::default_settings();
+    static settings::Settings loaded;  // ~4 KB: never on the caller's stack
+    settings::default_settings_into(loaded);
     bool replaced = false;
     nvs_handle_t h = 0;
     const esp_err_t open = nvs_open(kNamespace, NVS_READONLY, &h);
@@ -128,6 +131,15 @@ esp_err_t init() noexcept {
                 replaced = true;
             }
         }
+        static settings::HaSettings ha{};  // large (token + 8 values): not on the stack
+        if (read_blob(h, kKeyHa, kHaVersion, ha)) {
+            if (settings::is_valid(ha)) {
+                loaded.ha = ha;
+            } else {
+                ESP_LOGW(kTag, "home assistant settings invalid: defaults");
+                replaced = true;
+            }
+        }
         nvs_close(h);
     } else if (open != ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGW(kTag, "NVS open: %s (defaults)", esp_err_to_name(open));
@@ -146,13 +158,54 @@ esp_err_t init() noexcept {
     return ESP_OK;
 }
 
-settings::Settings get() noexcept {
-    settings::Settings copy{};
+void get(settings::Settings& out) noexcept {
     if (lock()) {
-        copy = s_current;
+        out = s_current;
         unlock();
     }
-    return copy;
+}
+
+settings::DisplaySettings display() noexcept {
+    settings::DisplaySettings d{};
+    if (lock()) {
+        d = s_current.display;
+        unlock();
+    }
+    return d;
+}
+
+brightness::Config brightness() noexcept {
+    brightness::Config b{};
+    if (lock()) {
+        b = s_current.brightness;
+        unlock();
+    }
+    return b;
+}
+
+settings::SystemSettings system() noexcept {
+    settings::SystemSettings sys{};
+    if (lock()) {
+        sys = s_current.system;
+        unlock();
+    }
+    return sys;
+}
+
+settings::AirSettings air() noexcept {
+    settings::AirSettings a{};
+    if (lock()) {
+        a = s_current.air;
+        unlock();
+    }
+    return a;
+}
+
+void ha(settings::HaSettings& out) noexcept {
+    if (lock()) {
+        out = s_current.ha;
+        unlock();
+    }
 }
 
 uint32_t version() noexcept {
@@ -222,6 +275,19 @@ bool save_air(const settings::AirSettings& s) noexcept {
         unlock();
     }
     ESP_LOGI(kTag, "air settings saved");
+    return true;
+}
+
+bool save_ha(const settings::HaSettings& s) noexcept {
+    if (!settings::is_valid(s) || !write_blob(kKeyHa, kHaVersion, s)) {
+        return false;
+    }
+    if (lock()) {
+        s_current.ha = s;
+        ++s_version;
+        unlock();
+    }
+    ESP_LOGI(kTag, "home assistant settings saved");
     return true;
 }
 

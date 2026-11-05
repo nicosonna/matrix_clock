@@ -29,11 +29,13 @@
 #include "clock_board/board.hpp"
 #include "clock_display/led_panel.hpp"
 #include "clock_hal/i2c_bus.hpp"
+#include "clock_homeassistant/ha_link.hpp"
 #include "clock_hal/ldr_adc.hpp"
 #include "clock_settings/store.hpp"
 #include "clock_time/time_source.hpp"
 #include "clock_web/web.hpp"
 #include "display/air_logo.hpp"
+#include "display/value_icons.hpp"
 #include "display/clock_scene.hpp"
 #include "display/color.hpp"
 #include "display/current_limit.hpp"
@@ -83,6 +85,9 @@ constexpr display::ClockColors kClockColors{display::Rgb{255U, 255U, 255U}, disp
 constexpr display::DateColors kDateColors{display::Rgb{255U, 160U, 40U}, display::Rgb{255U, 255U, 255U}};
 constexpr display::Rgb kStatusColor{90U, 160U, 255U};
 constexpr display::Rgb kOtaColor{255U, 255U, 255U};
+constexpr display::Rgb kValueIconColor{90U, 160U, 255U};
+constexpr display::Rgb kDimColor{90U, 90U, 90U};
+constexpr uint8_t kNightScale = 48U;  ///< Night scene brightness factor (/255).
 /// Notification colour by priority: info, notable, important, critical.
 constexpr display::Rgb kPriorityColor[4] = {
     display::Rgb{90U, 160U, 255U}, display::Rgb{255U, 190U, 40U}, display::Rgb{255U, 110U, 0U},
@@ -235,7 +240,7 @@ std::size_t status_json(char* out, std::size_t size) {
     air = s_air;
     taskEXIT_CRITICAL(&s_mux);
     const air_quality::AirReading& r = air.reading;
-    const settings::AirSettings air_cfg = clock_settings::get().air;
+    const settings::AirSettings air_cfg = clock_settings::air();
     ok = ok && w.key("air") && w.begin_object() && w.field("actif", air.enabled) && w.field("present", r.present) &&
          w.field("defaut", r.fault) && w.field("prechauffage", r.warming_up) &&
          w.field("premiere_mise_en_service", r.initial_start) && w.field("air_valide", r.air_valid) &&
@@ -249,6 +254,27 @@ std::size_t status_json(char* out, std::size_t size) {
          w.field("statut_brut", static_cast<int64_t>(r.status_raw)) && w.field("opmode_brut", static_cast<int64_t>(r.opmode_raw)) &&
          w.field("adresse", (air_cfg.ens160_address == air_quality::kEns160AddressHigh) ? "0x53" : "0x52") &&
          w.field("age_s", r.present ? static_cast<int64_t>((now_ms() - r.updated_ms) / 1000U) : static_cast<int64_t>(-1)) && w.end_object();
+    static clock_homeassistant::LinkSnapshot ha;
+    clock_homeassistant::snapshot(ha);
+    ok = ok && w.key("ha") && w.begin_object() && w.field("actif", ha.enabled) && w.field("etat", ha.state_name) &&
+         w.field("erreur", ha.error) && w.field("connexions", static_cast<int64_t>(ha.stats.connections)) &&
+         w.field("coupures", static_cast<int64_t>(ha.stats.disconnections)) &&
+         w.field("pongs_manques", static_cast<int64_t>(ha.stats.pong_misses)) &&
+         w.field("evenements", static_cast<int64_t>(ha.stats.events)) &&
+         w.field("messages_ignores", static_cast<int64_t>(ha.stats.messages_ignored)) &&
+         w.field("trames_abandonnees", static_cast<int64_t>(ha.frames_dropped)) &&
+         w.field("notifications", static_cast<int64_t>(ha.stats.notifications)) &&
+         w.field("notifications_refusees", static_cast<int64_t>(ha.stats.notifications_rejected)) &&
+         w.key("valeurs") && w.begin_array();
+    for (std::size_t i = 0U; ok && (i < homeassistant::kValuesMax); ++i) {
+        const clock_homeassistant::ValueSnapshot& v = ha.values[i];
+        ok = w.begin_object() && w.field("actif", v.enabled) && w.field("nom", v.name) && w.field("valide", v.valid) &&
+             w.field("texte", v.text) && w.field("meteo", v.from_weather) && w.field("erreur", v.error) && w.end_object();
+    }
+    ok = ok && w.end_array() && w.end_object();
+    ok = ok && w.key("meteo") && w.begin_object() && w.field("actif", ha.weather_enabled) &&
+         w.field("valide", ha.weather_valid) && w.field("temperature_deci", static_cast<int64_t>(ha.weather_deci)) &&
+         w.field("age_s", static_cast<int64_t>(ha.weather_age_s)) && w.end_object();
     ok = ok && w.field("scene", sh.scene) && w.field("reglages_remplaces", clock_settings::replaced_on_boot()) &&
          w.field("fonctionnement_s", static_cast<int64_t>(esp_timer_get_time() / 1000000)) && w.end_object();
     return ok ? w.length() : 0U;
@@ -294,7 +320,7 @@ void air_task(void* /*arg*/) {
     if (bus.init() != ESP_OK) {
         ESP_LOGE(kTag, "I2C bus unavailable: no air quality");
     }
-    settings::AirSettings cfg = clock_settings::get().air;
+    settings::AirSettings cfg = clock_settings::air();
     static air_quality::AirSensor sensor(bus, settings::sensor_config(cfg));
     static air_quality::LevelTracker tracker;
     uint32_t applied_version = clock_settings::version();
@@ -308,7 +334,7 @@ void air_task(void* /*arg*/) {
         const uint32_t version = clock_settings::version();
         if (version != applied_version) {
             applied_version = version;
-            cfg = clock_settings::get().air;
+            cfg = clock_settings::air();
             sensor.configure(settings::sensor_config(cfg));
         }
         air_quality::AirReading reading{};
@@ -369,10 +395,13 @@ void display_task(void* /*arg*/) {
     static display::PhysicalFrame frame;
     static display::Scroller status_scroller;
     static display::Scroller notif_scroller;
+    static display::Scroller value_scroller;
+    static char value_scroll_text[display::kTextMax + 1U];
     static char status_text[display::kTextMax + 1U];
     static char notif_text[display::kTextMax + 1U];
     static alerts::Notification notif{};
-    static settings::Settings cfg = settings::default_settings();
+    static settings::Settings cfg;
+    settings::default_settings_into(cfg);
     static brightness::Controller brightness_ctl(cfg.brightness);
     static display::Scheduler scheduler(cfg.display.scenes, now_ms());
 
@@ -390,6 +419,8 @@ void display_task(void* /*arg*/) {
     uint32_t last_portal_shown = 0U;
     display::TestPattern pattern = display::TestPattern::None;
     bool chaser = false;
+    bool scene_finished = false;
+    bool value_scroll_running = false;
     uint16_t chaser_head = 0U;
     uint32_t pattern_since = 0U;
     uint32_t last_chaser = 0U;
@@ -409,7 +440,7 @@ void display_task(void* /*arg*/) {
         const uint32_t version = clock_settings::version();
         if (version != applied_version) {
             applied_version = version;
-            cfg = clock_settings::get();
+            clock_settings::get(cfg);
             brightness_ctl = brightness::Controller(cfg.brightness);
             scheduler = display::Scheduler(cfg.display.scenes, now);
             const char* posix = timekeeping::posix_for_zone(cfg.system.timezone);
@@ -521,7 +552,15 @@ void display_task(void* /*arg*/) {
         avail.date = time_info.sure;
         avail.scroll = false;
         avail.air = air_shown && (cfg.air.logo == settings::AirLogoMode::Scene);
-        const display::Shown shown = scheduler.step(now, avail, false);
+        static clock_homeassistant::LinkSnapshot ha;
+        clock_homeassistant::snapshot(ha);
+        for (std::size_t i = 0U; i < homeassistant::kValuesMax; ++i) {
+            avail.values[i] = ha.values[i].enabled && ha.values[i].valid;
+        }
+        avail.scroll = avail.values[0] || avail.values[1] || avail.values[2] || avail.values[3] || avail.values[4] ||
+                       avail.values[5] || avail.values[6] || avail.values[7];
+        const display::Shown shown = scheduler.step(now, avail, scene_finished);
+        scene_finished = false;
 
         const char* scene_name = "Heure";
         fb.clear();
@@ -574,10 +613,73 @@ void display_task(void* /*arg*/) {
                 kind = cfg.display.scenes.entries[shown.scene].kind;
             }
             scene_name = settings::scene_kind_name(kind);
+            if (kind != display::SceneKind::Scroll) {
+                value_scroll_running = false;
+            }
             switch (kind) {
                 case display::SceneKind::Date:
                     display::draw_date(fb, time_info, 1U, 1U, kDateColors);
                     break;
+                case display::SceneKind::Value: {
+                    const clock_homeassistant::ValueSnapshot& v = ha.values[shown.scene != display::kSyntheticClock ? cfg.display.scenes.entries[shown.scene].value_index : 0U];
+                    const display::Icon icon = static_cast<display::Icon>(v.icon);
+                    int16_t x = 0;
+                    if (icon != display::Icon::None) {
+                        display::draw_icon(fb, icon, 0, 0, kValueIconColor);
+                        x = 10;
+                    }
+                    char text[display::kTextMax + 1U];
+                    (void)display::transliterate(v.valid ? v.text : "--", text, sizeof(text));
+                    const uint16_t room = static_cast<uint16_t>(display::kWidth - x);
+                    const bool big = display::text_width(display::kFont5x7, text) <= room;
+                    display::draw_text(fb, big ? display::kFont5x7 : display::kFont3x5, x, big ? 0 : 1, text,
+                                       v.valid ? kClockColors.digits : kDimColor);
+                    break;
+                }
+                case display::SceneKind::TwoLines: {
+                    // Values 1 and 2 on two rows of 3x4.
+                    char text[display::kTextMax + 1U];
+                    for (uint8_t row = 0U; row < 2U; ++row) {
+                        const clock_homeassistant::ValueSnapshot& v = ha.values[row];
+                        (void)display::transliterate((v.enabled && v.valid) ? v.text : "--", text, sizeof(text));
+                        display::draw_text(fb, display::kFont3x4, 0, static_cast<int16_t>(row * 4U), text,
+                                           (row == 0U) ? kClockColors.digits : kDateColors.weekday);
+                    }
+                    break;
+                }
+                case display::SceneKind::Scroll: {
+                    // All valid values, "NAME value", scrolled once; the scene ends with the text.
+                    if (!value_scroll_running) {
+                        char all[display::kTextMax + 1U] = "";
+                        std::size_t w = 0U;
+                        for (std::size_t i = 0U; i < homeassistant::kValuesMax; ++i) {
+                            const clock_homeassistant::ValueSnapshot& v = ha.values[i];
+                            if (!v.enabled || !v.valid) {
+                                continue;
+                            }
+                            const int n = std::snprintf(all + w, sizeof(all) - w, "%s%s %s", (w > 0U) ? "   " : "", v.name, v.text);
+                            if ((n <= 0) || (static_cast<std::size_t>(n) >= (sizeof(all) - w))) {
+                                break;
+                            }
+                            w += static_cast<std::size_t>(n);
+                        }
+                        (void)display::transliterate(all, value_scroll_text, sizeof(value_scroll_text));
+                        value_scroller.start(value_scroll_text, display::kFont5x7, cfg.display.scroll_speed_px_s, 1U);
+                        value_scroll_running = true;
+                    } else {
+                        value_scroller.step(dt);
+                    }
+                    value_scroller.draw(fb, 0, kStatusColor);
+                    scene_finished = value_scroller.finished();
+                    break;
+                }
+                case display::SceneKind::Night: {
+                    // Dim, steady clock (no blink, no bar): for a bedroom.
+                    display::ClockColors dim{display::scale(kClockColors.digits, kNightScale), display::scale(kClockColors.colon, kNightScale),
+                                             display::scale(kClockColors.seconds_bar, kNightScale)};
+                    display::draw_clock(fb, time_info, display::kClockCentredX, true, false, dim);
+                    break;
+                }
                 case display::SceneKind::Air: {
                     // 8x8 logo in the colour of the level, then the pilot value (or -- while invalid).
                     display::draw_air_logo_8(fb, 0, 0, air_color);
@@ -681,9 +783,15 @@ extern "C" void app_main(void) {
     if (xTaskCreatePinnedToCore(air_task, "air", kAirTaskStack, nullptr, kAirTaskPriority, nullptr, kAirCore) != pdPASS) {
         ESP_LOGE(kTag, "air task not created");
     }
+    if ((web != clock_web::WebStatus::NvsError) && (web != clock_web::WebStatus::NetError)) {
+        const esp_err_t ha_err = clock_homeassistant::start(on_notification);
+        if (ha_err != ESP_OK) {
+            ESP_LOGE(kTag, "home assistant link not started: %s", esp_err_to_name(ha_err));
+        }
+    }
 
     if ((web != clock_web::WebStatus::NvsError) && (web != clock_web::WebStatus::NetError)) {
-        const settings::SystemSettings sys = clock_settings::get().system;
+        const settings::SystemSettings sys = clock_settings::system();
         const char* posix = timekeeping::posix_for_zone(sys.timezone);
         const esp_err_t time_err = clock_time::start(sys.ntp_server, (posix != nullptr) ? posix : timekeeping::kEuropeZurich);
         if (time_err != ESP_OK) {

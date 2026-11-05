@@ -199,7 +199,7 @@ esp_err_t handle_display_model(httpd_req_t* req) {
 
 esp_err_t handle_display_get(httpd_req_t* req) {
     static char body[settings::kJsonMax];
-    return send_json(req, body, settings::display_json(clock_settings::get().display, body, sizeof(body)));
+    return send_json(req, body, settings::display_json(clock_settings::display(), body, sizeof(body)));
 }
 
 esp_err_t handle_display_post(httpd_req_t* req) {
@@ -208,7 +208,7 @@ esp_err_t handle_display_post(httpd_req_t* req) {
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    const settings::DisplaySettings current = clock_settings::get().display;
+    const settings::DisplaySettings current = clock_settings::display();
     settings::DisplaySettings next = current;
     settings::FormError err{};
     if (!settings::apply_display_form(body, got, current, next, err)) {
@@ -244,7 +244,7 @@ esp_err_t handle_brightness_model(httpd_req_t* req) {
 
 esp_err_t handle_brightness_get(httpd_req_t* req) {
     static char body[settings::kJsonMax];
-    return send_json(req, body, settings::brightness_json(clock_settings::get().brightness, body, sizeof(body)));
+    return send_json(req, body, settings::brightness_json(clock_settings::brightness(), body, sizeof(body)));
 }
 
 esp_err_t handle_brightness_post(httpd_req_t* req) {
@@ -253,7 +253,7 @@ esp_err_t handle_brightness_post(httpd_req_t* req) {
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    const brightness::Config current = clock_settings::get().brightness;
+    const brightness::Config current = clock_settings::brightness();
     brightness::Config next = current;
     settings::FormError err{};
     if (!settings::apply_brightness_form(body, got, current, next, err)) {
@@ -300,7 +300,7 @@ esp_err_t handle_brightness_wizard(httpd_req_t* req) {
         }
         values[i] = static_cast<uint16_t>(parsed);
     }
-    brightness::Config cfg = clock_settings::get().brightness;
+    brightness::Config cfg = clock_settings::brightness();
     if (!brightness::build_from_wizard(values[0], values[1], values[2], values[3], cfg)) {
         return send_text(req, "400 Bad Request", "Deux mesures identiques : la courbe ne serait pas monotone. Recommencer dans d'autres conditions.");
     }
@@ -322,7 +322,7 @@ esp_err_t handle_system_model(httpd_req_t* req) {
 
 esp_err_t handle_system_get(httpd_req_t* req) {
     static char body[settings::kJsonMax];
-    return send_json(req, body, settings::system_json(clock_settings::get().system, body, sizeof(body)));
+    return send_json(req, body, settings::system_json(clock_settings::system(), body, sizeof(body)));
 }
 
 esp_err_t handle_system_post(httpd_req_t* req) {
@@ -331,7 +331,7 @@ esp_err_t handle_system_post(httpd_req_t* req) {
     if (!read_body(req, body, kFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    const settings::SystemSettings current = clock_settings::get().system;
+    const settings::SystemSettings current = clock_settings::system();
     settings::SystemSettings next = current;
     settings::FormError err{};
     if (!settings::apply_system_form(body, got, current, next, err)) {
@@ -350,7 +350,7 @@ esp_err_t handle_air_model(httpd_req_t* req) {
 
 esp_err_t handle_air_get(httpd_req_t* req) {
     static char body[settings::kJsonMax];
-    return send_json(req, body, settings::air_json(clock_settings::get().air, body, sizeof(body)));
+    return send_json(req, body, settings::air_json(clock_settings::air(), body, sizeof(body)));
 }
 
 esp_err_t handle_air_post(httpd_req_t* req) {
@@ -359,7 +359,7 @@ esp_err_t handle_air_post(httpd_req_t* req) {
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    const settings::AirSettings current = clock_settings::get().air;
+    const settings::AirSettings current = clock_settings::air();
     settings::AirSettings next = current;
     settings::FormError err{};
     if (!settings::apply_air_form(body, got, current, next, err)) {
@@ -388,7 +388,7 @@ esp_err_t handle_air_wizard(httpd_req_t* req) {
     if ((s_hooks.air_raw_temperature == nullptr) || !s_hooks.air_raw_temperature(measured)) {
         return send_text(req, "409 Conflict", "Le capteur ne fournit pas de température valide pour l'instant.");
     }
-    settings::AirSettings cfg = clock_settings::get().air;
+    settings::AirSettings cfg = clock_settings::air();
     int16_t offset = 0;
     if (!air_quality::build_offset(static_cast<int16_t>(reference), measured, offset)) {
         return send_text(req, "400 Bad Request", "Écart de plus de 10 °C : référence ou capteur douteux.");
@@ -402,6 +402,64 @@ esp_err_t handle_air_wizard(httpd_req_t* req) {
     (void)std::snprintf(reply, sizeof(reply), "{\"ok\":true,\"decalage_centi\":%d,\"mesure_centi\":%d,\"deporter\":%s}",
                         static_cast<int>(offset), static_cast<int>(measured), warn ? "true" : "false");
     return send_text(req, "200 OK", reply);
+}
+
+esp_err_t handle_ha_model(httpd_req_t* req) {
+    static char body[settings::kJsonMax];
+    return send_json(req, body, settings::ha_model_json(body, sizeof(body)));
+}
+
+esp_err_t handle_ha_get(httpd_req_t* req) {
+    static char body[settings::kJsonMax];
+    static settings::HaSettings ha;
+    clock_settings::ha(ha);
+    return send_json(req, body, settings::ha_json(ha, body, sizeof(body)));
+}
+
+esp_err_t handle_ha_post(httpd_req_t* req) {
+    static char body[kSettingsFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kSettingsFormMax, got)) {
+        return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+    }
+    static settings::HaSettings current;
+    static settings::HaSettings next;
+    clock_settings::ha(current);
+    next = current;
+    settings::FormError err{};
+    if (!settings::apply_ha_form(body, got, current, next, err)) {
+        return send_form_error(req, err);
+    }
+    if (!clock_settings::save_ha(next)) {
+        return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
+/// POST /api/ha/valeur/<0..7>
+esp_err_t handle_ha_value_post(httpd_req_t* req) {
+    const char* tail = std::strrchr(req->uri, '/');
+    if ((tail == nullptr) || (tail[1] < '0') || (tail[1] > '7') || (tail[2] != '\0')) {
+        return send_text(req, "404 Not Found", "Valeur 0 Ã  7 attendue.");
+    }
+    const std::size_t index = static_cast<std::size_t>(tail[1] - '0');
+    static char body[kSettingsFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kSettingsFormMax, got)) {
+        return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+    }
+    static settings::HaSettings current;
+    static settings::HaSettings next;
+    clock_settings::ha(current);
+    next = current;
+    settings::FormError err{};
+    if (!settings::apply_ha_value_form(body, got, index, current, next, err)) {
+        return send_form_error(req, err);
+    }
+    if (!clock_settings::save_ha(next)) {
+        return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
 }
 
 void reboot_task(void* /*arg*/) {
@@ -566,10 +624,11 @@ bool init_nvs() {
 
 bool start_http() {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 40;
+    cfg.max_uri_handlers = 48;
     cfg.max_open_sockets = kHttpClientsMax;
     cfg.lru_purge_enable = true;
-    cfg.stack_size = 8192;  // settings JSON and OTA chunks are static, but the handlers use some stack
+    cfg.stack_size = 8192;
+    cfg.uri_match_fn = httpd_uri_match_wildcard;  // settings JSON and OTA chunks are static, but the handlers use some stack
     if (httpd_start(&s_server, &cfg) != ESP_OK) {
         return false;
     }
@@ -579,6 +638,7 @@ bool start_http() {
         {"/luminosite", HTTP_GET, handle_app_page, nullptr},
         {"/systeme", HTTP_GET, handle_app_page, nullptr},
         {"/air", HTTP_GET, handle_app_page, nullptr},
+        {"/ha", HTTP_GET, handle_app_page, nullptr},
         {"/wifi", HTTP_GET, handle_wifi_page, nullptr},
         {"/api/info", HTTP_GET, handle_info, nullptr},
         {"/api/etat", HTTP_GET, handle_status, nullptr},
@@ -599,6 +659,10 @@ bool start_http() {
         {"/api/air", HTTP_GET, handle_air_get, nullptr},
         {"/api/air", HTTP_POST, handle_air_post, nullptr},
         {"/api/air/wizard", HTTP_POST, handle_air_wizard, nullptr},
+        {"/api/ha/modele", HTTP_GET, handle_ha_model, nullptr},
+        {"/api/ha", HTTP_GET, handle_ha_get, nullptr},
+        {"/api/ha", HTTP_POST, handle_ha_post, nullptr},
+        {"/api/ha/valeur/*", HTTP_POST, handle_ha_value_post, nullptr},
         {"/api/systeme/modele", HTTP_GET, handle_system_model, nullptr},
         {"/api/systeme", HTTP_GET, handle_system_get, nullptr},
         {"/api/systeme", HTTP_POST, handle_system_post, nullptr},

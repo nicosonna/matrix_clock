@@ -247,4 +247,97 @@ std::size_t air_json(const AirSettings& s, char* out, std::size_t out_size) noex
     return finish(w);
 }
 
+
+std::size_t ha_model_json(char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    const HaSettings h = default_ha_settings();
+    const char* const modes[] = {"Entite", "Gabarit"};
+    const char* const types[] = {"Nombre", "Texte", "Booleen"};
+    const char* const icons[] = {"Aucune", "Thermometre", "Goutte", "Eclair", "Porte", "Vent", "Soleil", "Maison"};
+    bool ok = w.begin_object() && w.key("champs") && w.begin_object();
+    ok = ok && bool_field(w, "actif", "Liaison Home Assistant active", h.enabled,
+                          "Lecture des valeurs et réception des notifications par WebSocket.");
+    ok = ok && bool_field(w, "securise", "Connexion chiffrée (wss)", h.secure,
+                          "Vérifiée par le paquet de certificats d'ESP-IDF : un certificat auto-signé n'est pas accepté.");
+    ok = ok && text_field(w, "hote", "texte", "Adresse de Home Assistant", static_cast<int64_t>(kHostMax), h.host,
+                          "Adresse IP ou nom DNS. Les noms .local ne sont pas résolus : mettre l'adresse IP.");
+    ok = ok && int_field(w, "port", "Port", "", 1, 65535, h.port, "8123 par défaut.");
+    ok = ok && text_field(w, "jeton", "secret", "Jeton d'accès longue durée", static_cast<int64_t>(homeassistant::kTokenMax), "",
+                          "Créé dans le profil Home Assistant d'un utilisateur dédié à l'horloge. S'écrit mais ne se relit pas.");
+    ok = ok && bool_field(w, "effacer_jeton", "Effacer le jeton enregistré", false, "Coché : le jeton est supprimé.");
+    ok = ok && bool_field(w, "notifications", "Recevoir les notifications", h.notifications,
+                          "Abonnement à l'événement horloge_notification.");
+    ok = ok && int_field(w, "ping_s", "Ping applicatif", "s", homeassistant::kPingMinS, homeassistant::kPingMaxS, h.ping_s,
+                         "Détecte un Home Assistant qui ne répond plus alors que la socket tient.");
+    ok = ok && int_field(w, "pong_ms", "Attente du pong", "ms", homeassistant::kPongMinMs, homeassistant::kPongMaxMs, h.pong_ms,
+                         "Sans réponse dans ce délai, la liaison est refaite.");
+    ok = ok && bool_field(w, "meteo_actif", "Météo de repli (Open-Meteo)", h.weather.enabled,
+                          "Température extérieure par Internet quand la valeur 1 est indisponible. Seule sortie Internet du firmware.");
+    ok = ok && head(w, "latitude", "coordonnee", "Latitude") && w.field("unite", "°") &&
+         w.field("min", static_cast<int64_t>(-homeassistant::kLatitudeMax)) &&
+         w.field("max", static_cast<int64_t>(homeassistant::kLatitudeMax)) &&
+         w.field("defaut", static_cast<int64_t>(h.weather.latitude_e4)) &&
+         w.field("aide", "Quatre décimales.") && w.end_object();
+    ok = ok && head(w, "longitude", "coordonnee", "Longitude") && w.field("unite", "°") &&
+         w.field("min", static_cast<int64_t>(-homeassistant::kLongitudeMax)) &&
+         w.field("max", static_cast<int64_t>(homeassistant::kLongitudeMax)) &&
+         w.field("defaut", static_cast<int64_t>(h.weather.longitude_e4)) &&
+         w.field("aide", "Quatre décimales.") && w.end_object();
+    ok = ok && int_field(w, "meteo_periode_s", "Période de la météo", "s", homeassistant::kWeatherPeriodMinS,
+                         homeassistant::kWeatherPeriodMaxS, h.weather.period_s, "Une requête toutes les N secondes.");
+    ok = ok && w.end_object();
+    // Sub-model of one tracked value.
+    const homeassistant::ValueConfig d = homeassistant::default_value_config();
+    ok = ok && w.key("valeur") && w.begin_object();
+    ok = ok && bool_field(w, "actif", "Valeur suivie", d.enabled, "Décochée : rien n'est demandé à Home Assistant.");
+    ok = ok && text_field(w, "nom", "texte", "Nom", static_cast<int64_t>(homeassistant::kNameMax), d.name,
+                          "Libellé sur la page et dans les alertes.");
+    ok = ok && choice_field(w, "mode", "Mode", modes, 2U, homeassistant::value_mode_name(d.mode),
+                            "Entite : une entité (et un attribut) ; Gabarit : un template Jinja écrit tel quel.");
+    ok = ok && text_field(w, "entite", "texte", "Entité", static_cast<int64_t>(homeassistant::kEntityMax), d.entity,
+                          "Ex. sensor.temperature_exterieure.");
+    ok = ok && text_field(w, "attribut", "texte", "Attribut (optionnel)", static_cast<int64_t>(homeassistant::kAttributeMax),
+                          d.attribute, "state_attr() au lieu de states().");
+    ok = ok && text_field(w, "gabarit", "texte", "Gabarit (mode expert)", static_cast<int64_t>(homeassistant::kTemplateMax),
+                          d.tmpl, "Ex. {{ states('sensor.x') | round(1) }}.");
+    ok = ok && choice_field(w, "type", "Type", types, 3U, homeassistant::value_type_name(d.type),
+                            "Nombre : affiché avec ses décimales ; Booleen : on/off, home, open… ; Texte : tel quel.");
+    ok = ok && int_field(w, "decimales", "Décimales", "", 0, homeassistant::kDecimalsMax, d.decimals,
+                         "Pour un Nombre.");
+    ok = ok && text_field(w, "unite", "texte", "Unité", static_cast<int64_t>(homeassistant::kUnitMax), d.unit,
+                          "Affichée après la valeur (° pour un degré sur la dalle).");
+    ok = ok && choice_field(w, "icone", "Icône", icons, 8U, homeassistant::value_icon_name(d.icon),
+                            "Icône 8×8 de la scène Valeur.");
+    ok = ok && int_field(w, "peremption_s", "Péremption", "s", homeassistant::kExpiryMinS, homeassistant::kExpiryMaxS,
+                         d.expiry_s, "Liaison tombée depuis plus longtemps que cela : la valeur devient --.");
+    ok = ok && w.end_object();
+    ok = ok && w.field("valeurs_max", static_cast<int64_t>(homeassistant::kValuesMax)) && w.end_object();
+    return finish(w);
+}
+
+std::size_t ha_json(const HaSettings& s, char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    bool ok = w.begin_object();
+    ok = ok && w.field("actif", s.enabled) && w.field("securise", s.secure) && w.field("hote", s.host) &&
+         w.field("port", static_cast<int64_t>(s.port)) && w.field("jeton", "") &&
+         w.field("jeton_defini", s.token[0] != '\0') && w.field("effacer_jeton", false) &&
+         w.field("notifications", s.notifications) && w.field("ping_s", static_cast<int64_t>(s.ping_s)) &&
+         w.field("pong_ms", static_cast<int64_t>(s.pong_ms)) && w.field("meteo_actif", s.weather.enabled) &&
+         w.field("latitude", static_cast<int64_t>(s.weather.latitude_e4)) &&
+         w.field("longitude", static_cast<int64_t>(s.weather.longitude_e4)) &&
+         w.field("meteo_periode_s", static_cast<int64_t>(s.weather.period_s));
+    ok = ok && w.key("valeurs") && w.begin_array();
+    for (std::size_t i = 0U; ok && (i < homeassistant::kValuesMax); ++i) {
+        const homeassistant::ValueConfig& v = s.values[i];
+        ok = w.begin_object() && w.field("actif", v.enabled) && w.field("nom", v.name) &&
+             w.field("mode", homeassistant::value_mode_name(v.mode)) && w.field("entite", v.entity) &&
+             w.field("attribut", v.attribute) && w.field("gabarit", v.tmpl) &&
+             w.field("type", homeassistant::value_type_name(v.type)) && w.field("decimales", static_cast<int64_t>(v.decimals)) &&
+             w.field("unite", v.unit) && w.field("icone", homeassistant::value_icon_name(v.icon)) &&
+             w.field("peremption_s", static_cast<int64_t>(v.expiry_s)) && w.end_object();
+    }
+    ok = ok && w.end_array() && w.end_object();
+    return finish(w);
+}
+
 }  // namespace settings

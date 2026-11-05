@@ -30,6 +30,10 @@ extern const char* const kSystemFields[];
 extern const std::size_t kSystemFieldCount;
 extern const char* const kAirFields[];
 extern const std::size_t kAirFieldCount;
+extern const char* const kHaFields[];
+extern const std::size_t kHaFieldCount;
+extern const char* const kHaValueFields[];
+extern const std::size_t kHaValueFieldCount;
 
 /**
  * @brief Applies a form to a copy of @p current; writes @p out only if everything is valid.
@@ -43,6 +47,12 @@ bool apply_system_form(const char* body, std::size_t len, const SystemSettings& 
                        FormError& err) noexcept;
 bool apply_air_form(const char* body, std::size_t len, const AirSettings& current, AirSettings& out,
                     FormError& err) noexcept;
+/// Link and weather fields; the token is replaced only when `jeton` is non-empty, cleared by `effacer_jeton=1`.
+bool apply_ha_form(const char* body, std::size_t len, const HaSettings& current, HaSettings& out,
+                   FormError& err) noexcept;
+/// One tracked value (index 0..7), all or nothing.
+bool apply_ha_value_form(const char* body, std::size_t len, std::size_t index, const HaSettings& current,
+                         HaSettings& out, FormError& err) noexcept;
 
 /// Enumerations, as the page shows them (French labels are the API values).
 const char* axis_name(display::FirstAxis a) noexcept;

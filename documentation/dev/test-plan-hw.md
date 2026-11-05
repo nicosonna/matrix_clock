@@ -91,21 +91,21 @@ toute modification du composant.
 
 | Id | Code couvert | Attendu | Statut |
 |---|---|---|---|
-| HA-01 | `ClientHa::step()` | `auth_required` → `auth_ok` → abonnements → `EnMarche` | À ÉCRIRE |
-| HA-02 | idem | `auth_invalid` ⇒ `JetonRefuse`, délai 5 min | À ÉCRIRE |
-| HA-03 | `construire_gabarit()` | Entité, entité+attribut, gabarit expert, échappement JSON | À ÉCRIRE |
-| HA-04 | `ClientHa::step()` | `id` croissants dès 1, repartent à 1, tous les abonnements rejoués | À ÉCRIRE |
-| HA-05 | `traiter_event()` | Valeur initiale puis changements, association `id` → valeur | À ÉCRIRE |
-| HA-06 | `decoder_nombre()` | 0/1/2 décimales, négatif, non numérique, hors bornes, `unavailable`, `unknown`, `null`, vide | À ÉCRIRE |
-| HA-07 | `decoder_booleen()`, `decoder_texte()` | Alias `home`, `open`, `closed` | À ÉCRIRE |
-| HA-08 | `traiter_event()` | Erreur de gabarit bornée à 96 car., valeur reste invalide | À ÉCRIRE |
-| HA-09 | `Reassembleur` | Trame fragmentée recollée ; > 2048 octets abandonnée, **non** interprétée | À ÉCRIRE |
-| HA-10 | `json_reader` | JSON malformé, tronqué, profondeur excessive, clé absente ⇒ ignoré | À ÉCRIRE |
-| HA-11 | `ClientHa::step()` | Pas de `pong` ⇒ reconnexion ; délai 5/10/20/40/60 s plafonné | À ÉCRIRE |
-| HA-12 | `Valeur::fraiche()` | Invalidée si **liaison tombée** depuis `peremption_s` ; **non** invalidée si la liaison vit et la valeur est stable (dette D6) | À ÉCRIRE |
-| HA-13 | `decoder_notification()` | Champs valides, hors bornes ⇒ défaut, `cle` absente ⇒ rejet, `effacer` cible la bonne clé | À ÉCRIRE |
-| HA-14 | `open_meteo::decoder()` | Réponse réelle (`test/fixtures/`), amputée, valeur absente | À ÉCRIRE |
-| HA-15 | `settings::valider_ha()` | Hôte, port, jeton, entité, gabarit, lat/lon ⇒ repli | À ÉCRIRE |
+| HA-01 | `WsClient` (`on_connected`, `on_message`, `next_outgoing`) | `auth_required` → `auth` avec le jeton → `auth_ok` → `render_template` × n (ids 1..n) → `subscribe_events(horloge_notification)` → résultats → `Running`, `connections` = 1 | **PASSE** 2026-11-05 |
+| HA-02 | `WsClient` (`auth_invalid`) | `TokenRejected`, message gardé, fermeture demandée, **aucune** tentative pendant 5 min, puis reconnexion ; sans message ⇒ `auth_invalid` | **PASSE** 2026-11-05 |
+| HA-03 | `build_template()` | Entité seule, entité + attribut (`state_attr`), gabarit expert, échappement des guillemets et antislashs, tampon trop petit ⇒ 0 | **PASSE** 2026-11-05 |
+| HA-04 | `WsClient` (reconnexion) | Après coupure : attente 5 s, `id` repartent à 1, **tous** les abonnements rejoués ; abonnement refusé ⇒ erreur gardée, liaison quand même `Running` | **PASSE** 2026-11-05 |
+| HA-05 | `WsClient::handle_event()` | Valeur initiale puis changements, `id` → bonne valeur, résultat texte **ou** nombre natif, `unavailable` ⇒ invalide, `id` inconnu ⇒ ignoré et compté | **PASSE** 2026-11-05 |
+| HA-06 | `decode_number()` | 0/1/2 décimales, négatif, non numérique, `unavailable`, `unknown`, `null`, vide, > ±2 000 000 000 ⇒ invalide | **PASSE** 2026-11-05 |
+| HA-07 | `decode_boolean()`, `decode_text()` | Alias `on/true/home/open/yes`, `off/false/not_home/closed/no` ; `maybe` invalide ; texte vide / `unknown` / `none` invalide | **PASSE** 2026-11-05 |
+| HA-08 | `WsClient::handle_event()` (`report_errors`) | Erreur de gabarit bornée à **96** caractères, valeur invalide, effacée au prochain résultat | **PASSE** 2026-11-05 |
+| HA-09 | `Reassembler` | Fragments recollés dans l'ordre ; > 2048 octets abandonné et compté une fois, suite ignorée ; désordre, dépassement du total, `nullptr`, total nul ⇒ rejet ; 2048 exactement accepté | **PASSE** 2026-11-05 |
+| HA-10 | `json_find()` et `on_message()` | Malformé, tronqué, > 16 niveaux, clé absente, mauvais type ⇒ `false` ; messages inattendus ⇒ ignorés et comptés, état inchangé ; nombres `1.`, `.5`, `+1`, `01`, `1e50`, 23 chiffres refusés | **PASSE** 2026-11-05 |
+| HA-11 | `WsClient::step()` | Ping après `ping_s`, `pong` avec le bon `id` ; sans `pong` dans `pong_ms` ⇒ fermeture, `pong_misses`, `Waiting` ; échelle 5/10/20/40/60/60 s ; connexion muette ⇒ refaite après 60 s | **PASSE** 2026-11-05 |
+| HA-12 | `WsClient::value_valid()` | Liaison vivante ⇒ valeur stable **valide** (dette D6) ; liaison tombée ⇒ invalide après `peremption_s` exactement | **PASSE** 2026-11-05 |
+| HA-13 | `WsClient::decode_notification()` → `alerts::decode_form()` | Événement `horloge_notification` : `cle`, `titre`, `texte`, `priorite`, `duree_s`, `persistante`, `rappel_s`, `effacer` ; hors bornes ⇒ défaut compté ; sans `cle` ⇒ rejet compté | **PASSE** 2026-11-05 |
+| HA-14 | `decode_weather()`, `weather_url()` | Réponse **réelle** `test/fixtures/open_meteo.json` ⇒ 7,3 °C ; tronquée, `null`, absente, > 70 °C ⇒ invalide ; URL avec 4 décimales et signes | **PASSE** 2026-11-05 |
+| HA-15 | `settings::apply_ha_form()`, `apply_ha_value_form()`, `is_valid(HaSettings)` | Hôte, port, jeton (512 car., écrit seulement, vide = gardé, `effacer_jeton`), ping/pong, latitude/longitude/période ; valeurs : entité, gabarit, type, décimales, icône, péremption ; liaison active sans hôte ou sans jeton refusée ; 23 + 17 corps fautifs tout-ou-rien ; modèle avec types `secret` et `coordonnee`, `jeton` jamais relu | **PASSE** 2026-11-05 |
 
 ### 1.5 `alerts` — `dev/spec-alertes.md` §6
 
@@ -241,7 +241,7 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-RES-05 | Portail ouvert, iPhone / Android / Windows | Fenêtre captive qui s'ouvre seule ; SSID et phrase de passe **lisibles sur la dalle** | **EN COURS** 2026-11-05 : AP `Horloge-XXXX` WPA2, DNS captif, sondes et page `/wifi` en place, SSID + mot de passe défilent sur la dalle — **essai au téléphone en attente** |
 | HW-RES-06 | Identifiants saisis au portail | Connexion **sans redémarrage** | **PASSE** 2026-11-05 : box jointe depuis le portail au téléphone, état `connected` sans reset (2 min de fonctionnement dans les logs), point d'accès éteint (absent du scan Wi-Fi du PC) |
 | HW-RES-07 | `horloge.local` depuis PC et téléphone | Résolu | **PASSE (PC)** 2026-11-05 : `http://horloge.local/api/info` répond depuis le PC Windows (`"ip":"10.10.0.85"`, `"reseau":"connected"`). Téléphone non testé. |
-| HW-HA-01 | Liaison au Home Assistant **de la maison**, en lecture | Valeur affichée = valeur de l'interface | À FAIRE |
+| HW-HA-01 | Liaison au Home Assistant **de la maison**, en lecture | Valeur affichée = valeur de l'interface | À FAIRE par Nicolas (jeton d'un utilisateur dédié, wizard `/ha`) ; **mécanique vérifiée** le 2026-11-05 : hôte fictif ⇒ `connecting` → `waiting` avec coupures comptées, valeur 1 enregistrée, jeton jamais renvoyé par l'API, désactivation ⇒ `disabled` |
 | HW-HA-02 | Home Assistant redémarré | Reconnexion seule, valeurs retrouvées | À FAIRE |
 | HW-HA-03 | Jeton révoqué | `JetonRefuse` visible sur la page, pas de martèlement | À FAIRE |
 | HW-HA-04 | Automatisation réelle qui déclenche `horloge_notification` | Notification affichée au bon rendu | À FAIRE |

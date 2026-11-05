@@ -13,7 +13,9 @@
 - [x] ~~Q3 — fuseau horaire par défaut~~ : `Europe/Zurich`, réglable sur la page
       (tranché le 2026-11-05).
 - [ ] **Q4 — entités Home Assistant** à afficher au départ (température
-      extérieure + une pièce ?), pour les scènes par défaut.
+      extérieure + une pièce ?) : à saisir sur `/ha` (valeur 1 = extérieur,
+      remplacée par la météo Open-Meteo si elle est activée et que la valeur
+      manque).
 - [ ] **Q2 — RTC DS3231** : utile seulement si les coupures sans réseau sont
       fréquentes. Phase 3 par défaut.
 - [x] ~~Mettre le dépôt sous Git~~ : `git init` + `.gitignore` + `README.md`
@@ -85,10 +87,14 @@
       quand `homeassistant` existera.
 - [x] ~~OTA + **rollback** + barre de progression sur la dalle~~ (2026-11-05,
       HW-WEB-02). Reste HW-WEB-03 (image cassée ⇒ rollback).
-- [ ] `homeassistant` pur : machine d'état WebSocket, `render_template`, lecteur JSON
-      sans allocation, décodage typé, péremption (`HA-01` → `HA-15`).
-- [ ] `clock_homeassistant` : `esp_websocket_client`, réassemblage borné 2 Ko,
-      ping applicatif ; météo Open-Meteo en repli.
+- [x] ~~`homeassistant` pur : machine d'état WebSocket, `render_template`, lecteur
+      JSON sans allocation, décodage typé, péremption~~ (`HA-01` → `HA-15`,
+      2026-11-05).
+- [x] ~~`clock_homeassistant` : `esp_websocket_client`, réassemblage borné 2 Ko,
+      ping applicatif ; météo Open-Meteo en repli~~ (2026-11-05). Reste :
+      HW-HA-01..04 avec le Home Assistant de la maison (jeton à créer par
+      Nicolas), aperçu « en direct » d'une entité dans le wizard (étape 3 :
+      pour l'instant on enregistre puis on lit la tuile).
 - [ ] `homeassistant::mqtt` : **copier** `home_assistant.hpp/.cpp` et
       `mqtt_config.hpp/.cpp` de ThermoSync, remplacer `thermosync` par
       `horloge`, remplacer les entités par les 10 de `spec-home-assistant.md`

@@ -4,6 +4,7 @@
  */
 #include "settings/model.hpp"
 
+#include <cstdio>
 #include <cstring>
 
 #include "timekeeping/tz.hpp"
@@ -38,12 +39,39 @@ AirSettings default_air_settings() noexcept {
     return a;
 }
 
-Settings default_settings() noexcept {
-    Settings s{};
+void default_ha_settings_into(HaSettings& h) noexcept {
+    std::memset(&h, 0, sizeof(h));
+    h.enabled = false;
+    h.secure = false;
+    h.host[0] = '\0';
+    h.port = kHaPortDefault;
+    h.token[0] = '\0';
+    h.notifications = true;
+    h.ping_s = homeassistant::kPingDefaultS;
+    h.pong_ms = homeassistant::kPongDefaultMs;
+    for (homeassistant::ValueConfig& v : h.values) {
+        v = homeassistant::default_value_config();
+    }
+    h.weather = homeassistant::default_weather_config();
+}
+
+HaSettings default_ha_settings() noexcept {
+    HaSettings h;
+    default_ha_settings_into(h);
+    return h;
+}
+
+void default_settings_into(Settings& s) noexcept {
     s.display = default_display_settings();
     s.brightness = brightness::default_config();
     s.system = default_system_settings();
     s.air = default_air_settings();
+    default_ha_settings_into(s.ha);
+}
+
+Settings default_settings() noexcept {
+    Settings s;
+    default_settings_into(s);
     return s;
 }
 
@@ -87,6 +115,49 @@ air_quality::SensorConfig sensor_config(const AirSettings& s) noexcept {
     c.ens160_address = s.ens160_address;
     c.temperature_offset_centi = s.temperature_offset_centi;
     return c;
+}
+
+homeassistant::WsConfig ws_config(const HaSettings& s) noexcept {
+    homeassistant::WsConfig c = homeassistant::default_ws_config();
+    c.enabled = s.enabled;
+    c.token = s.token;
+    c.notifications = s.notifications;
+    c.ping_s = s.ping_s;
+    c.pong_ms = s.pong_ms;
+    return c;
+}
+
+bool is_valid(const HaSettings& s) noexcept {
+    if (s.token[homeassistant::kTokenMax] != '\0') {
+        return false;
+    }
+    if (s.port == 0U) {
+        return false;
+    }
+    if (s.host[0] != '\0') {
+        if (!is_valid_host(s.host)) {
+            return false;
+        }
+    } else if (s.enabled) {
+        return false;  // active link without a host
+    } else {
+        // disabled and empty: fine
+    }
+    return homeassistant::is_valid(ws_config(s)) && homeassistant::is_valid(s.values) &&
+           homeassistant::is_valid(s.weather);
+}
+
+std::size_t ha_uri(const HaSettings& s, char* out, std::size_t size) noexcept {
+    if ((out == nullptr) || (size == 0U) || (s.host[0] == '\0')) {
+        return 0U;
+    }
+    const int n = std::snprintf(out, size, "%s://%s:%u/api/websocket", s.secure ? "wss" : "ws", s.host,
+                                static_cast<unsigned>(s.port));
+    if ((n <= 0) || (static_cast<std::size_t>(n) >= size)) {
+        out[0] = '\0';
+        return 0U;
+    }
+    return static_cast<std::size_t>(n);
 }
 
 }  // namespace settings

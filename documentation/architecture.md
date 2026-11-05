@@ -79,7 +79,7 @@ volontaire.
 | `clock_display` | `espressif/led_strip`, SPI/DMA | oui (matériel) |
 | `clock_hal` | ADC1 oneshot + étalonnage ; bus I²C `i2c_master` derrière `air_quality::I2cBus` (délai 50 ms, réinitialisation d'un bus bloqué par 9 coups d'horloge) | oui (matériel) |
 | `clock_time` | SNTP ; la conversion et la validité sont dans `timekeeping` (pur) | oui (transport) |
-| `clock_homeassistant` | `esp_websocket_client`, `esp-mqtt`, HTTPS Open-Meteo | oui (transport) |
+| `clock_homeassistant` | tâche `ha` (cœur 0, 100 ms) : `esp_websocket_client` sans reconnexion automatique (le client pur décide), réassemblage, envoi des messages demandés, météo Open-Meteo en HTTPS (paquet de certificats), snapshot sous mutex ; `esp-mqtt` à venir | oui (transport) |
 | `clock_web` | `esp_http_server`, page embarquée, DNS captif, mDNS | oui (transport) |
 | `clock_settings` | blobs NVS versionnés par domaine, copie partagée sous mutex, compteur de version scruté par la tâche d'affichage (application à chaud) | oui (NVS, FreeRTOS) |
 | `main/app_main.cpp` | câblage | oui |

@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "homeassistant/values.hpp"
 #include "network/credentials.hpp"
 #include "timekeeping/tz.hpp"
 
@@ -27,6 +28,12 @@ const char* const kAirFields[] = {"actif", "adresse", "grandeur_pilote", "seuil_
                                   "seuil_tvoc_mauvais", "seuil_tvoc_tres_mauvais", "hysteresis_eco2", "hysteresis_tvoc",
                                   "confirmation_s", "logo_air", "decalage_temperature"};
 const std::size_t kAirFieldCount = sizeof(kAirFields) / sizeof(kAirFields[0]);
+const char* const kHaFields[] = {"actif", "securise", "hote", "port", "jeton", "effacer_jeton", "notifications",
+                                 "ping_s", "pong_ms", "meteo_actif", "latitude", "longitude", "meteo_periode_s"};
+const std::size_t kHaFieldCount = sizeof(kHaFields) / sizeof(kHaFields[0]);
+const char* const kHaValueFields[] = {"actif", "nom", "mode", "entite", "attribut", "gabarit", "type", "decimales",
+                                      "unite", "icone", "peremption_s"};
+const std::size_t kHaValueFieldCount = sizeof(kHaValueFields) / sizeof(kHaValueFields[0]);
 const std::size_t kSystemFieldCount = sizeof(kSystemFields) / sizeof(kSystemFields[0]);
 
 namespace {
@@ -686,6 +693,260 @@ bool apply_air_form(const char* body, std::size_t len, const AirSettings& curren
         return fail(err, "", "réglages incohérents");
     }
     out = a;
+    return true;
+}
+
+
+// ------------------------------------------------------------------ Home Assistant forms
+
+namespace {
+
+/// Copies a bounded text field; false (with err) if present but malformed or too long.
+bool text_field(const char* body, std::size_t len, const char* name, char* dst, std::size_t dst_size, bool& present,
+                FormError& err) noexcept {
+    char v[kFieldMax];
+    const int8_t r = fetch(body, len, name, v, sizeof(v));
+    present = r > 0;
+    if (r < 0) {
+        return fail(err, name, kBadEncoding);
+    }
+    if (r > 0) {
+        if (std::strlen(v) >= dst_size) {
+            return fail(err, name, "trop long");
+        }
+        std::strncpy(dst, v, dst_size - 1U);
+        dst[dst_size - 1U] = '\0';
+    }
+    return true;
+}
+
+}  // namespace
+
+bool apply_ha_form(const char* body, std::size_t len, const HaSettings& current, HaSettings& out,
+                   FormError& err) noexcept {
+    HaSettings h = current;
+    char v[kFieldMax];
+    int8_t r = 0;
+    int32_t i = 0;
+    bool present = false;
+
+    if ((r = fetch(body, len, "actif", v, sizeof(v))) < 0) {
+        return fail(err, "actif", kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, h.enabled)) {
+        return fail(err, "actif", "0 ou 1");
+    }
+    if ((r = fetch(body, len, "securise", v, sizeof(v))) < 0) {
+        return fail(err, "securise", kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, h.secure)) {
+        return fail(err, "securise", "0 ou 1");
+    }
+    if (!text_field(body, len, "hote", h.host, sizeof(h.host), present, err)) {
+        return false;
+    }
+    if (present && (h.host[0] != '\0') && !is_valid_host(h.host)) {
+        return fail(err, "hote", "adresse IP ou nom DNS, lettres, chiffres, points et tirets");
+    }
+    if ((r = fetch(body, len, "port", v, sizeof(v))) < 0) {
+        return fail(err, "port", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 1, 65535, i)) {
+            return fail(err, "port", "de 1 à 65535");
+        }
+        h.port = static_cast<uint16_t>(i);
+    }
+    // Token: a 512-character field needs its own buffer; empty = keep the current one.
+    {
+        char token[homeassistant::kTokenMax + 2U];
+        std::size_t n = 0U;
+        if (network::form_field(body, len, "jeton", token, sizeof(token), n)) {
+            if (n > 0U) {
+                for (std::size_t k = 0U; k < n; ++k) {
+                    if ((token[k] < '!') || (token[k] > '~')) {
+                        return fail(err, "jeton", "caractères ASCII imprimables sans espace");
+                    }
+                }
+                std::strncpy(h.token, token, homeassistant::kTokenMax);
+                h.token[homeassistant::kTokenMax] = '\0';
+            }
+        } else {
+            // Absent (kept), or present but too long / malformed.
+            char probe[8];
+            if (fetch(body, len, "jeton", probe, sizeof(probe)) < 0) {
+                // fetch says malformed when the value exceeds its small buffer too: tell them apart.
+                std::size_t m = 0U;
+                static char big[homeassistant::kTokenMax + 2U];
+                if (!network::form_field(body, len, "jeton", big, sizeof(big), m)) {
+                    return fail(err, "jeton", "jeton trop long (512 caractères) ou mal encodé");
+                }
+            }
+        }
+    }
+    if ((r = fetch(body, len, "effacer_jeton", v, sizeof(v))) < 0) {
+        return fail(err, "effacer_jeton", kBadEncoding);
+    }
+    bool clear_token = false;
+    if ((r > 0) && !parse_bool(v, clear_token)) {
+        return fail(err, "effacer_jeton", "0 ou 1");
+    }
+    if (clear_token) {
+        h.token[0] = '\0';
+    }
+    if ((r = fetch(body, len, "notifications", v, sizeof(v))) < 0) {
+        return fail(err, "notifications", kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, h.notifications)) {
+        return fail(err, "notifications", "0 ou 1");
+    }
+    if ((r = fetch(body, len, "ping_s", v, sizeof(v))) < 0) {
+        return fail(err, "ping_s", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, homeassistant::kPingMinS, homeassistant::kPingMaxS, i)) {
+            return fail(err, "ping_s", "de 10 à 300 s");
+        }
+        h.ping_s = static_cast<uint16_t>(i);
+    }
+    if ((r = fetch(body, len, "pong_ms", v, sizeof(v))) < 0) {
+        return fail(err, "pong_ms", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, homeassistant::kPongMinMs, homeassistant::kPongMaxMs, i)) {
+            return fail(err, "pong_ms", "de 2000 à 30000 ms");
+        }
+        h.pong_ms = static_cast<uint16_t>(i);
+    }
+    if ((r = fetch(body, len, "meteo_actif", v, sizeof(v))) < 0) {
+        return fail(err, "meteo_actif", kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, h.weather.enabled)) {
+        return fail(err, "meteo_actif", "0 ou 1");
+    }
+    if ((r = fetch(body, len, "latitude", v, sizeof(v))) < 0) {
+        return fail(err, "latitude", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, -homeassistant::kLatitudeMax, homeassistant::kLatitudeMax, i)) {
+            return fail(err, "latitude", "de -90 à 90 degrés (dix-millièmes)");
+        }
+        h.weather.latitude_e4 = i;
+    }
+    if ((r = fetch(body, len, "longitude", v, sizeof(v))) < 0) {
+        return fail(err, "longitude", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, -homeassistant::kLongitudeMax, homeassistant::kLongitudeMax, i)) {
+            return fail(err, "longitude", "de -180 à 180 degrés (dix-millièmes)");
+        }
+        h.weather.longitude_e4 = i;
+    }
+    if ((r = fetch(body, len, "meteo_periode_s", v, sizeof(v))) < 0) {
+        return fail(err, "meteo_periode_s", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, homeassistant::kWeatherPeriodMinS, homeassistant::kWeatherPeriodMaxS, i)) {
+            return fail(err, "meteo_periode_s", "de 300 à 3600 s");
+        }
+        h.weather.period_s = static_cast<uint16_t>(i);
+    }
+    if (h.enabled && (h.host[0] == '\0')) {
+        return fail(err, "hote", "une liaison active a besoin d'une adresse");
+    }
+    if (h.enabled && (h.token[0] == '\0')) {
+        return fail(err, "jeton", "une liaison active a besoin d'un jeton");
+    }
+    if (!is_valid(h)) {
+        return fail(err, "", "réglages incohérents");
+    }
+    out = h;
+    return true;
+}
+
+bool apply_ha_value_form(const char* body, std::size_t len, std::size_t index, const HaSettings& current,
+                         HaSettings& out, FormError& err) noexcept {
+    if (index >= homeassistant::kValuesMax) {
+        return fail(err, "", "index de valeur hors de 0..7");
+    }
+    HaSettings h = current;
+    homeassistant::ValueConfig& val = h.values[index];
+    char v[kFieldMax];
+    int8_t r = 0;
+    int32_t i = 0;
+    bool present = false;
+
+    if ((r = fetch(body, len, "actif", v, sizeof(v))) < 0) {
+        return fail(err, "actif", kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, val.enabled)) {
+        return fail(err, "actif", "0 ou 1");
+    }
+    if (!text_field(body, len, "nom", val.name, sizeof(val.name), present, err)) {
+        return false;
+    }
+    if ((r = fetch(body, len, "mode", v, sizeof(v))) < 0) {
+        return fail(err, "mode", kBadEncoding);
+    }
+    if ((r > 0) && !homeassistant::value_mode_from_name(v, val.mode)) {
+        return fail(err, "mode", "Entite ou Gabarit");
+    }
+    if (!text_field(body, len, "entite", val.entity, sizeof(val.entity), present, err)) {
+        return false;
+    }
+    if (present && (val.entity[0] != '\0') && !homeassistant::is_valid_entity(val.entity)) {
+        return fail(err, "entite", "domaine.nom en minuscules, chiffres et _ (ex. sensor.temperature)");
+    }
+    if (!text_field(body, len, "attribut", val.attribute, sizeof(val.attribute), present, err)) {
+        return false;
+    }
+    if (!text_field(body, len, "gabarit", val.tmpl, sizeof(val.tmpl), present, err)) {
+        return false;
+    }
+    if (present && (val.tmpl[0] != '\0') && !homeassistant::is_valid_template(val.tmpl)) {
+        return fail(err, "gabarit", "ASCII imprimable, 128 caractères");
+    }
+    if ((r = fetch(body, len, "type", v, sizeof(v))) < 0) {
+        return fail(err, "type", kBadEncoding);
+    }
+    if ((r > 0) && !homeassistant::value_type_from_name(v, val.type)) {
+        return fail(err, "type", "Nombre, Texte ou Booleen");
+    }
+    if ((r = fetch(body, len, "decimales", v, sizeof(v))) < 0) {
+        return fail(err, "decimales", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, 0, homeassistant::kDecimalsMax, i)) {
+            return fail(err, "decimales", "de 0 à 2");
+        }
+        val.decimals = static_cast<uint8_t>(i);
+    }
+    if (!text_field(body, len, "unite", val.unit, sizeof(val.unit), present, err)) {
+        return false;
+    }
+    if ((r = fetch(body, len, "icone", v, sizeof(v))) < 0) {
+        return fail(err, "icone", kBadEncoding);
+    }
+    if ((r > 0) && !homeassistant::value_icon_from_name(v, val.icon)) {
+        return fail(err, "icone", "icône inconnue");
+    }
+    if ((r = fetch(body, len, "peremption_s", v, sizeof(v))) < 0) {
+        return fail(err, "peremption_s", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, homeassistant::kExpiryMinS, homeassistant::kExpiryMaxS, i)) {
+            return fail(err, "peremption_s", "de 30 à 3600 s");
+        }
+        val.expiry_s = static_cast<uint16_t>(i);
+    }
+    if (!homeassistant::is_valid(val)) {
+        return fail(err, val.mode == homeassistant::ValueMode::Template ? "gabarit" : "entite",
+                    "une valeur active a besoin d'une entité (ou d'un gabarit) valide");
+    }
+    if (!is_valid(h)) {
+        return fail(err, "", "réglages incohérents");
+    }
+    out = h;
     return true;
 }
 

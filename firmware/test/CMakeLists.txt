@@ -40,6 +40,7 @@ add_executable(test_clock
     ${AIR}/src/sensor.cpp
     ${AIR}/src/levels.cpp
     ${DISPLAY}/src/air_logo.cpp
+    ${DISPLAY}/src/value_icons.cpp
     ${SET}/src/json_writer.cpp
     ${SET}/src/model.cpp
     ${SET}/src/forms.cpp

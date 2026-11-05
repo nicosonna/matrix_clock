@@ -4,7 +4,7 @@
 idf_component_register(
     SRCS "src/store.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES settings air_quality
+    REQUIRES settings air_quality homeassistant
     PRIV_REQUIRES nvs_flash log
 )
 

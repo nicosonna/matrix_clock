@@ -371,6 +371,11 @@ void test_internal_sources() {
     CHECK(!sample(Source::TokenRejected, 0U, i2).valid);
     CHECK(!sample(Source::StaleValue, 0U, i2).valid);
     i2 = in;
+    i2.network_up = false;
+    i2.ha_link_up = false;
+    CHECK(!sample(Source::HaLinkLost, 0U, i2).valid);  // the WiFi is gone: not Home Assistant's fault
+    CHECK(sample(Source::NetworkLost, 0U, i2).valid && (sample(Source::NetworkLost, 0U, i2).value == 1));
+    i2 = in;
     i2.air_enabled = false;
     CHECK(!sample(Source::AirSensorFault, 0U, i2).valid);
     CHECK(!sample(Source::AirWarmingUp, 0U, i2).valid);
@@ -421,6 +426,7 @@ void test_internal_sources() {
     const RuleList defaults = default_rules();
     CHECK(is_valid(defaults));
     CHECK(defaults[2].enabled && (defaults[2].source == Source::TimeUnsure));
+    CHECK(defaults[3].enabled && (defaults[3].source == Source::HaLinkLost) && (defaults[3].confirmation_s == 1800U));
     CHECK(defaults[7].enabled && (defaults[7].source == Source::AirAqi) && (defaults[7].threshold == 4));
     CHECK(!defaults[0].enabled && (defaults[0].source == Source::Value));
     e.configure(defaults);
@@ -451,6 +457,49 @@ void test_internal_sources() {
     CHECK(std::strcmp(v.text, "AERER") == 0);
     CHECK(!e.view(16U, v));
     CHECK_ENUM(e.state(16U), RuleState::Inactive);
+    (void)now;
+}
+
+// ALR-19: HOME ASSISTANT HS waits 30 min of continuous link loss, and a WiFi outage does not count.
+void test_ha_link_lost_patience() {
+    RuleEngine e;
+    NotificationQueue q;
+    Inputs in = good_inputs();
+    e.configure(default_rules());
+    uint32_t now = run(e, q, in, 0U, 5U);
+    CHECK_ENUM(e.state(3U), RuleState::Watching);
+    // Link lost: nothing for 30 min (first seen at t+1 s, as ALR-03), raised once 1800 s have elapsed.
+    in.ha_link_up = false;
+    now = run(e, q, in, now, 1800U);
+    CHECK_ENUM(e.state(3U), RuleState::Confirming);
+    CHECK(q.find("regle_3") == nullptr);
+    now = run(e, q, in, now, 1U);
+    CHECK_ENUM(e.state(3U), RuleState::Raised);
+    const Entry* a = q.find("regle_3");
+    CHECK((a != nullptr) && (std::strcmp(a->text, "HOME ASSISTANT HS") == 0) && a->held);
+    // Back: it falls by itself (no acknowledgement, EX-46).
+    in.ha_link_up = true;
+    now = run(e, q, in, now, 1U);
+    CHECK_ENUM(e.state(3U), RuleState::Watching);
+    CHECK(q.find("regle_3") == nullptr);
+    // A reconnection inside the window starts the count again.
+    in.ha_link_up = false;
+    now = run(e, q, in, now, 1500U);
+    in.ha_link_up = true;
+    now = run(e, q, in, now, 1U);
+    in.ha_link_up = false;
+    now = run(e, q, in, now, 1500U);
+    CHECK_ENUM(e.state(3U), RuleState::Confirming);
+    // The WiFi itself goes: the rule has no opinion, and the count restarts when it is back.
+    in.network_up = false;
+    now = run(e, q, in, now, 3600U);
+    CHECK_ENUM(e.state(3U), RuleState::Unavailable);
+    CHECK(q.find("regle_3") == nullptr);
+    in.network_up = true;
+    now = run(e, q, in, now, 1800U);
+    CHECK_ENUM(e.state(3U), RuleState::Confirming);
+    now = run(e, q, in, now, 1U);
+    CHECK_ENUM(e.state(3U), RuleState::Raised);
     (void)now;
 }
 
@@ -889,6 +938,7 @@ void run_alert_engine_tests() {
     test_confirmation();
     test_unavailable();
     test_internal_sources();
+    test_ha_link_lost_patience();
     test_passes_and_withdrawal();
     test_validation();
     test_template();

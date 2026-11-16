@@ -113,7 +113,7 @@ plus `Indisponible` quand la source est invalide. Depuis `Indisponible`, le reto
 | `GEL` | `Valeur` extérieur | `< 0,0` °C, hystérésis 0,5, confirmation 300 s | 1 | `GEL {v}{u}` |
 | `CANICULE` | `Valeur` extérieur | `> 30,0` °C, hystérésis 1,0, confirmation 600 s | 1 | `{v}{u}` |
 | `HEURE` | `HeureNonSure` | `vrai`, confirmation 120 s | 2 | `HEURE NON SURE` — **active** |
-| `DOMOTIQUE` | `LiaisonHaPerdue` | `vrai`, confirmation 300 s | 1 | `HOME ASSISTANT HS` — **active** |
+| `DOMOTIQUE` | `LiaisonHaPerdue` | `vrai`, confirmation **1800 s** (30 min, 2026-11-16 : Nicolas voyait le message sur de simples redémarrages ; la source est **indisponible** tant que le WiFi lui-même est coupé, c'est `ReseauPerdu` / `BailAbsent` qui parlent alors, et le compte repart de zéro au retour du réseau) | 1 | `HOME ASSISTANT HS` — **active** |
 | `JETON` | `JetonRefuse` | `vrai` | 2 | `JETON A REFAIRE` — **active** |
 | `DHCP` | `BailAbsent` | `vrai`, confirmation 1800 s | 2 | `PAS D ADRESSE IP` — **active** |
 | `COURANT` | `EcretageCourant` | `vrai`, confirmation 60 s | 0 | `BUDGET COURANT SERRE` — **active** |
@@ -236,7 +236,8 @@ Tests host du composant pur `alerts` :
 | ALR-02 | Hystérésis : lève à `< 0`, ne retombe qu'à `≥ 0,5` ; oscillation dans la bande ⇒ **un seul** déclenchement. |
 | ALR-03 | Confirmation : condition tenue 299 s ⇒ rien ; 300 s ⇒ levée ; une coupure d'un pas remet le compteur à zéro. |
 | ALR-04 | Source invalide ⇒ `Indisponible`, **aucune** levée ; retour à la validité ⇒ compteur de confirmation remis à zéro. |
-| ALR-05 | Règles internes : `HeureNonSure`, `LiaisonHaPerdue`, `JetonRefuse`, `BailAbsent`, `DonneePerimee`, `CapteurLumDefaut`, `EcretageCourant`. |
+| ALR-05 | Règles internes : `HeureNonSure`, `LiaisonHaPerdue` (indisponible réseau coupé), `JetonRefuse`, `BailAbsent`, `DonneePerimee`, `CapteurLumDefaut`, `EcretageCourant`. |
+| ALR-19 | `HOME ASSISTANT HS` : 30 min de liaison perdue continue avant la levée, retombe seule, une reconnexion remet le compte à zéro, coupure WiFi ⇒ indisponible puis compte repris de zéro. |
 | ALR-06 | Passages : joué `duree_s` à l'arrivée, rejoué toutes les `rappel_s` **tant que** la règle est `Levee` ; icône maintenue entre deux passages. |
 | ALR-07 | Retombée d'une règle ⇒ sa notification tenue est retirée **d'elle-même** ; aucune API, aucun champ ne permet de la retirer autrement. |
 | ALR-08 | Validation : seuil dans la virgule fixe de la source, index hors bornes, gabarit trop long, priorité hors bornes ⇒ refus et repli. |

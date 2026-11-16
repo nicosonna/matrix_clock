@@ -39,7 +39,7 @@ inline constexpr uint8_t kIconCount = 8U;            ///< Mirrors display::Icon:
 enum class Source : uint8_t {
     Value = 0U,             ///< One of the 8 Home Assistant values (index).
     TimeUnsure,             ///< SNTP never synchronised, or stale.
-    HaLinkLost,             ///< WebSocket link down (only meaningful when the link is enabled).
+    HaLinkLost,             ///< WebSocket link down (only meaningful when the link is enabled and the network is up).
     TokenRejected,          ///< auth_invalid: the token must be redone.
     NetworkLost,            ///< No IP.
     LeaseMissing,           ///< Associated without a DHCP lease.

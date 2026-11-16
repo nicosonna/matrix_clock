@@ -219,6 +219,10 @@ Rule default_rule() noexcept {
     return r;
 }
 
+/// A Home Assistant restart or a WiFi hiccup takes minutes; the clock retries every minute at most
+/// (homeassistant::kBackoffMaxMs), so HOME ASSISTANT HS waits half an hour of continuous loss.
+constexpr uint16_t kHaLinkLostConfirmationS = 1800U;
+
 RuleList default_rules() noexcept {
     RuleList l{};
     for (Rule& r : l) {
@@ -227,7 +231,8 @@ RuleList default_rules() noexcept {
     l[0] = make("GEL", Source::Value, Comparison::Less, kFrostDeci, kFrostHysteresisDeci, 1U, 300U, 1U, "GEL {v}{u}", false);
     l[1] = make("CANICULE", Source::Value, Comparison::Greater, kHeatDeci, kHeatHysteresisDeci, 1U, 600U, 1U, "{v}{u}", false);
     l[2] = make("HEURE", Source::TimeUnsure, Comparison::True, 0, 0, 0U, 120U, 2U, "HEURE NON SURE", true);
-    l[3] = make("DOMOTIQUE", Source::HaLinkLost, Comparison::True, 0, 0, 0U, 300U, 1U, "HOME ASSISTANT HS", true);
+    l[3] = make("DOMOTIQUE", Source::HaLinkLost, Comparison::True, 0, 0, 0U, kHaLinkLostConfirmationS, 1U,
+                "HOME ASSISTANT HS", true);
     l[4] = make("JETON", Source::TokenRejected, Comparison::True, 0, 0, 0U, 0U, 2U, "JETON A REFAIRE", true);
     l[5] = make("DHCP", Source::LeaseMissing, Comparison::True, 0, 0, 0U, 1800U, 2U, "PAS D ADRESSE IP", true);
     l[6] = make("COURANT", Source::CurrentLimited, Comparison::True, 0, 0, 0U, 60U, 0U, "BUDGET COURANT SERRE", true);
@@ -331,7 +336,9 @@ Sample sample(Source s, uint8_t index, const Inputs& in) noexcept {
         case Source::TimeUnsure:
             return boolean(true, !in.time_sure);
         case Source::HaLinkLost:
-            return boolean(in.ha_enabled, !in.ha_link_up);
+            // No opinion while the network itself is down: NetworkLost / LeaseMissing say so, and the
+            // confirmation starts again from zero once the WiFi is back.
+            return boolean(in.ha_enabled && in.network_up, !in.ha_link_up);
         case Source::TokenRejected:
             return boolean(in.ha_enabled, in.token_rejected);
         case Source::NetworkLost:

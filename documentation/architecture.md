@@ -140,6 +140,8 @@ pas (EX-34).
 | `BailAbsent` ne mène pas au portail | S'associer **prouve** que les identifiants sont bons : le portail ne servirait à rien | Compter un échec DHCP comme un échec de réseau |
 | Composant `network` **repris**, pas réécrit | Déjà pur, déjà testé, comportement déjà éprouvé sur la borne | Réécriture |
 | Lecteur JSON **dans** `homeassistant` | ESP-IDF a déjà un composant `json` (cJSON) qu'un homonyme projet remplacerait silencieusement — même piège que `hal` | Composant `json` séparé |
+| **Un jeu de tampons partagé** dans le serveur web (`Scratch`), un seul tampon de blob dans le magasin | `esp_http_server` sert **un** handler à la fois sur sa seule tâche ; une copie statique par handler coûtait 28 Ko de `.bss`, et le tas tombait à 5,5 Ko (2026-11-16) | Une copie par handler (« pas sur la pile ») ; des copies sur la pile de 8 Ko du serveur |
+| **Pas d'IPv6**, 6 tampons WiFi RX statiques, 10 sockets | 256 Ko de DRAM sans PSRAM : 46 Ko de statique rendus, tas minimum 63 Ko au lieu de 5,5 | Défauts ESP-IDF (IPv6, 10 tampons RX, 32 dynamiques) |
 | MQTT **pour publier seulement** (capteurs locaux, découverte), WebSocket pour lire | Comme la borne ; le composant pur existe déjà dans ThermoSync ; l'horloge devient un appareil dans Home Assistant | Lire aussi par MQTT (`mqtt_statestream`) ; ne rien publier (décision du matin, révisée à la demande de Nicolas) |
 
 ---
@@ -158,6 +160,7 @@ pas (EX-34).
 | D8 | **Pas de résolution mDNS** | L'hôte Home Assistant doit être donné en **IP**, pas en `.local` | Comme ThermoSync ; todo |
 | D9 | Pas de bouton physique **décidé** | Aucun portail forcé hors page web (il ne servirait pas à acquitter : EX-46) | Q1 du cadrage |
 | D10 | **Auto-échauffement** du module ENS160 + AHT21 par la dalle | Température trop haute, humidité trop basse, et l'erreur se propage à l'AQI par la compensation | Déporter le capteur (Q10), décalage mesuré par le wizard, visible sur la page |
+| D12 | **Budget mémoire serré** : 106 Ko de DRAM statique, tas minimum 63 Ko (2026-11-17) | Tout nouveau tampon statique ou toute pile de tâche se paie sur ce tas ; sous ~40 Ko la liaison WebSocket ne se reconnecte plus et lwIP refuse les connexions | Mesurer `tas_min` (`/api/info`, HW-SYS-04) à chaque ajout ; partager, jamais dupliquer |
 | D11 | Table des registres ENS160 / AHT21 **non vérifiée** sur le module | Risque de décodage faux | Lire `PART_ID` et confronter la fiche technique en première tâche du composant `air_quality` |
 
 ---

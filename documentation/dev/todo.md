@@ -41,6 +41,17 @@
       niveau 186+). Pansement en place : `budget_ma` = 800 dans les réglages.
       À faire : alimentation 5 V / 5 A au plus près de la dalle, injection aux
       deux extrémités, câble court (fiche carte §3), puis remonter le budget.
+- [ ] **Mémoire : garder l'œil** (2026-11-17) : après le régime (tas minimum
+      63 Ko), relever `tas_min` sur `/api/info` après une journée (HW-SYS-04) ;
+      si on retouche les tampons WiFi, re-mesurer la durée d'une OTA (10,5 s).
+- [ ] **HW-WEB-03 à compléter** (2026-11-17) : échéance de confirmation OTA
+      (10 min sans réseau ⇒ redémarrage ⇒ rollback) jamais jouée sur matériel.
+- [ ] **HW-HA-05** (2026-11-16) : API vérifiée sur le vrai Home Assistant (12
+      entités pour `temp`) ; page `/ha`, clic sur un résultat et règle par nom à
+      essayer par Nicolas.
+- [ ] **LDR de l'horloge installée** (2026-11-16) : câblage (b) et auto-éclairage
+      de −1559 comptes — vérifier le sens en couvrant la LDR, jouer le wizard
+      luminosité une nuit, abriter la LDR de la dalle (fiche carte §5).
 - [ ] **HW-LUM-01 à rejouer** après la correction des butées (2026-11-16) :
       relever `brut` / `niveau` / `defaut` sur `/api/etat` en plein jour, le
       soir sous la lampe et la nuit noire — attendu plafond / intermédiaire /

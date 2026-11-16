@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "alerts/notification.hpp"
+#include "homeassistant/ws_client.hpp"
 #include "settings/model.hpp"
 
 namespace clock_web {
@@ -35,6 +36,9 @@ enum class WebStatus : uint8_t {
 using NotificationHandler = bool (*)(const alerts::Notification&);
 
 /// What the application lends to the server (all optional but the first).
+/// Answer of the entity search (HA-16), as the link keeps it.
+using HaSearch = homeassistant::SearchSnapshot;
+
 struct Hooks {
     NotificationHandler on_notification;
     /// Writes the dashboard JSON (`/api/etat`); returns 0 if the buffer is too small.
@@ -51,6 +55,10 @@ struct Hooks {
     void (*mqtt_discovery)();
     /// "Essayer" on /couleurs: show these colours for a few seconds without saving them.
     void (*colors_try)(const settings::ColorSettings& colors);
+    /// Entity search on /ha: ask Home Assistant (false: link down or query refused).
+    bool (*ha_search)(const char* query);
+    /// Current answer of the entity search.
+    void (*ha_search_get)(HaSearch& out);
 };
 
 /// Snapshot of the network state for the display and `/api/info`.

@@ -366,11 +366,12 @@ void test_reassembler() {
     // Single frame.
     CHECK(r.feed("{}", 2U, 0U, 2U));
     // Too long: dropped, continuation ignored, counted once.
-    static char big[3000];
+    static char big[kMessageMax + 1024U];
     std::memset(big, 'x', sizeof(big));
-    CHECK(!r.feed(big, 1000U, 0U, 3000U));
-    CHECK(!r.feed(big, 1000U, 1000U, 3000U));
-    CHECK(!r.feed(big, 1000U, 2000U, 3000U));
+    const std::size_t over = kMessageMax + 1000U;  // longer than the buffer, in three fragments
+    CHECK(!r.feed(big, 1000U, 0U, over));
+    CHECK(!r.feed(big, 1000U, 1000U, over));
+    CHECK(!r.feed(big, over - 2000U, 2000U, over));
     CHECK_EQ(r.dropped(), 2U);
     // Out of order.
     CHECK(!r.feed("ab", 2U, 0U, 6U));
@@ -656,6 +657,79 @@ void test_client() {
 
 // ------------------------------------------------------------------ HA-14 (weather)
 
+// HA-16: entity search through render_template over `states`.
+void test_search() {
+    static char out[4096];
+    WsConfig cfg = enabled_config();
+    WsClient c(cfg, two_values());
+    uint32_t now = 1000U;
+    CHECK(!c.request_search("temp"));  // link down: refused, nothing kept
+    CHECK_ENUM(c.search_state(), SearchState::Idle);
+    bring_up(c, now, out, sizeof(out));
+    // Refused queries never reach the template (Jinja string literal).
+    CHECK(!c.request_search("a'b"));
+    CHECK(!c.request_search("x\"y"));
+    CHECK(!c.request_search("{{ states }}"));
+    CHECK(!c.request_search("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));  // 33 characters
+    CHECK(!c.request_search(nullptr));
+    CHECK_ENUM(c.search_state(), SearchState::Idle);
+    CHECK_EQ(c.next_outgoing(out, sizeof(out)), 0U);
+    // Accepted: lower-cased, sent as a render_template with tab / newline separators and the 20 cap.
+    CHECK(c.request_search("Temp Ext"));
+    CHECK_ENUM(c.search_state(), SearchState::Pending);
+    CHECK(std::strcmp(c.search_query(), "temp ext") == 0);
+    std::size_t n = c.next_outgoing(out, sizeof(out));
+    CHECK(n > 0U);
+    CHECK(n < kOutgoingMax);
+    CHECK(std::strstr(out, "{\"id\":4,\"type\":\"render_template\",\"template\":\"{% set q = 'temp ext' %}") != nullptr);
+    CHECK(std::strstr(out, "ns.n < 12") != nullptr);
+    CHECK(std::strstr(out, "{{ s.entity_id }}\\t{{ s.name[:20] }}\\t{{ s.state[:12] }}\\t{{ s.attributes.unit_of_measurement | default('', true) }}\\n") != nullptr);
+    CHECK(std::strstr(out, "\"report_errors\":true}") != nullptr);
+    CHECK(std::strstr(out, "\"") != nullptr);
+    CHECK_EQ(c.next_outgoing(out, sizeof(out)), 0U);  // sent once
+    feed(c, "{\"id\":4,\"type\":\"result\",\"success\":true,\"result\":null}", now);
+    CHECK_ENUM(c.search_state(), SearchState::Pending);
+    const uint32_t ignored = c.stats().messages_ignored;
+    feed(c, "{\"id\":4,\"type\":\"event\",\"event\":{\"result\":\"sensor.temp_ext\\tTemp\\u00e9rature ext\\t12.5\\t\\u00b0C\\nsensor.hum\\tHumidit\\u00e9\\t55\\t%\\n\",\"listeners\":{\"all\":true}}}", now);
+    CHECK_ENUM(c.search_state(), SearchState::Ready);
+    CHECK(std::strstr(c.search_result(), "sensor.temp_ext\tTemp") != nullptr);
+    CHECK(std::strstr(c.search_result(), "\t12.5\t") != nullptr);
+    CHECK(std::strstr(c.search_result(), "\nsensor.hum\tHumidit") != nullptr);
+    CHECK_EQ(c.stats().messages_ignored, ignored);
+    CHECK_EQ(c.stats().events, 0U);  // not a tracked value
+    // One answer is enough: the subscription is dropped, later events on it are ignored.
+    n = c.next_outgoing(out, sizeof(out));
+    CHECK(n > 0U);
+    CHECK(std::strstr(out, "{\"id\":5,\"type\":\"unsubscribe_events\",\"subscription\":4}") != nullptr);
+    feed(c, "{\"id\":5,\"type\":\"result\",\"success\":true,\"result\":null}", now);
+    CHECK_EQ(c.stats().messages_ignored, ignored);
+    feed(c, "{\"id\":4,\"type\":\"event\",\"event\":{\"result\":\"late\"}}", now);
+    CHECK_EQ(c.stats().messages_ignored, ignored + 1U);
+    CHECK(std::strstr(c.search_result(), "sensor.temp_ext") != nullptr);  // the answer stays
+    // Empty query = the first entities; a refused template is an error with Home Assistant's message.
+    CHECK(c.request_search(""));
+    n = c.next_outgoing(out, sizeof(out));
+    CHECK(std::strstr(out, "{\"id\":6,") != nullptr);
+    CHECK(std::strstr(out, "{% set q = '' %}") != nullptr);
+    feed(c, "{\"id\":6,\"type\":\"result\",\"success\":false,\"error\":{\"code\":\"template_error\",\"message\":\"TemplateSyntaxError: boom\"}}", now);
+    CHECK_ENUM(c.search_state(), SearchState::Error);
+    CHECK(std::strcmp(c.search_error(), "TemplateSyntaxError: boom") == 0);
+    CHECK_EQ(c.next_outgoing(out, sizeof(out)), 0U);  // nothing to unsubscribe
+    // A template error reported as an event, then a search lost with the link.
+    CHECK(c.request_search("porte"));
+    (void)c.next_outgoing(out, sizeof(out));
+    feed(c, "{\"id\":7,\"type\":\"event\",\"event\":{\"error\":\"UndefinedError: x\",\"level\":\"ERROR\"}}", now);
+    CHECK_ENUM(c.search_state(), SearchState::Error);
+    CHECK(std::strcmp(c.search_error(), "UndefinedError: x") == 0);
+    (void)c.next_outgoing(out, sizeof(out));  // the unsubscribe
+    CHECK(c.request_search("porte"));
+    (void)c.next_outgoing(out, sizeof(out));
+    c.on_disconnected(now);
+    CHECK_ENUM(c.search_state(), SearchState::Error);
+    CHECK(std::strstr(c.search_error(), "liaison perdue") != nullptr);
+    CHECK_EQ(g_alloc_count, 0U);
+}
+
 void test_weather() {
     WeatherConfig w = default_weather_config();
     CHECK(!w.enabled);
@@ -708,5 +782,6 @@ void run_homeassistant_tests() {
     test_values();
     test_reassembler();
     test_client();
+    test_search();
     test_weather();
 }

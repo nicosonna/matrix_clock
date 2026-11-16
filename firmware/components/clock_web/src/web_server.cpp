@@ -30,6 +30,7 @@
 #include "network/credentials.hpp"
 #include "settings/forms.hpp"
 #include "settings/json.hpp"
+#include "settings/json_writer.hpp"
 
 // Embedded pages (EMBED_TXTFILES adds a trailing NUL).
 extern const char kWifiStart[] asm("_binary_wifi_html_start");
@@ -54,6 +55,23 @@ constexpr uint32_t kRebootDelayMs = 500U;
 httpd_handle_t s_server = nullptr;
 /// One JSON buffer for every GET handler: the HTTP server runs its handlers one at a time.
 char s_json[settings::kJsonMax];
+
+// esp_http_server runs every handler on its single task, one request at a time: the large working
+// copies below are shared by all handlers instead of one static set per handler (about 28 KB of
+// .bss on 2026-11-16, when the heap bottomed at 5.5 KB with the Home Assistant link up).
+constexpr size_t kTextScratch = kOtaChunk;  ///< Request bodies, scan JSON, task list, OTA chunks.
+static_assert(kTextScratch >= kScanJsonMax, "scan JSON must fit the shared text scratch");
+static_assert(kTextScratch >= kSettingsFormMax + 1U, "settings forms must fit the shared text scratch");
+static_assert(kTextScratch >= kNotificationFormMax + 1U, "notification forms must fit the shared text scratch");
+struct Scratch {
+    char text[kTextScratch];
+    settings::HaSettings ha_current;
+    settings::HaSettings ha_next;
+    settings::AlertSettings alerts_current;
+    settings::AlertSettings alerts_next;
+    clock_web::HaSearch search;
+};
+Scratch s_scratch{};
 Hooks s_hooks{};
 
 size_t embedded_size(const char* start, const char* end) {
@@ -146,8 +164,8 @@ esp_err_t handle_wifi_model(httpd_req_t* req) {
 }
 
 esp_err_t handle_scan(httpd_req_t* req) {
-    static char body[kScanJsonMax];
-    return send_json(req, body, detail::scan_json(body, sizeof(body)));
+    char* const body = s_scratch.text;
+    return send_json(req, body, detail::scan_json(body, kScanJsonMax));
 }
 
 esp_err_t handle_wifi_save(httpd_req_t* req) {
@@ -208,7 +226,7 @@ esp_err_t handle_display_get(httpd_req_t* req) {
 }
 
 esp_err_t handle_display_post(httpd_req_t* req) {
-    static char body[kSettingsFormMax + 1U];
+    char* const body = s_scratch.text;
     size_t got = 0U;
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
@@ -253,7 +271,7 @@ esp_err_t handle_brightness_get(httpd_req_t* req) {
 }
 
 esp_err_t handle_brightness_post(httpd_req_t* req) {
-    static char body[kSettingsFormMax + 1U];
+    char* const body = s_scratch.text;
     size_t got = 0U;
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
@@ -359,7 +377,7 @@ esp_err_t handle_air_get(httpd_req_t* req) {
 }
 
 esp_err_t handle_air_post(httpd_req_t* req) {
-    static char body[kSettingsFormMax + 1U];
+    char* const body = s_scratch.text;
     size_t got = 0U;
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
@@ -416,19 +434,89 @@ esp_err_t handle_ha_model(httpd_req_t* req) {
 
 esp_err_t handle_ha_get(httpd_req_t* req) {
     char* const body = s_json;
-    static settings::HaSettings ha;
+    settings::HaSettings& ha = s_scratch.ha_current;
     clock_settings::ha(ha);
     return send_json(req, body, settings::ha_json(ha, body, settings::kJsonMax));
 }
 
+const char* search_state_name(homeassistant::SearchState s) {
+    switch (s) {
+        case homeassistant::SearchState::Pending: return "en_cours";
+        case homeassistant::SearchState::Ready: return "pret";
+        case homeassistant::SearchState::Error: return "erreur";
+        case homeassistant::SearchState::Idle:
+        default: return "aucune";
+    }
+}
+
+esp_err_t handle_ha_search_post(httpd_req_t* req) {
+    char body[kFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kFormMax, got)) {
+        return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+    }
+    char q[homeassistant::kSearchQueryMax + 1U];
+    std::size_t qn = 0U;
+    if (!network::form_field(body, got, "q", q, sizeof(q), qn)) {
+        return send_text(req, "400 Bad Request", "{\"ok\":false,\"champ\":\"q\",\"raison\":\"32 caractères au plus\"}");
+    }
+    if (s_hooks.ha_search == nullptr) {
+        return send_text(req, "503 Service Unavailable", "Liaison Home Assistant non démarrée.");
+    }
+    if (!s_hooks.ha_search(q)) {
+        return send_text(req, "409 Conflict",
+                         "{\"ok\":false,\"champ\":\"q\",\"raison\":\"liaison Home Assistant hors ligne, ou caractère refusé (lettres, chiffres, espace, _ . - seulement)\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
+esp_err_t handle_ha_search_get(httpd_req_t* req) {
+    if (s_hooks.ha_search_get == nullptr) {
+        return send_text(req, "503 Service Unavailable", "Liaison Home Assistant non démarrée.");
+    }
+    clock_web::HaSearch& search = s_scratch.search;
+    s_hooks.ha_search_get(search);
+    settings::JsonWriter w(s_json, settings::kJsonMax);
+    bool ok = w.begin_object() && w.field("etat", search_state_name(search.state)) && w.field("q", search.query) &&
+              w.field("erreur", search.error) && w.key("entites") && w.begin_array();
+    // Lines "id<TAB>name<TAB>state<TAB>unit<LF>" -> objects; a truncated last line is dropped.
+    const char* const keys[] = {"id", "nom", "etat", "unite"};
+    const char* p = search.result;
+    while (ok && (*p != '\0')) {
+        const char* eol = std::strchr(p, '\n');
+        if (eol == nullptr) {
+            break;
+        }
+        ok = ok && w.begin_object();
+        const char* f = p;
+        for (std::size_t k = 0U; ok && (k < 4U); ++k) {
+            const char* end = f;
+            while ((end < eol) && (*end != '\t')) {
+                ++end;
+            }
+            char value[80];
+            const std::size_t n = static_cast<std::size_t>(end - f);
+            const std::size_t m = (n < (sizeof(value) - 1U)) ? n : (sizeof(value) - 1U);
+            std::memcpy(value, f, m);
+            value[m] = '\0';
+            ok = ok && w.field(keys[k], value);
+            f = (end < eol) ? end + 1 : eol;
+        }
+        ok = ok && w.end_object();
+        p = eol + 1;
+    }
+    ok = ok && w.end_array() && w.end_object();
+    return send_json(req, s_json, ok ? w.length() : 0U);
+}
+
 esp_err_t handle_ha_post(httpd_req_t* req) {
-    static char body[kSettingsFormMax + 1U];
+    char* const body = s_scratch.text;
     size_t got = 0U;
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    static settings::HaSettings current;
-    static settings::HaSettings next;
+    settings::HaSettings& current = s_scratch.ha_current;
+    settings::HaSettings& next = s_scratch.ha_next;
     clock_settings::ha(current);
     next = current;
     settings::FormError err{};
@@ -448,13 +536,13 @@ esp_err_t handle_ha_value_post(httpd_req_t* req) {
         return send_text(req, "404 Not Found", "Valeur 0 Ã  7 attendue.");
     }
     const std::size_t index = static_cast<std::size_t>(tail[1] - '0');
-    static char body[kSettingsFormMax + 1U];
+    char* const body = s_scratch.text;
     size_t got = 0U;
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    static settings::HaSettings current;
-    static settings::HaSettings next;
+    settings::HaSettings& current = s_scratch.ha_current;
+    settings::HaSettings& next = s_scratch.ha_next;
     clock_settings::ha(current);
     next = current;
     settings::FormError err{};
@@ -555,7 +643,7 @@ esp_err_t handle_alerts_model(httpd_req_t* req) {
 
 esp_err_t handle_alerts_get(httpd_req_t* req) {
     char* const body = s_json;
-    static settings::AlertSettings al;
+    settings::AlertSettings& al = s_scratch.alerts_current;
     clock_settings::alerts(al);
     return send_json(req, body, settings::alert_json(al, body, settings::kJsonMax));
 }
@@ -566,8 +654,8 @@ esp_err_t handle_alerts_post(httpd_req_t* req) {
     if (!read_body(req, body, kFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    static settings::AlertSettings current;
-    static settings::AlertSettings next;
+    settings::AlertSettings& current = s_scratch.alerts_current;
+    settings::AlertSettings& next = s_scratch.alerts_next;
     clock_settings::alerts(current);
     next = current;
     settings::FormError err{};
@@ -597,14 +685,14 @@ esp_err_t handle_alert_rule_post(httpd_req_t* req) {
     if (index >= alerts::kRulesMax) {
         return send_text(req, "404 Not Found", "Règle 0 à 15 attendue.");
     }
-    static char body[kSettingsFormMax + 1U];
+    char* const body = s_scratch.text;
     size_t got = 0U;
     if (!read_body(req, body, kSettingsFormMax, got)) {
         return send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
     }
-    static settings::AlertSettings current;
-    static settings::AlertSettings next;
-    static settings::HaSettings ha;
+    settings::AlertSettings& current = s_scratch.alerts_current;
+    settings::AlertSettings& next = s_scratch.alerts_next;
+    settings::HaSettings& ha = s_scratch.ha_current;
     clock_settings::alerts(current);
     clock_settings::ha(ha);
     uint8_t decimals[homeassistant::kValuesMax];
@@ -677,7 +765,7 @@ esp_err_t handle_ota(httpd_req_t* req) {
     if (err != ESP_OK) {
         return send_text(req, "500 Internal Server Error", esp_err_to_name(err));
     }
-    static char chunk[kOtaChunk];
+    char* const chunk = s_scratch.text;  // kOtaChunk bytes
     size_t received = 0U;
     uint8_t last_percent = 255U;
     if (s_hooks.ota_progress != nullptr) {
@@ -731,7 +819,7 @@ esp_err_t handle_ota(httpd_req_t* req) {
 // ----------------------------------------------------------- notifications
 
 esp_err_t handle_notification(httpd_req_t* req) {
-    static char body[kNotificationFormMax + 1U];
+    char* const body = s_scratch.text;
     size_t got = 0U;
     if (!read_body(req, body, kNotificationFormMax, got)) {
         return send_text(req, "400 Bad Request", "Corps vide, incomplet ou trop long.");
@@ -800,14 +888,16 @@ esp_err_t handle_info(httpd_req_t* req) {
 
 /// GET /api/systeme/taches: FreeRTOS run-time statistics (CPU share per task) and task list, as text.
 esp_err_t handle_tasks(httpd_req_t* req) {
-    static char text[2048];
+    constexpr std::size_t kTasksTextMax = 2048U;
+    static_assert(kTextScratch >= kTasksTextMax, "task list must fit the shared text scratch");
+    char* const text = s_scratch.text;
     text[0] = '\0';
-    const std::size_t half = sizeof(text) / 2U;
+    const std::size_t half = kTasksTextMax / 2U;
     (void)std::snprintf(text, half, "Tache            Temps(us)    %%\n");
     vTaskGetRunTimeStats(text + std::strlen(text));
     const std::size_t used = std::strlen(text);
-    if (used + 64U < sizeof(text)) {
-        (void)std::snprintf(text + used, sizeof(text) - used, "\nTache            Etat Prio Pile Num\n");
+    if (used + 64U < kTasksTextMax) {
+        (void)std::snprintf(text + used, kTasksTextMax - used, "\nTache            Etat Prio Pile Num\n");
         vTaskList(text + std::strlen(text));
     }
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
@@ -835,15 +925,6 @@ bool init_nvs() {
 }
 
 bool start_http() {
-    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 59;
-    cfg.max_open_sockets = kHttpClientsMax;
-    cfg.lru_purge_enable = true;
-    cfg.stack_size = 8192;
-    cfg.uri_match_fn = httpd_uri_match_wildcard;  // settings JSON and OTA chunks are static, but the handlers use some stack
-    if (httpd_start(&s_server, &cfg) != ESP_OK) {
-        return false;
-    }
     static const httpd_uri_t kRoutes[] = {
         {"/", HTTP_GET, handle_app_page, nullptr},
         {"/affichage", HTTP_GET, handle_app_page, nullptr},
@@ -878,6 +959,8 @@ bool start_http() {
         {"/api/ha", HTTP_GET, handle_ha_get, nullptr},
         {"/api/ha", HTTP_POST, handle_ha_post, nullptr},
         {"/api/ha/valeur/*", HTTP_POST, handle_ha_value_post, nullptr},
+        {"/api/ha/recherche", HTTP_GET, handle_ha_search_get, nullptr},
+        {"/api/ha/recherche", HTTP_POST, handle_ha_search_post, nullptr},
         {"/api/mqtt/modele", HTTP_GET, handle_mqtt_model, nullptr},
         {"/api/mqtt", HTTP_GET, handle_mqtt_get, nullptr},
         {"/api/mqtt", HTTP_POST, handle_mqtt_post, nullptr},
@@ -907,8 +990,19 @@ bool start_http() {
         {"/connecttest.txt", HTTP_GET, redirect_to_portal, nullptr},
         {"/canonical.html", HTTP_GET, redirect_to_portal, nullptr},
     };
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    // The cap follows the table: a route past it is silently missing (62 routes once sat above a cap of 59).
+    cfg.max_uri_handlers = static_cast<uint16_t>(sizeof(kRoutes) / sizeof(kRoutes[0]));
+    cfg.max_open_sockets = kHttpClientsMax;
+    cfg.lru_purge_enable = true;
+    cfg.stack_size = 8192;
+    cfg.uri_match_fn = httpd_uri_match_wildcard;  // settings JSON and OTA chunks are static, but the handlers use some stack
+    if (httpd_start(&s_server, &cfg) != ESP_OK) {
+        return false;
+    }
     for (const httpd_uri_t& r : kRoutes) {
         if (httpd_register_uri_handler(s_server, &r) != ESP_OK) {
+            ESP_LOGE(kTag, "route %s not registered", r.uri);
             return false;
         }
     }

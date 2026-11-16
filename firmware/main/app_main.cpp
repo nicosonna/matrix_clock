@@ -70,6 +70,7 @@ constexpr uint8_t kInitialBrightness = 48U;     ///< Before the first sensor rea
 constexpr uint32_t kSensorPeriodMs = 1000U;     ///< The brightness controller is tuned for 1 Hz.
 constexpr uint32_t kColonHalfPeriodMs = 500U;   ///< Colon blink, 1 Hz.
 constexpr uint32_t kStatusPeriodMs = 5000U;     ///< Diagnostics log period.
+constexpr uint32_t kOtaConfirmDeadlineMs = 600000U;  ///< A pending OTA image without network by then restarts to roll back.
 constexpr uint32_t kPortalRepeatMs = 60000U;    ///< Portal info shown again every minute.
 constexpr uint32_t kTestPatternTimeoutMs = 120000U;  ///< A forgotten test pattern ends by itself.
 constexpr uint32_t kChaserStepMs = 40U;
@@ -96,6 +97,13 @@ constexpr display::Rgb kPriorityColor[4] = {
 
 uint32_t now_ms() noexcept {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
+
+bool ota_image_pending() noexcept {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+    return (running != nullptr) && (esp_ota_get_state_partition(running, &state) == ESP_OK) &&
+           (state == ESP_OTA_IMG_PENDING_VERIFY);
 }
 
 void confirm_ota_image() noexcept {
@@ -264,6 +272,14 @@ void on_colors_try(const settings::ColorSettings& colors) {
     ESP_LOGI(kTag, "colour trial for %lu ms", static_cast<unsigned long>(kColorTrialMs));
 }
 
+bool on_ha_search(const char* query) {
+    return clock_homeassistant::search(query);
+}
+
+void on_ha_search_get(clock_web::HaSearch& out) {
+    clock_homeassistant::search_snapshot(out);
+}
+
 void on_mqtt_discovery() {
     clock_homeassistant::mqtt_request_discovery();
 }
@@ -311,6 +327,8 @@ std::size_t status_json(char* out, std::size_t size) {
          w.field("humidite_pct10", static_cast<int64_t>(r.humidity_pct10)) &&
          w.field("compensation_par_defaut", r.compensation_default) &&
          w.field("chauffe", r.heater_on) && w.field("cycle", air_cfg.heater_cycle) &&
+         w.field("climat_plaque_froide", r.climate_cold) &&
+         w.field("climat_age_s", static_cast<int64_t>(r.climate_valid ? ((now_ms() - r.climate_ms) / 1000U) : 0U)) &&
          w.field("niveau", air_quality::level_name(air.level)) && w.field("etat", air.state) &&
          w.field("reinit_bus", static_cast<int64_t>(r.bus_resets)) &&
          w.field("statut_brut", static_cast<int64_t>(r.status_raw)) && w.field("opmode_brut", static_cast<int64_t>(r.opmode_raw)) &&
@@ -487,7 +505,10 @@ void display_task(void* /*arg*/) {
         }
     }
     (void)panel.clear();
-    confirm_ota_image();
+    // The OTA image is confirmed only once the network is up (see the display loop): an image that
+    // boots but never reaches the LAN restarts after kOtaConfirmDeadlineMs, and the bootloader rolls back.
+    bool ota_confirmed = !ota_image_pending();
+    const uint32_t boot_ms = now_ms();
 
     static clock_hal::LdrAdc ldr;
     if (ldr.init() != ESP_OK) {
@@ -976,6 +997,14 @@ void display_task(void* /*arg*/) {
         std::strncpy(s_shared.scene, scene_name, sizeof(s_shared.scene) - 1U);
         taskEXIT_CRITICAL(&s_mux);
 
+        if (!ota_confirmed && clock_web::info().connected) {
+            ota_confirmed = true;
+            confirm_ota_image();
+        } else if (!ota_confirmed && ((now - boot_ms) >= kOtaConfirmDeadlineMs)) {
+            ESP_LOGE(kTag, "OTA image never reached the network in %lu s: restarting to roll back",
+                     static_cast<unsigned long>(kOtaConfirmDeadlineMs / 1000U));
+            esp_restart();
+        }
         if ((now - last_status_log) >= kStatusPeriodMs) {
             last_status_log = now;
             ESP_LOGI(kTag, "%s: %lu mA (applied %lu), limited=%d | ldr %u -> level %u fault=%d | net %s | time %s %02u:%02u:%02u",
@@ -1012,6 +1041,8 @@ extern "C" void app_main(void) {
     hooks.ota_progress = on_ota_progress;
     hooks.air_raw_temperature = on_air_raw_temperature;
     hooks.colors_try = on_colors_try;
+    hooks.ha_search = on_ha_search;
+    hooks.ha_search_get = on_ha_search_get;
     hooks.mqtt_discovery = on_mqtt_discovery;
     const clock_web::WebStatus web = clock_web::start(hooks);
     switch (web) {

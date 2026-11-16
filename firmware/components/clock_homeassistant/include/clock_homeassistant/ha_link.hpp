@@ -57,4 +57,9 @@ esp_err_t start(NotificationHandler on_notification) noexcept;
 /// Copies the current state into @p out (safe from any task; ~3 KB, keep @p out static).
 void snapshot(LinkSnapshot& out) noexcept;
 
+/// Entity search for the page (HA-16): asks the client; false if the link is down or the query refused.
+bool search(const char* query) noexcept;
+/// Current search: state, query, raw lines and error (keep @p out static: ~1.5 KB).
+void search_snapshot(homeassistant::SearchSnapshot& out) noexcept;
+
 }  // namespace clock_homeassistant

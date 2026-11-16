@@ -95,7 +95,8 @@ WsClient::WsClient(const WsConfig& config, const ValueList& values) noexcept
       events_pending_(false), ping_pending_(false), awaiting_pong_(false), ping_sent_ms_(0U), last_ping_ms_(0U),
       retry_at_ms_(0U), backoff_ms_(kBackoffFirstMs), connect_request_(false), close_request_(false),
       link_down_since_ms_(0U), link_ever_up_(false), acked_subs_(0U), stats_{}, error_{}, notification_{},
-      notification_pending_(false) {
+      notification_pending_(false), search_state_(SearchState::Idle), search_send_pending_(false), search_id_(0U),
+      search_unsub_pending_(false), search_unsub_id_(0U), search_query_{}, search_result_{}, search_error_{} {
     if (!is_valid(values_)) {
         values_ = default_value_list();
     }
@@ -165,6 +166,47 @@ void WsClient::reset_link(uint32_t now_ms) noexcept {
     if (link_ever_up_ && (state_ == LinkState::Running)) {
         link_down_since_ms_ = now_ms;
     }
+    // A search in flight dies with the link; a finished one stays readable.
+    search_id_ = 0U;
+    search_unsub_id_ = 0U;
+    search_send_pending_ = false;
+    search_unsub_pending_ = false;
+    if (search_state_ == SearchState::Pending) {
+        search_state_ = SearchState::Error;
+        (void)std::snprintf(search_error_, sizeof(search_error_), "liaison perdue pendant la recherche");
+    }
+}
+
+bool WsClient::request_search(const char* query) noexcept {
+    if ((query == nullptr) || (state_ != LinkState::Running)) {
+        return false;
+    }
+    char clean[kSearchQueryMax + 1U];
+    std::size_t n = 0U;
+    for (const char* p = query; *p != '\0'; ++p) {
+        if (n >= kSearchQueryMax) {
+            return false;
+        }
+        char c = *p;
+        if ((c >= 'A') && (c <= 'Z')) {
+            c = static_cast<char>(c + ('a' - 'A'));
+        }
+        const bool ok = ((c >= 'a') && (c <= 'z')) || ((c >= '0') && (c <= '9')) || (c == ' ') || (c == '_') ||
+                        (c == '.') || (c == '-');
+        if (!ok) {
+            return false;  // it goes into a Jinja string literal: nothing else gets in
+        }
+        clean[n++] = c;
+    }
+    clean[n] = '\0';
+    std::memcpy(search_query_, clean, n + 1U);
+    search_result_[0] = '\0';
+    search_error_[0] = '\0';
+    search_state_ = SearchState::Pending;
+    search_send_pending_ = true;
+    search_id_ = 0U;
+    search_unsub_pending_ = false;
+    return true;
 }
 
 void WsClient::schedule_retry(uint32_t now_ms, bool token_rejected) noexcept {
@@ -287,6 +329,33 @@ std::size_t WsClient::next_outgoing(char* out, std::size_t size) noexcept {
         } else {
             return 0U;
         }
+    } else if (search_send_pending_ && (state_ == LinkState::Running)) {
+        search_send_pending_ = false;
+        search_id_ = next_id_;
+        // Jinja does the work on the Home Assistant side; tab and newline separate the fields and the lines.
+        char tmpl[kOutgoingMax];
+        const int t = std::snprintf(
+            tmpl, sizeof(tmpl),
+            "{%% set q = '%s' %%}{%% set ns = namespace(n=0) %%}{%% for s in states %%}"
+            "{%% if ns.n < %lu and (q == '' or q in (s.entity_id ~ ' ' ~ s.name) | lower) %%}{%% set ns.n = ns.n + 1 %%}"
+            "{{ s.entity_id }}\\t{{ s.name[:20] }}\\t{{ s.state[:12] }}\\t{{ s.attributes.unit_of_measurement | default('', true) }}\\n"
+            "{%% endif %%}{%% endfor %%}",
+            search_query_, static_cast<unsigned long>(kSearchResultsMax));
+        if ((t <= 0) || (static_cast<std::size_t>(t) >= sizeof(tmpl))) {
+            search_state_ = SearchState::Error;
+            (void)std::snprintf(search_error_, sizeof(search_error_), "requête trop longue");
+            return 0U;
+        }
+        n = std::snprintf(out, size, "{\"id\":%lu,\"type\":\"render_template\",\"template\":\"%s\",\"report_errors\":true}",
+                          static_cast<unsigned long>(next_id_), tmpl);
+        ++next_id_;
+    } else if (search_unsub_pending_ && (state_ == LinkState::Running)) {
+        search_unsub_pending_ = false;
+        search_unsub_id_ = next_id_;
+        n = std::snprintf(out, size, "{\"id\":%lu,\"type\":\"unsubscribe_events\",\"subscription\":%lu}",
+                          static_cast<unsigned long>(next_id_), static_cast<unsigned long>(search_id_));
+        ++next_id_;
+        search_id_ = 0U;
     } else if (ping_pending_ && (state_ == LinkState::Running)) {
         ping_pending_ = false;
         ping_id_ = next_id_;
@@ -329,6 +398,22 @@ void WsClient::handle_result(uint32_t id, const char* json, std::size_t len) noe
     if ((id == events_id_) && (events_id_ != 0U) && !ok) {
         (void)std::snprintf(error_, sizeof(error_), "event subscription refused");
     }
+    if ((search_id_ != 0U) && (id == search_id_)) {
+        if (!ok) {
+            const char* const msg_path[] = {"error", "message"};
+            JsonSpan msg{};
+            if (!json_find(json, len, msg_path, 2U, msg) || !json_string(msg, search_error_, sizeof(search_error_))) {
+                (void)std::snprintf(search_error_, sizeof(search_error_), "recherche refusée");
+            }
+            search_state_ = SearchState::Error;
+            search_id_ = 0U;
+        }
+        return;
+    }
+    if ((search_unsub_id_ != 0U) && (id == search_unsub_id_)) {
+        search_unsub_id_ = 0U;  // acknowledged either way
+        return;
+    }
     // All expected acknowledgements in: running.
     const std::size_t expected = enabled_count() + (config_.notifications ? 1U : 0U);
     std::size_t acked = acked_subs_;
@@ -370,6 +455,23 @@ void WsClient::handle_event(uint32_t id, const char* json, std::size_t len, uint
             ++stats_.events;
             return;
         }
+    }
+    if ((search_id_ != 0U) && (id == search_id_)) {
+        const char* const result_path[] = {"event", "result"};
+        JsonSpan result{};
+        if (json_find(json, len, result_path, 2U, result)) {
+            (void)json_string(result, search_result_, sizeof(search_result_));  // truncated if huge: still lines
+            search_state_ = SearchState::Ready;
+        } else {
+            const char* const err_path[] = {"event", "error"};
+            JsonSpan err{};
+            if (!json_find(json, len, err_path, 2U, err) || !json_string(err, search_error_, sizeof(search_error_))) {
+                (void)std::snprintf(search_error_, sizeof(search_error_), "réponse illisible");
+            }
+            search_state_ = SearchState::Error;
+        }
+        search_unsub_pending_ = true;  // one answer is enough: stop the subscription
+        return;
     }
     if ((events_id_ != 0U) && ((id == (events_id_ & 0x7FFFFFFFU)))) {
         if (decode_notification(json, len)) {

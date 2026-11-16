@@ -51,21 +51,27 @@ void unlock() {
     (void)xSemaphoreGive(s_mutex);
 }
 
-/// Reads a versioned blob; false if absent, wrong version or wrong size.
+/// One blob buffer for every type (the largest is HaSettings): the store's callers are serialised,
+/// boot on the main task, then saves on the web server's single task.
+constexpr std::size_t kBlobMax = sizeof(settings::HaSettings) + 1U;
+uint8_t s_blob[kBlobMax];
+
+/// Reads a versioned blob; false if absent, wrong version or wrong size (@p out untouched then).
 template <typename T>
 bool read_blob(nvs_handle_t h, const char* key, uint8_t version, T& out) {
-    static uint8_t buf[sizeof(T) + 1U];  // one per type; the store is serialised by its callers at boot
-    size_t size = sizeof(buf);
-    if (nvs_get_blob(h, key, buf, &size) != ESP_OK) {
+    static_assert(sizeof(T) + 1U <= kBlobMax, "blob larger than the shared buffer");
+    constexpr std::size_t kExpected = sizeof(T) + 1U;
+    size_t size = kExpected;
+    if (nvs_get_blob(h, key, s_blob, &size) != ESP_OK) {
         return false;
     }
-    if ((size != sizeof(buf)) || (buf[0] != version)) {
+    if ((size != kExpected) || (s_blob[0] != version)) {
         ESP_LOGW(kTag, "%s: stored version %u / size %u, expected %u / %u: defaults", key,
-                 static_cast<unsigned>(buf[0]), static_cast<unsigned>(size), static_cast<unsigned>(version),
-                 static_cast<unsigned>(sizeof(buf)));
+                 static_cast<unsigned>(s_blob[0]), static_cast<unsigned>(size), static_cast<unsigned>(version),
+                 static_cast<unsigned>(kExpected));
         return false;
     }
-    std::memcpy(&out, buf + 1, sizeof(T));
+    std::memcpy(&out, s_blob + 1, sizeof(T));
     return true;
 }
 
@@ -75,10 +81,10 @@ bool write_blob(const char* key, uint8_t version, const T& value) {
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) {
         return false;
     }
-    static uint8_t buf[sizeof(T) + 1U];
-    buf[0] = version;
-    std::memcpy(buf + 1, &value, sizeof(T));
-    const bool ok = (nvs_set_blob(h, key, buf, sizeof(buf)) == ESP_OK) && (nvs_commit(h) == ESP_OK);
+    static_assert(sizeof(T) + 1U <= kBlobMax, "blob larger than the shared buffer");
+    s_blob[0] = version;
+    std::memcpy(s_blob + 1, &value, sizeof(T));
+    const bool ok = (nvs_set_blob(h, key, s_blob, sizeof(T) + 1U) == ESP_OK) && (nvs_commit(h) == ESP_OK);
     nvs_close(h);
     if (!ok) {
         ESP_LOGE(kTag, "%s: NVS write failed", key);
@@ -95,7 +101,8 @@ esp_err_t init() noexcept {
             return ESP_ERR_NO_MEM;
         }
     }
-    static settings::Settings loaded;  // ~4 KB: never on the caller's stack
+    // Loaded straight into the live copy: nothing else runs before init() returns (saves a 5 KB temporary).
+    settings::Settings& loaded = s_current;
     settings::default_settings_into(loaded);
     bool replaced = false;
     nvs_handle_t h = 0;
@@ -137,14 +144,11 @@ esp_err_t init() noexcept {
                 replaced = true;
             }
         }
-        static settings::HaSettings ha{};  // large (token + 8 values): not on the stack
-        if (read_blob(h, kKeyHa, kHaVersion, ha)) {
-            if (settings::is_valid(ha)) {
-                loaded.ha = ha;
-            } else {
-                ESP_LOGW(kTag, "home assistant settings invalid: defaults");
-                replaced = true;
-            }
+        // Large (token + 8 values): read in place, defaults back on an invalid blob.
+        if (read_blob(h, kKeyHa, kHaVersion, loaded.ha) && !settings::is_valid(loaded.ha)) {
+            settings::default_ha_settings_into(loaded.ha);
+            ESP_LOGW(kTag, "home assistant settings invalid: defaults");
+            replaced = true;
         }
         homeassistant::MqttConfig m{};
         if (read_blob(h, kKeyMqtt, kMqttVersion, m)) {
@@ -164,14 +168,11 @@ esp_err_t init() noexcept {
                 replaced = true;
             }
         }
-        static settings::AlertSettings al{};  // 16 rules: not on the stack
-        if (read_blob(h, kKeyAlerts, kAlertsVersion, al)) {
-            if (settings::is_valid(al)) {
-                loaded.alerts = al;
-            } else {
-                ESP_LOGW(kTag, "alert settings invalid: defaults");
-                replaced = true;
-            }
+        // 16 rules: read in place too.
+        if (read_blob(h, kKeyAlerts, kAlertsVersion, loaded.alerts) && !settings::is_valid(loaded.alerts)) {
+            settings::default_alert_settings_into(loaded.alerts);
+            ESP_LOGW(kTag, "alert settings invalid: defaults");
+            replaced = true;
         }
         nvs_close(h);
     } else if (open != ESP_ERR_NVS_NOT_FOUND) {
@@ -180,7 +181,6 @@ esp_err_t init() noexcept {
         // First boot: nothing stored yet, defaults without a flag.
     }
     if (lock()) {
-        s_current = loaded;
         s_replaced = replaced;
         ++s_version;
         unlock();

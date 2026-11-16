@@ -62,6 +62,7 @@ allocation**, dans un tampon statique.
 | `POST` | `/api/ha/test` | Teste la liaison : `auth_ok`, `auth_invalid`, `injoignable`, avec la version de Home Assistant. *(Réalisé autrement : le wizard active la liaison et suit `/api/etat.ha.etat` — `running`, `token_rejected`, autre.)* |
 | `POST` | `/api/ha/valeur/<0..7>` | Écrit une valeur suivie (tout ou rien). |
 | `POST` | `/api/mqtt/decouverte` | Renvoie la découverte MQTT (bouton de `/mqtt`). |
+| `POST` / `GET` | `/api/ha/recherche` | Recherche d'entités par Home Assistant (`q=`), puis réponse (`etat`, `entites[]`) ; `spec-home-assistant.md` §3. |
 | `GET`/`POST` | `/api/couleurs` | Couleurs par rôle, `#rrggbb` par champ ; le modèle `/api/couleurs/modele` porte aussi les `palettes`. |
 | `POST` | `/api/couleurs/essai` | Même formulaire : les couleurs sont **affichées 10 s** sans être enregistrées, puis les couleurs enregistrées reviennent. |
 | `POST` | `/api/notification` | **Canal d'alerte entrant** (mêmes champs que l'événement Home Assistant, `spec-home-assistant.md` §4). |
@@ -70,6 +71,11 @@ allocation**, dans un tampon statique.
 | `POST` | `/api/systeme/redemarrer` | Redémarrage. |
 | `POST` | `/api/systeme/usine` | Effacement NVS + redémarrage. Demande une confirmation explicite (champ `confirme=OUI`). |
 | `POST` | `/api/ota` | Image envoyée en corps brut, écrite dans l'emplacement inactif. |
+
+> Le plafond `max_uri_handlers` du serveur est calculé sur la table des routes
+> (`sizeof(kRoutes)`), jamais un nombre à la main : avec 62 routes pour un
+> plafond de 59 (2026-11-16), les trois dernières (sondes de portail captif)
+> manquaient en silence et `start()` rendait `HttpError`.
 
 ### Validation : tout ou rien
 

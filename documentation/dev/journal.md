@@ -5,6 +5,191 @@
 
 ---
 
+## 2026-11-17 — Régime de DRAM : 46 Ko de statique rendus, tas minimum 5,5 → 63 Ko
+
+**Pourquoi.** Hier soir le tas tombait à **5,5 Ko** avec la liaison Home
+Assistant montée, le serveur HTTP mourait sur l'image précédente (connexions
+acceptées puis réinitialisées : lwIP n'avait plus de quoi créer la
+`netconn`), et une reconnexion WebSocket sur deux échouait. Nicolas a validé
+le régime.
+
+**Serveur web : un jeu de tampons partagé.** `esp_http_server` exécute les
+handlers **un à la fois sur sa seule tâche** : les copies statiques par
+handler (`HaSettings` × 7, `AlertSettings` × 7, corps de formulaire × 7,
+instantané de recherche, bloc OTA, liste des tâches) deviennent **une**
+structure `Scratch` (`text` 4 Ko partagé par les corps, le scan WiFi, les
+blocs OTA et `/api/systeme/taches` ; `ha_current` / `ha_next` ;
+`alerts_current` / `alerts_next` ; `search`), avec `static_assert` sur les
+tailles. Aucun handler n'appelle un autre handler : pas de recouvrement.
+
+**Magasin de réglages.** Un seul tampon de blob NVS (`s_blob`, taille du
+plus gros type, `static_assert` par type) au lieu d'un par type ; `init()`
+charge **directement** dans `s_current` (rien d'autre ne tourne avant son
+retour) et lit les blobs Home Assistant et alertes **en place**, défauts
+remis par `default_ha_settings_into` / `default_alert_settings_into` si le
+blob est invalide : plus de temporaires de 5 + 2,7 + 1,9 Ko.
+
+**Réglages ESP-IDF** (`sdkconfig.defaults`, et `sdkconfig` généré, non
+suivi, corrigé à la main) : tampons WiFi RX statiques 10 → **6**, RX/TX
+dynamiques 32 → **16**, fenêtre BA 6 → **4** ; **IPv6 désactivé** (réseau de
+la maison en IPv4, mDNS reste) ; `LWIP_MAX_SOCKETS` aligné à **10** (la
+valeur réellement générée : HTTP 2 + 4 sessions, WebSocket, MQTT, météo).
+
+**Confirmation OTA avec échéance.** L'image n'est confirmée qu'une fois le
+réseau monté (hier) ; désormais, si elle est encore `PENDING_VERIFY` au
+bout de **10 min** sans réseau (`kOtaConfirmDeadlineMs`), elle redémarre et
+le bootloader revient à l'image précédente. Une image déjà confirmée ne
+redémarre jamais (`ota_image_pending()` lu au démarrage). Non rejoué sur
+matériel (HW-WEB-03 à compléter).
+
+**Mesures.** DRAM statique **152 128 → 105 840 octets** (`.bss` 135 520 →
+89 248), image 1 302 528 → 1 267 520 octets. Sur l'horloge, après l'OTA
+(10,5 s malgré les tampons WiFi réduits) : tas libre **25,5 → 79 Ko**,
+minimum **5,5 → 63,3 Ko**, plus gros bloc **20 → 74 Ko** sur 2 min ;
+liaison Home Assistant `running` à la **première** connexion (9,7 °C),
+mDNS `horloge.local` OK, recherche d'entités OK. HW-SYS-04 ajouté au plan.
+
+**Tests.** Host inchangés (12 660 vérifications, 96,7 %) : le serveur web et
+le magasin sont des adaptateurs, vérifiés sur la carte.
+
+---
+
+## 2026-11-16 (suite 7) — « HOME ASSISTANT HS » trop prompt, plafond de routes HTTP, horloge muette
+
+**Demande de Nicolas.** L'horloge affiche parfois « Home Assistant pas
+connecté » (vu deux fois) : mettre un délai beaucoup plus long.
+
+**Ce qui était.** La règle interne `DOMOTIQUE` levait `HOME ASSISTANT HS`
+après **300 s** de liaison WebSocket perdue, y compris quand c'est le WiFi
+lui-même qui manquait ; le client retente au plus toutes les 60 s
+(`kBackoffMaxMs`), un redémarrage de Home Assistant ou une mise à jour
+dépasse facilement 5 min.
+
+**Changement.** `kHaLinkLostConfirmationS = 1800` (30 min, règle par
+défaut ; modifiable sur la page Alertes, champ *confirmation*), et la source
+`LiaisonHaPerdue` est **indisponible** tant que `network_up` est faux : une
+coupure WiFi relève de `ReseauPerdu` / `BailAbsent`, et le compte des 30 min
+repart de zéro au retour du réseau. Test ALR-19 (patience, retombée seule,
+reconnexion qui remet à zéro, coupure WiFi), ALR-05 complété. ⚠️ Les règles
+vivent en NVS : sur l'horloge installée, la règle 3 garde 300 s tant qu'on
+ne la repousse pas (`POST /api/alertes/regle/3`, à faire dès que l'horloge
+répond).
+
+**Plafond de routes.** `start_http()` enregistrait **62** routes avec
+`max_uri_handlers = 59` : les trois dernières (sondes de portail captif)
+manquaient en silence et `start()` rendait `HttpError`. Le plafond suit
+désormais `sizeof(kRoutes)`, et une route refusée est tracée.
+
+**Horloge : tas épuisé.** Depuis l'OTA de l'image « recherche d'entités »
+(16:21), l'horloge répondait au ping mais **toute connexion HTTP était
+acceptée puis réinitialisée**, même après deux coupures d'alimentation.
+Cause trouvée par la fenêtre de démarrage : un guetteur à 0,3 s a obtenu
+`/api/info` à **3 s** de fonctionnement (tas libre 25 Ko, **minimum 10,8 Ko**,
+plus gros bloc 12,8 Ko) et a enchaîné l'OTA de l'image allégée (11 s, 1,3 Mo).
+Une fois WiFi, liaison Home Assistant et MQTT montés, le tas ne suffisait
+plus à lwIP pour accepter une connexion (netconn refusé ⇒ RST). Sur la
+nouvelle image (152 Ko de DRAM statique, −6 Ko) : tas libre ~24,6 Ko en
+régime, **minimum 5,5 Ko** pendant la deuxième connexion WebSocket (la
+première est tombée : `connexions 2, coupures 2`). C'est très
+probablement aussi l'origine des « Home Assistant pas connecté » vus par
+Nicolas : une reconnexion qui n'a pas la mémoire pour aboutir.
+
+Pistes relevées (`nm --size-sort`) : le serveur web garde **une copie
+statique par handler** des réglages (`HaSettings` 2,7 Ko × 7,
+`AlertSettings` 1,9 Ko × 7, `Settings` 5 Ko × 3, instantané HA 1,5 Ko × 4)
+alors que les handlers tournent sur le seul fil du serveur : un tampon
+partagé par type rendrait ~25 Ko ; `s_json` 8 Ko ; tampons WiFi
+(`WIFI_STATIC_RX_BUFFER_NUM`) et fenêtres TCP à revoir. À faire en priorité.
+
+**Remis en place par l'API.** `mode=Auto`, `lum_manuelle=96`,
+`periode_cycle_min=15`, règle 3 `DOMOTIQUE` à 1800 s (vérifié en relecture).
+Liaison Home Assistant `running`, valeur « Extérieur » 9,7 °C.
+**HW-HA-05 (API)** : `POST /api/ha/recherche q=temp` sur le vrai Home
+Assistant ⇒ `pret` en moins de 3 s, 12 entités (id, nom, état, unité) ;
+la page et le clic restent à essayer par Nicolas. `/api/couleurs` répond.
+Confirmation OTA différée jusqu'au réseau : `connecte` vrai à 13 s,
+`emplacement ota_1`, image confirmée (pas de rollback).
+
+**Tests.** 12 660 vérifications, couverture 96,7 % (5 330 lignes). Pas
+encore commité (avec le figeage du climat et la recherche d'entités).
+
+---
+
+## 2026-11-16 (suite 6) — Recherche d'entités Home Assistant, règles d'alerte par nom
+
+**Demande de Nicolas.** Trouver les entités sans taper leur identifiant
+(barre de recherche), et choisir la valeur d'une règle d'alerte par son nom
+plutôt que par un numéro.
+
+**Comment.** La recherche se fait par Home Assistant lui-même : le client
+WebSocket envoie un `render_template` dont le gabarit Jinja parcourt
+`states` côté serveur et renvoie au plus 20 entités (id, nom, état, unité)
+contenant le mot ; une réponse suffit, le client se désabonne. Rien ne
+transite par le navigateur avec le jeton, rien de gros n'est gardé sur
+l'horloge (réponse 2,5 Ko). API `POST`/`GET /api/ha/recherche`, hooks
+`ha_search` / `ha_search_get`, `clock_homeassistant::search()` /
+`search_snapshot()`. Requête épurée (lettres, chiffres, espace, `_ . -`,
+32 max) : elle entre dans une chaîne Jinja, rien d'autre n'y entre.
+Tampons : `kMessageMax` 2 048 → 3 072, `kOutgoingMax` 512 → 768 (le test du
+réassembleur devient relatif à la constante).
+
+**Page.** Widget « Chercher une entité » dans chaque carte de valeur et dans
+l'étape 3 du wizard Home Assistant ; un clic remplit entité, nom, unité,
+mode, actif. Règles d'alerte : le champ « Valeur n° » devient une liste
+« Valeur n — nom » (noms lus sur `/api/ha`), idem dans le wizard d'alerte.
+
+**Tests.** HA-16 (dialogue complet simulé), WEB-04 (littéraux de la page),
+réassembleur ; 12 620 vérifications, couverture 96,7 % sur 5 328 lignes.
+
+**Reste.** HW-HA-05 sur le vrai Home Assistant (Nicolas) ; la page tourne
+sur l'horloge mais la liaison Home Assistant n'y est pas configurée.
+
+---
+
+## 2026-11-16 (suite 5) — Luminosité : câblage (b) et auto-éclairage sur l'horloge installée
+
+**Symptôme (Nicolas).** Luminosité « toujours à fond ou très variable », il
+soupçonne la dalle d'influencer le capteur.
+
+**Relevé.** 40 s en auto : la mesure brute saute entre ~1260 et ~2060 au gré
+du contenu de la dalle (941 → 1385 mA), le niveau erre de 89 à 152. Dalle
+éteinte : **2630** ; dalle à 255 : **1071**. La mesure **baisse** quand la
+lumière monte : **câblage (b)**, pas (a) comme noté le 2026-11-05 (fiche
+corrigée), et la dalle éclaire fortement la LDR (−1559 comptes à 255). Avec
+la courbe croissante par défaut, c'était aussi la vraie cause du « sombre le
+jour, clair la nuit » du matin (la correction des butées restait juste, mais
+n'était pas la cause principale).
+
+**Correction (réglages, pas de code).** `POST /api/luminosite` : courbe
+décroissante `600:255,1500:160,2600:60,3800:8`, `compensation_counts =
+-1559`. Résultat : mesure corrigée stable (2600–2690) alors que la brute
+varie de 300, niveau posé à 56–61, plus de pompage (HW-LUM-02 PASSE,
+HW-LUM-01/03 en cours). À faire par Nicolas : vérifier le sens en couvrant
+la LDR (la dalle doit **s'assombrir**), jouer le wizard une nuit pour une
+courbe mesurée, et si possible abriter la LDR de la dalle.
+
+**Chauffe cyclique, suite.** Observation détaillée d'un réveil : le capteur
+sort de veille en « normal » mais ne lève **jamais** NEWDAT (statut `0x01`),
+4 min durant, deux cycles de suite ; le passage IDLE → STANDARD seul ne
+relance pas l'algorithme. Réveil désormais par **reset logiciel** (`OPMODE`
+0xF0, 20 ms) puis STANDARD : préchauffage de 3 min attendu, dans le plafond
+de 4 min. Test AIR-24 compte un reset par réveil (aucun au premier).
+Bonne nouvelle au passage : 4 min de chauffe n'ont fait monter l'AHT21 que
+de quelques centièmes (figeage vérifié : valeur constante, `climat_age_s`
+qui monte).
+
+**Suite du même jour.** Le reset seul n'a marché qu'une fois sur deux
+(réveil suivant muet, `0x01`). Réveil désormais par la **séquence complète**
+des pilotes de référence (reset, idle, effacement GPR, standard, 20 ms
+entre chaque), au démarrage aussi en mode cyclique : deux réveils de suite
+observés valides (préchauffage `0x87` ~3 min, puis `0x83`, AQI 3 puis 2).
+Trouvé en passant : juste après le reset le capteur peut annoncer une
+« nouvelle donnée » sur des registres effacés (AQI 0), ce qui effaçait la
+dernière mesure ; en mode cyclique une donnée hors 1..5 ne remplace plus la
+précédente. AIR-24 étendu (un reset par réveil, donnée effacée ignorée).
+
+---
+
 ## 2026-11-16 (suite 3) — Chauffe cyclique de l'ENS160
 
 **Pourquoi.** Nicolas trouve le module tiède et l'AHT21 lit 26 °C : ce n'est
@@ -29,9 +214,20 @@ AIR-22 à 18 champs, formulaire air (bornes 5–60, `cycle_chauffe=2` refusé).
 Mon doublon d'identifiant AIR-21 d'hier (textes de la dalle) renommé AIR-23.
 Couverture 96,8 % sur 5 210 lignes.
 
-**Reste.** HW-AIR-07 sur la carte (observer un cycle et la baisse de
-température pendant la veille), activer l'option sur l'horloge (période à
-choisir par Nicolas : 15 min proposé).
+**Sur la carte (HW-AIR-07).** Option activée à 15 min. Après un redémarrage
+logiciel le capteur se déclare valide tout de suite : capture, `OPMODE` idle
+en 30 s, puis la température descend de **26,6 à 23,7 °C en 4 min** de
+veille, AQI conservé. La plaque pèse donc ~3 °C sur ce montage.
+
+**Figeage pendant la chauffe (demande de Nicolas, suite 4).** Pendant les
+minutes de chauffe du réveil, la température et l'humidité publiées restent
+celles de la dernière lecture plaque froide (`climate_cold`, `climate_ms`,
+`climat_plaque_froide` / `climat_age_s` sur `/api/etat`, phrase sur la page
+`/air`) ; l'ENS160 reçoit la lecture vive pour sa compensation ; un AHT21 en
+échec pendant la chauffe ne fait pas tomber la valeur figée ; en veille la
+lecture vive reprend, en mode continu rien ne change. Test AIR-25.
+
+**Reste.** Observer le figeage sur un réveil réel (réveil suivant à 15 min).
 
 ---
 

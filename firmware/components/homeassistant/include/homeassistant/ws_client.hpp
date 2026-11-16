@@ -34,7 +34,7 @@ inline constexpr uint32_t kBackoffFirstMs = 5000U;
 inline constexpr uint32_t kBackoffMaxMs = 60000U;
 inline constexpr uint32_t kTokenRejectedBackoffMs = 300000U;
 /// Outgoing message buffer (template subscriptions are the longest).
-inline constexpr std::size_t kOutgoingMax = 512U;
+inline constexpr std::size_t kOutgoingMax = 768U;  ///< The search template is the longest message (~450 bytes).
 /// Name of the Home Assistant event carrying notifications.
 inline constexpr char kNotificationEvent[] = "horloge_notification";
 
@@ -68,6 +68,27 @@ struct WsStats {
     uint32_t events;           ///< render_template events applied.
     uint32_t notifications;    ///< Notifications accepted.
     uint32_t notifications_rejected;
+};
+
+/// Entity search (HA-16): the page asks for a word, the clock asks Home Assistant to
+/// render a template over `states` and keeps the answer until the next search.
+inline constexpr std::size_t kSearchQueryMax = 32U;
+inline constexpr std::size_t kSearchResultMax = 1400U;   ///< Lines "entity_id\tname\tstate\tunit\n" (12 x 108 at worst).
+inline constexpr uint32_t kSearchResultsMax = 12U;        ///< Entities per answer (the template stops there): DRAM is tight.
+
+enum class SearchState : uint8_t {
+    Idle = 0U,  ///< Nothing asked since the link came up.
+    Pending,    ///< Asked, answer not in yet.
+    Ready,      ///< Answer in search_result().
+    Error,      ///< Refused by Home Assistant or link lost: search_error().
+};
+
+/// Copy of a search for the page (one static instance in the web server: ~1.5 KB).
+struct SearchSnapshot {
+    SearchState state;
+    char query[kSearchQueryMax + 1U];
+    char result[kSearchResultMax + 1U];  ///< Lines "id<TAB>name<TAB>state<TAB>unit<LF>".
+    char error[kErrorMax + 1U];
 };
 
 class WsClient {
@@ -108,6 +129,19 @@ public:
     /// Pending inbound notification: copied out and cleared. false if none.
     bool take_notification(alerts::Notification& out) noexcept;
 
+    /**
+     * @brief Asks Home Assistant for the entities whose id or name contains @p query (HA-16).
+     * @param query Case-insensitive; letters, digits, space, '_', '.', '-' only (it goes into a
+     *              Jinja string); empty = the first kSearchResultsMax entities.
+     * @return false if the link is not running or the query is refused; the previous answer is kept.
+     */
+    bool request_search(const char* query) noexcept;
+    SearchState search_state() const noexcept { return search_state_; }
+    const char* search_query() const noexcept { return search_query_; }
+    /// Lines "entity_id<TAB>name<TAB>state<TAB>unit<LF>", valid in state Ready.
+    const char* search_result() const noexcept { return search_result_; }
+    const char* search_error() const noexcept { return search_error_; }
+
 private:
     enum class Pending : uint8_t { None = 0U, Auth, Subscribe, Events, Ping };
 
@@ -144,6 +178,15 @@ private:
     char error_[kErrorMax + 1U];
     alerts::Notification notification_;
     bool notification_pending_;
+    // Entity search.
+    SearchState search_state_;
+    bool search_send_pending_;    ///< The render_template request is to be sent.
+    uint32_t search_id_;          ///< Subscription id of the running search, 0 if none.
+    bool search_unsub_pending_;   ///< Answer received: unsubscribe to send.
+    uint32_t search_unsub_id_;
+    char search_query_[kSearchQueryMax + 1U];
+    char search_result_[kSearchResultMax + 1U];
+    char search_error_[kErrorMax + 1U];
 };
 
 }  // namespace homeassistant

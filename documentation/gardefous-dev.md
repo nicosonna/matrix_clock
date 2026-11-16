@@ -21,6 +21,11 @@
 - **Contraintes fortes** : MISRA C++ 2023, CERT C++ ; aucune allocation dynamique
   après init ; pas d'exceptions/RTTI ; **plafond de courant** obligatoire (une
   dalle de 256 LEDs tire 15,6 A en blanc plein).
+- **Budget mémoire** (2026-11-17) : un tampon statique n'est pas gratuit, il se
+  paie sur le tas (256 Ko de DRAM, pas de PSRAM). Les handlers du serveur web et
+  le magasin de réglages **partagent** leurs tampons de travail (`Scratch`,
+  `s_blob`) ; on relève `tas_min` sur `/api/info` après tout ajout (HW-SYS-04,
+  seuil 40 Ko).
 - **Non-buts** : piloter quoi que ce soit dans la maison ; porter une sécurité ;
   dépendre de Home Assistant ou du hub pour afficher l'heure ; **lire** Home
   Assistant par MQTT (MQTT ne sert qu'à **publier** les capteurs locaux, comme

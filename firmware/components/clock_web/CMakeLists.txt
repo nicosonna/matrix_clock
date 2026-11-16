@@ -5,7 +5,7 @@ idf_component_register(
     SRCS "src/network.cpp" "src/web_server.cpp"
     INCLUDE_DIRS "include"
     EMBED_TXTFILES "www/wifi.html"
-    REQUIRES alerts
+    REQUIRES alerts homeassistant
     PRIV_REQUIRES network settings clock_settings brightness air_quality homeassistant clock_board esp_wifi esp_netif esp_event esp_http_server
                   esp_timer nvs_flash esp_app_format app_update lwip log espressif__mdns
 )

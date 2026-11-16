@@ -921,6 +921,13 @@ void test_page_orphans() {
     }
     CHECK(std::strstr(page, "post('/api/affichage/test', 'motif='") != nullptr);
     CHECK(std::strstr(page, "'/api/luminosite/wizard'") != nullptr);
+    // HA-16: the entity search goes through the clock (POST then GET /api/ha/recherche), the
+    // value cards and the HA wizard offer it, alert rules pick a value by its name.
+    CHECK(std::strstr(page, "post('/api/ha/recherche', 'q='") != nullptr);
+    CHECK(std::strstr(page, "fetch('/api/ha/recherche')") != nullptr);
+    CHECK(std::strstr(page, "rechercheEntites(carte,") != nullptr);
+    CHECK(std::strstr(page, "rechercheEntites(boite,") != nullptr);
+    CHECK(std::strstr(page, "libelleValeurHa(k)") != nullptr);
     CHECK(std::strstr(page, "'/api/luminosite/brut'") != nullptr);
     CHECK(std::strstr(page, "'/api/systeme/usine', 'confirme=OUI'") != nullptr);
     CHECK(std::strstr(page, "'/api/ota'") != nullptr);

@@ -363,4 +363,32 @@ void snapshot(LinkSnapshot& out) noexcept {
     }
 }
 
+bool search(const char* query) noexcept {
+    bool ok = false;
+    if (lock()) {
+        ok = (s_client != nullptr) && s_client->request_search(query);
+        unlock();
+    }
+    return ok;
+}
+
+void search_snapshot(homeassistant::SearchSnapshot& out) noexcept {
+    out.state = homeassistant::SearchState::Idle;
+    out.query[0] = '\0';
+    out.result[0] = '\0';
+    out.error[0] = '\0';
+    if (lock()) {
+        if (s_client != nullptr) {
+            out.state = s_client->search_state();
+            std::strncpy(out.query, s_client->search_query(), sizeof(out.query) - 1U);
+            out.query[sizeof(out.query) - 1U] = '\0';
+            std::strncpy(out.result, s_client->search_result(), sizeof(out.result) - 1U);
+            out.result[sizeof(out.result) - 1U] = '\0';
+            std::strncpy(out.error, s_client->search_error(), sizeof(out.error) - 1U);
+            out.error[sizeof(out.error) - 1U] = '\0';
+        }
+        unlock();
+    }
+}
+
 }  // namespace clock_homeassistant

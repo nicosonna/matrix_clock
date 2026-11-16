@@ -141,6 +141,32 @@ rarement, mettre une péremption longue, ou un gabarit qui inclut un horodatage.
 
 ---
 
+### Recherche d'entités (2026-11-16, demande de Nicolas)
+
+Taper un `entity_id` de tête est le point dur de la page : la recherche se
+fait **par Home Assistant lui-même**, sans jeton côté navigateur ni liste
+géante côté horloge. `POST /api/ha/recherche` (`q=`, 32 caractères au plus,
+lettres, chiffres, espace, `_ . -` : le mot entre dans une chaîne Jinja, rien
+d'autre n'y entre) ⇒ le client envoie un `render_template` dont le gabarit
+parcourt `states` **côté Home Assistant** et renvoie au plus **20** entités
+dont l'identifiant ou le nom contient le mot (minuscules) : lignes
+`entity_id\tnom[:24]\tétat[:16]\tunité\n`. Dès la première réponse le client
+se **désabonne** (une réponse suffit, pas d'événements à chaque changement
+d'état). `GET /api/ha/recherche` ⇒ `{"etat":"aucune|en_cours|pret|erreur",
+"q":…, "erreur":…, "entites":[{"id","nom","etat","unite"}…]}` que la page
+interroge toutes les 500 ms. Requête vide = les 20 premières entités.
+Tampons : requête 32, réponse 2 560, message entrant porté à 3 072
+(`kMessageMax`), sortant à 768 (`kOutgoingMax`). Une recherche en vol meurt
+avec la liaison (`erreur`, « liaison perdue ») ; une réponse acquise reste
+lisible jusqu'à la suivante.
+
+Sur la page : une barre « Chercher une entité » dans chaque carte de valeur et
+dans le wizard (étape 3) ; un clic sur un résultat remplit l'entité, le nom
+(16 caractères) et l'unité s'ils sont vides, passe le mode à `Entite` et
+coche *actif*. Les règles d'alerte choisissent la valeur **par son nom**
+(« Valeur 3 — Salon ») et non plus par un numéro, sur la page comme dans le
+wizard d'alerte.
+
 ## 4. Canal de notification entrant (EX-40)
 
 Abonnement `subscribe_events` sur l'événement **`horloge_notification`**.
@@ -405,6 +431,7 @@ Tests host du composant pur `homeassistant` (doublure de transport injectée) :
 | HA-13 | Notification entrante : champs valides, champ hors bornes remplacé par son défaut, `cle` absente ⇒ message rejeté, `effacer` retire la bonne notification. |
 | HA-14 | Décodage de la réponse Open-Meteo (réponse réelle en `test/fixtures/`), réponse amputée, valeur absente. |
 | HA-15 | Validation des réglages : hôte, port, longueur du jeton, entité, gabarit, latitude/longitude ; repli sur les défauts. |
+| HA-16 | Recherche d'entités : refus hors liaison, requête épurée (minuscules, caractères autorisés seulement, 32 max), `render_template` avec le gabarit (`states`, plafond 20, séparateurs), accusé, réponse décodée (`\t`, `\n`, `\u`), désabonnement, événement tardif ignoré, requête vide, refus de Home Assistant (message gardé), erreur en événement, liaison perdue pendant la recherche. |
 
 Tests host de `homeassistant::mqtt` (repris et adaptés de ThermoSync, HA-01..12
 de son plan) :

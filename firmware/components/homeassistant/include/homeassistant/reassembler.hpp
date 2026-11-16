@@ -13,7 +13,7 @@
 
 namespace homeassistant {
 
-inline constexpr std::size_t kMessageMax = 2048U;
+inline constexpr std::size_t kMessageMax = 2048U;  ///< A 12-entity search answer fits with its envelope (HA-16).
 
 class Reassembler {
 public:

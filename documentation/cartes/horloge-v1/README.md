@@ -153,8 +153,15 @@ condensateur de 1000 µF près de la dalle — le budget pourra alors remonter.
 
 Les deux câblages sont acceptés : la courbe d'étalonnage peut être croissante ou
 décroissante (`../../dev/spec-luminosite.md` §1), et le wizard détermine le sens
-tout seul. **Carte en main : câblage (a)**, vérifié le 2026-11-05 (main sur la
-LDR ⇒ la dalle s'assombrit) ; ~2086 comptes (1,9 V) sous l'éclairage du bureau.
+tout seul. ~~Carte en main : câblage (a), vérifié le 2026-11-05~~ — **faux
+sur l'horloge installée** (relevé du 2026-11-16) : dalle éteinte 2630 comptes,
+dalle à fond 1071, la mesure **baisse** quand la lumière monte ⇒ **câblage
+(b)**, et la dalle éclaire fortement la LDR (**−1559 comptes** à 255). Avec
+la courbe croissante par défaut, l'horloge était donc sombre le jour et
+claire la nuit, et pompait au rythme de ce qu'elle affichait. Corrigé dans
+les réglages (courbe décroissante `600:255,1500:160,2600:60,3800:8`,
+`compensation_counts = -1559`), à affiner par le wizard une nuit ; mieux :
+abriter la LDR de la dalle (§5, placement).
 En plein jour l'ADC **sature à 4095** et dans le noir il lit **0** : le firmware
 traite ces butées comme des mesures (plafond / plancher), pas comme un défaut
 (`dev/spec-luminosite.md` §1, corrigé le 2026-11-16).

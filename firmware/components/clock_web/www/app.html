@@ -53,6 +53,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline:3px so
 .palette i { display:inline-block; width:.85rem; height:.85rem; border-radius:50%; border:1px solid rgba(0,0,0,.25); }
 input[type=color] { width:3rem; height:2.2rem; padding:.15rem; vertical-align:middle; }
 input.hexa { width:6.5rem; margin-left:.5rem; font-family:ui-monospace,Consolas,monospace; }
+.recherche { display:flex; gap:.4rem; align-items:center; margin:.4rem 0; } .recherche input[type=text] { flex:1; width:auto; }
+.resultats { display:grid; gap:.3rem; margin:.3rem 0 .6rem; }
+button.entite { display:flex; flex-direction:column; align-items:flex-start; gap:.1rem; background:var(--fond); color:var(--texte); border:1px solid var(--bord); font-weight:400; padding:.45rem .6rem; text-align:left; }
+button.entite b { font-weight:600; } button.entite span { font-size:.85rem; color:var(--doux); }
 table.liste { width:100%; border-collapse:collapse; }
 table.liste td, table.liste th { padding:.3rem .25rem; text-align:left; border-bottom:1px solid var(--bord); font-size:.95rem; }
 table.liste th { color:var(--doux); font-weight:600; font-size:.85rem; }
@@ -449,8 +453,20 @@ table.liste select { max-width:11rem; }
 
   // ---- generic field from the firmware model (type, label, unit, bounds, help): nothing is copied by hand
   var valeurs_defini = null;
+  var haNoms = [];  // names of the 8 tracked values, for the alert rules (chosen by name, not by number)
+  function libelleValeurHa(k) { return 'Valeur ' + k + (haNoms[k - 1] ? ' — ' + haNoms[k - 1] : ''); }
   function champ(nom, m, valeur, form) {
     if (m.type === 'scenes') { return editeurScenes(nom, m, valeur, form); }
+    if (nom === 'index' && form.id.indexOf('form-alerte-regle-') === 0) {
+      var bo = el('div', { class: 'champ' }); var idx = 'f-' + form.id + '-' + nom;
+      bo.appendChild(el('label', { htmlFor: idx }, m.libelle || nom));
+      var sl = el('select', { id: idx });
+      for (var k = m.min; k <= m.max; k++) { var o = el('option', { value: k }, libelleValeurHa(k)); if (k === parseInt(valeur, 10)) { o.selected = true; } sl.appendChild(o); }
+      bo.appendChild(sl);
+      form.lecteurs.push(function () { return nom + '=' + sl.value; });
+      if (m.aide) { bo.appendChild(el('p', { class: 'aide' }, m.aide)); }
+      return bo;
+    }
     if (m.type === 'courbe') { return editeurCourbe(nom, m, valeur, form); }
     var boite = el('div', { class: 'champ' });
     var id = 'f-' + form.id + '-' + nom;
@@ -555,6 +571,55 @@ table.liste select { max-width:11rem; }
       .catch(function () { forms.forEach(function (f) { f.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; }); return null; });
   }
 
+  // ---- Home Assistant: entity search (the clock asks Home Assistant over its WebSocket; the page polls the answer)
+  function rechercheEntites(conteneur, surChoix) {
+    var ligne = el('div', { class: 'recherche' });
+    var q = el('input', { type: 'text', placeholder: 'Chercher une entité par son nom ou son identifiant', maxLength: 32 });
+    var b = el('button', { type: 'button', class: 'second petit' }, 'Chercher');
+    var msg = el('p', { class: 'aide' });
+    var liste = el('div', { class: 'resultats' });
+    var minuteur = null;
+    function lancer() {
+      if (minuteur) { clearInterval(minuteur); }
+      liste.innerHTML = ''; msg.textContent = 'Recherche dans Home Assistant…';
+      post('/api/ha/recherche', 'q=' + encodeURIComponent(q.value)).then(function (r) {
+        if (!r.ok) { msg.textContent = erreurTexte(r.texte); return; }
+        var essais = 0;
+        minuteur = setInterval(function () {
+          fetch('/api/ha/recherche').then(function (x) { return x.json(); }).then(function (res) {
+            essais++;
+            if (res.etat === 'pret') {
+              clearInterval(minuteur); minuteur = null; liste.innerHTML = '';
+              if (!res.entites.length) { msg.textContent = 'Aucune entité ne contient « ' + res.q + ' ».'; return; }
+              msg.textContent = res.entites.length + ' entité(s)' + (res.entites.length >= 12 ? ', 12 au plus : précisez la recherche' : '') + '. Cliquez pour choisir.';
+              res.entites.forEach(function (e) {
+                var it = el('button', { type: 'button', class: 'entite' });
+                it.appendChild(el('b', {}, e.nom || e.id));
+                it.appendChild(el('span', {}, e.id + (e.etat ? ' · ' + e.etat + (e.unite ? ' ' + e.unite : '') : '')));
+                it.onclick = function () { surChoix(e); msg.textContent = 'Choisi : ' + e.id; liste.innerHTML = ''; };
+                liste.appendChild(it);
+              });
+            } else if (res.etat === 'erreur') { clearInterval(minuteur); minuteur = null; msg.textContent = 'Recherche refusée : ' + (res.erreur || '?'); }
+            else if (essais > 30) { clearInterval(minuteur); minuteur = null; msg.textContent = 'Pas de réponse de Home Assistant (' + res.etat + ').'; }
+          }).catch(function () {});
+        }, 500);
+      });
+    }
+    b.onclick = lancer;
+    q.onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); lancer(); } };
+    ligne.appendChild(q); ligne.appendChild(b);
+    conteneur.appendChild(ligne); conteneur.appendChild(msg); conteneur.appendChild(liste);
+  }
+  function champValeurHa(i, nom) { return document.getElementById('f-form-ha-valeur-' + i + '-' + nom); }
+  function choisirEntite(i, e) {
+    var ent = champValeurHa(i, 'entite'), nomC = champValeurHa(i, 'nom'), unite = champValeurHa(i, 'unite'), mode = champValeurHa(i, 'mode'), actif = champValeurHa(i, 'actif');
+    if (ent) { ent.value = e.id; }
+    if (nomC && !nomC.value) { nomC.value = (e.nom || e.id).substring(0, 16); }
+    if (unite && !unite.value && e.unite) { unite.value = e.unite; }
+    if (mode && mode.value !== 'Entite') { mode.value = 'Entite'; }
+    if (actif) { actif.checked = true; }
+  }
+
   // ---- Home Assistant: value cards, live status, wizard
   function chargerValeursHa() {
     var boite = document.getElementById('ha-valeurs');
@@ -562,15 +627,17 @@ table.liste select { max-width:11rem; }
       .then(function (res) {
         boite.innerHTML = '';
         var modele = res[0], valeurs = res[1].valeurs || [];
-        for (var i = 0; i < (modele.valeurs_max || 8); i++) {
+        function carteValeur(i) {
           var carte = el('div', { class: 'carte' });
           carte.appendChild(el('h2', {}, 'Valeur ' + (i + 1) + (valeurs[i] && valeurs[i].nom ? ' — ' + valeurs[i].nom : '')));
+          rechercheEntites(carte, function (e) { choisirEntite(i, e); });
           var form = el('form', { id: 'form-ha-valeur-' + i });
           form.setAttribute('data-groupe', 'ha_valeur');
           carte.appendChild(form);
           boite.appendChild(carte);
           construire(form, modele, valeurs[i] || {}, modele.valeur, 'ha/valeur/' + i);
         }
+        for (var i = 0; i < (modele.valeurs_max || 8); i++) { carteValeur(i); }
       }).catch(function () { boite.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; });
   }
   var haTimer = null;
@@ -634,6 +701,7 @@ table.liste select { max-width:11rem; }
     } else if (i === 2) {
       boite.appendChild(el('p', {}, '3/4 — Première valeur : l\u2019entité à suivre (ex. sensor.temperature_exterieure), son nom, son unité. Les autres se règlent dans les cartes ci-dessous.'));
       var nom = el('input', { type: 'text', placeholder: 'Exterieur', maxLength: 16 }); var ent = el('input', { type: 'text', placeholder: 'sensor.temperature_exterieure' }); var unite = el('input', { type: 'text', placeholder: '°C', maxLength: 8 });
+      rechercheEntites(boite, function (e) { ent.value = e.id; if (!nom.value) { nom.value = (e.nom || e.id).substring(0, 16); } if (!unite.value && e.unite) { unite.value = e.unite; } });
       boite.appendChild(el('label', {}, 'Nom')); boite.appendChild(nom); boite.appendChild(el('label', {}, 'Entité')); boite.appendChild(ent); boite.appendChild(el('label', {}, 'Unité')); boite.appendChild(unite);
       var msg3 = el('p', { class: 'msg' }); boite.appendChild(msg3);
       var ok3 = el('button', { type: 'button', class: 'second' }, 'Enregistrer la valeur 1');
@@ -847,11 +915,13 @@ table.liste select { max-width:11rem; }
   }
   function chargerReglesAlertes() {
     var boite = document.getElementById('alertes-regles');
-    Promise.all([fetch('/api/alertes/modele').then(function (r) { return r.json(); }), fetch('/api/alertes').then(function (r) { return r.json(); })])
+    Promise.all([fetch('/api/alertes/modele').then(function (r) { return r.json(); }), fetch('/api/alertes').then(function (r) { return r.json(); }),
+                 fetch('/api/ha').then(function (r) { return r.json(); }).catch(function () { return {}; })])
       .then(function (res) {
         boite.innerHTML = '';
         var modele = res[0], regles = res[1].regles || [];
         modeleAlertes = modele;
+        haNoms = (res[2].valeurs || []).map(function (v) { return v.nom || ''; });
         for (var i = 0; i < (modele.regles_max || 16); i++) {
           var carte = el('div', { class: 'carte' });
           carte.appendChild(el('h2', {}, 'Règle ' + (i + 1) + (regles[i] && regles[i].nom ? ' — ' + regles[i].nom : '')));
@@ -875,7 +945,7 @@ table.liste select { max-width:11rem; }
     if (i === 0) {
       boite.appendChild(el('p', {}, '1/5 — Quoi surveiller ? Une valeur Home Assistant (avec sa valeur actuelle) ou un état de l’horloge.'));
       var sel = el('select'); (m.regle.source.valeurs || []).forEach(function (v) { var o = el('option', { value: v }, v); if (v === w.source) { o.selected = true; } sel.appendChild(o); });
-      var idx = el('select'); for (var k = 1; k <= 8; k++) { idx.appendChild(el('option', { value: k }, 'Valeur ' + k)); }
+      var idx = el('select'); for (var k = 1; k <= 8; k++) { idx.appendChild(el('option', { value: k }, libelleValeurHa(k))); }
       idx.value = w.index;
       boite.appendChild(el('label', {}, 'Source')); boite.appendChild(sel); boite.appendChild(el('label', {}, 'Valeur Home Assistant')); boite.appendChild(idx);
       var apercu = el('p', { class: 'aide' }); boite.appendChild(apercu);
@@ -1100,6 +1170,7 @@ table.liste select { max-width:11rem; }
       if (a.prechauffage) { t.push('Préchauffage : valeurs invalides pendant 3 minutes après la mise sous tension.'); }
       if (a.premiere_mise_en_service) { t.push('Première mise en service : le capteur se stabilise pendant environ une heure' + (a.cycle ? ' de chauffe cumulée (plusieurs cycles)' : '') + '.'); }
       if (a.cycle && !a.chauffe && a.air_valide) { t.push('Chauffe cyclique : la qualité d\u2019air affichée est la dernière mesure, rafraîchie à chaque réveil.'); }
+      if (a.cycle && a.chauffe && a.climat_plaque_froide && a.climat_valide) { t.push('Température et humidité figées à la dernière lecture plaque froide, il y a ' + Math.round(a.climat_age_s / 60) + ' min.'); }
       if (a.compensation_par_defaut) { t.push('AHT21 indisponible : compensation 25 °C / 50 % par défaut, précision réduite.'); }
       document.getElementById('air-etat').textContent = t.join(' ');
     }).catch(function () {});

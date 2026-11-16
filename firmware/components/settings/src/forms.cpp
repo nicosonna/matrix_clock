@@ -23,6 +23,10 @@ const char* const kBrightnessFields[] = {"mode", "lum_manuelle", "lum_min", "lum
                                          "courbe"};
 const std::size_t kBrightnessFieldCount = sizeof(kBrightnessFields) / sizeof(kBrightnessFields[0]);
 
+const char* const kColorFields[] = {"heure_chiffres", "heure_deux_points", "heure_barre", "date_jour", "date_nombre",
+                                    "valeur_icone", "valeur_texte", "air_texte", "nuit_heure"};
+const std::size_t kColorFieldCount = sizeof(kColorFields) / sizeof(kColorFields[0]);
+
 const char* const kSystemFields[] = {"fuseau", "serveur_ntp"};
 const char* const kAirFields[] = {"actif", "adresse", "grandeur_pilote", "seuil_eco2_bon", "seuil_eco2_moyen",
                                   "seuil_eco2_mauvais", "seuil_eco2_tres_mauvais", "seuil_tvoc_bon", "seuil_tvoc_moyen",
@@ -152,6 +156,8 @@ const char* scene_kind_name(display::SceneKind k) noexcept {
         case display::SceneKind::Night: return "Nuit";
         case display::SceneKind::Test: return "Test";
         case display::SceneKind::Air: return "Air";
+        case display::SceneKind::Temperature: return "Temperature";
+        case display::SceneKind::Humidity: return "Humidite";
         case display::SceneKind::Clock:
         default: return "Heure";
     }
@@ -193,7 +199,8 @@ bool origin_from_name(const char* s, display::Origin& o) noexcept {
 bool scene_kind_from_name(const char* s, display::SceneKind& k) noexcept {
     const display::SceneKind all[] = {display::SceneKind::Clock, display::SceneKind::Date, display::SceneKind::Value,
                                       display::SceneKind::TwoLines, display::SceneKind::Scroll, display::SceneKind::Night,
-                                      display::SceneKind::Test, display::SceneKind::Air};
+                                      display::SceneKind::Test, display::SceneKind::Air,
+                                      display::SceneKind::Temperature, display::SceneKind::Humidity};
     for (display::SceneKind cand : all) {
         if (same(s, scene_kind_name(cand))) {
             k = cand;
@@ -1154,6 +1161,72 @@ bool parse_color(const char* s, uint8_t rgb[3]) noexcept {
         }
         rgb[i] = static_cast<uint8_t>((hi << 4U) | lo);
     }
+    return true;
+}
+
+// ------------------------------------------------------------------ colours
+
+std::size_t color_to_text(display::Rgb c, char* out, std::size_t out_size) noexcept {
+    if ((out == nullptr) || (out_size == 0U)) {
+        return 0U;
+    }
+    if (out_size < 8U) {
+        out[0] = '\0';
+        return 0U;
+    }
+    const int n = std::snprintf(out, out_size, "#%02x%02x%02x", static_cast<unsigned>(c.r), static_cast<unsigned>(c.g),
+                                static_cast<unsigned>(c.b));
+    return (n == 7) ? 7U : 0U;
+}
+
+display::Rgb& color_field(ColorSettings& c, std::size_t index) noexcept {
+    switch (index) {
+        case 1U: return c.clock_colon;
+        case 2U: return c.clock_seconds_bar;
+        case 3U: return c.date_weekday;
+        case 4U: return c.date_number;
+        case 5U: return c.value_icon;
+        case 6U: return c.value_text;
+        case 7U: return c.air_text;
+        case 8U: return c.night_clock;
+        case 0U:
+        default: return c.clock_digits;
+    }
+}
+
+const display::Rgb& color_field(const ColorSettings& c, std::size_t index) noexcept {
+    switch (index) {
+        case 1U: return c.clock_colon;
+        case 2U: return c.clock_seconds_bar;
+        case 3U: return c.date_weekday;
+        case 4U: return c.date_number;
+        case 5U: return c.value_icon;
+        case 6U: return c.value_text;
+        case 7U: return c.air_text;
+        case 8U: return c.night_clock;
+        case 0U:
+        default: return c.clock_digits;
+    }
+}
+
+bool apply_color_form(const char* body, std::size_t len, const ColorSettings& current, ColorSettings& out,
+                      FormError& err) noexcept {
+    ColorSettings c = current;
+    char v[kFieldMax];
+    for (std::size_t i = 0U; i < kColorFieldCount; ++i) {
+        const int8_t r = fetch(body, len, kColorFields[i], v, sizeof(v));
+        if (r < 0) {
+            return fail(err, kColorFields[i], kBadEncoding);
+        }
+        if (r > 0) {
+            uint8_t rgb[3];
+            if (!parse_color(v, rgb)) {
+                return fail(err, kColorFields[i], "#RRGGBB");
+            }
+            color_field(c, i) = display::Rgb{rgb[0], rgb[1], rgb[2]};
+        }
+    }
+    out = c;
     return true;
 }
 

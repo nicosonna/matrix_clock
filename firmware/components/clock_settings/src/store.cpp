@@ -25,6 +25,7 @@ constexpr char kKeyAir[] = "air";
 constexpr char kKeyHa[] = "ha";
 constexpr char kKeyMqtt[] = "mqtt";
 constexpr char kKeyAlerts[] = "alerts";
+constexpr char kKeyColors[] = "colors";
 /// Wi-Fi credentials live in their own namespace (clock_web); erased by the factory reset too.
 constexpr char kWifiNamespace[] = "clk_wifi";
 
@@ -34,6 +35,7 @@ constexpr uint8_t kSystemVersion = 1U;
 constexpr uint8_t kAirVersion = 1U;
 constexpr uint8_t kHaVersion = 1U;
 constexpr uint8_t kMqttVersion = 1U;
+constexpr uint8_t kColorsVersion = 1U;
 constexpr uint8_t kAlertsVersion = 1U;
 
 SemaphoreHandle_t s_mutex = nullptr;
@@ -153,6 +155,15 @@ esp_err_t init() noexcept {
                 replaced = true;
             }
         }
+        settings::ColorSettings col{};
+        if (read_blob(h, kKeyColors, kColorsVersion, col)) {
+            if (settings::is_valid(col)) {
+                loaded.colors = col;
+            } else {
+                ESP_LOGW(kTag, "colour settings invalid: defaults");
+                replaced = true;
+            }
+        }
         static settings::AlertSettings al{};  // 16 rules: not on the stack
         if (read_blob(h, kKeyAlerts, kAlertsVersion, al)) {
             if (settings::is_valid(al)) {
@@ -244,6 +255,15 @@ homeassistant::MqttConfig mqtt() noexcept {
         unlock();
     }
     return m;
+}
+
+settings::ColorSettings colors() noexcept {
+    settings::ColorSettings c = settings::default_color_settings();
+    if (lock()) {
+        c = s_current.colors;
+        unlock();
+    }
+    return c;
 }
 
 uint32_t version() noexcept {
@@ -339,6 +359,19 @@ bool save_mqtt(const homeassistant::MqttConfig& c) noexcept {
         unlock();
     }
     ESP_LOGI(kTag, "mqtt settings saved");
+    return true;
+}
+
+bool save_colors(const settings::ColorSettings& c) noexcept {
+    if (!settings::is_valid(c) || !write_blob(kKeyColors, kColorsVersion, c)) {
+        return false;
+    }
+    if (lock()) {
+        s_current.colors = c;
+        ++s_version;
+        unlock();
+    }
+    ESP_LOGI(kTag, "colour settings saved");
     return true;
 }
 

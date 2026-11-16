@@ -33,8 +33,8 @@ Dépôt **public** : `github.com/nicosonna/matrix_clock` (dossier local
 > `air_quality`, `homeassistant` (`ws_client` + `mqtt`), `alerts` (règles,
 > file, heures silencieuses), et les adaptateurs `clock_board`,
 > `clock_display`, `clock_hal` (ADC + I²C), `clock_time`, `clock_settings`,
-> `clock_homeassistant` (WebSocket + esp-mqtt), `clock_web` (portail, 7
-> domaines de réglage, wizards, OTA). 130 tests host `PASSE`, couverture
+> `clock_homeassistant` (WebSocket + esp-mqtt), `clock_web` (portail, 8
+> domaines de réglage dont les couleurs, wizards, OTA). 130 tests host `PASSE`, couverture
 > 96,8 %. Ce qui reste : la **campagne matérielle** de
 > `dev/plan-de-test-final.md` §4 (vrai Home Assistant, nuit, coupures) et la
 > phase 2. `dev/journal.md` et `dev/todo.md` disent où on en est.

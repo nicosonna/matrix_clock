@@ -36,6 +36,18 @@ std::size_t air_json(const AirSettings& s, char* out, std::size_t out_size) noex
 std::size_t ha_json(const HaSettings& s, char* out, std::size_t out_size) noexcept;
 /// The password is never written back: `mot_de_passe_defini` says whether one is stored.
 std::size_t mqtt_json(const homeassistant::MqttConfig& c, char* out, std::size_t out_size) noexcept;
+
+/// A named set of colours the page offers as a starting point (not a setting).
+struct ColorPalette {
+    const char* name;
+    ColorSettings colors;
+};
+/// @return The palettes, "Classique" (the defaults) first; @p count receives how many.
+const ColorPalette* color_palettes(std::size_t& count) noexcept;
+/// Model of /couleurs: nine "couleur" fields with their defaults, then "palettes".
+std::size_t color_model_json(char* out, std::size_t out_size) noexcept;
+/// Current colours, "#rrggbb" per field.
+std::size_t color_json(const ColorSettings& c, char* out, std::size_t out_size) noexcept;
 /// Quiet hours + `regles[]`; `seuil` and `hysteresis` as decimal texts in the source's fixed point (`decimales`).
 std::size_t alert_json(const AlertSettings& a, char* out, std::size_t out_size) noexcept;
 

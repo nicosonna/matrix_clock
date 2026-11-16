@@ -23,7 +23,7 @@ bool is_valid(const SceneList& list) noexcept {
     }
     for (uint8_t i = 0U; i < list.count; ++i) {
         const SceneEntry& e = list.entries[i];
-        if (static_cast<uint8_t>(e.kind) > static_cast<uint8_t>(SceneKind::Air)) {
+        if (static_cast<uint8_t>(e.kind) > static_cast<uint8_t>(SceneKind::Humidity)) {
             return false;
         }
         if ((e.kind == SceneKind::Value) && (e.value_index >= kValueMax)) {
@@ -52,6 +52,9 @@ bool Scheduler::available(uint8_t index, const SceneAvailability& avail) const n
             return avail.values[e.value_index];
         case SceneKind::Air:
             return avail.air;
+        case SceneKind::Temperature:
+        case SceneKind::Humidity:
+            return avail.climate;
         case SceneKind::Clock:
         case SceneKind::TwoLines:
         case SceneKind::Night:

@@ -9,6 +9,7 @@
  * the confirmation time. An invalid reading gives `Unknown` at once (honesty).
  */
 
+#include <cstddef>
 #include <cstdint>
 
 #include "air_quality/sensor.hpp"
@@ -86,6 +87,19 @@ LevelColor level_color(AirLevel level) noexcept;
 
 /// French name, as the page shows it.
 const char* level_name(AirLevel level) noexcept;
+
+/**
+ * @brief Temperature as the panel shows it: one decimal, sign kept, UTF-8 degree ("21.5°").
+ * @param centi Temperature in centi-degrees, after the offset.
+ * @return Characters written (without the NUL), 0 if @p out is too small (then "" is written).
+ */
+std::size_t temperature_text(int16_t centi, char* out, std::size_t out_size) noexcept;
+/**
+ * @brief Humidity as the panel shows it, rounded to the unit, capped at 100 ("46%").
+ * @param pct10 Relative humidity in tenths of a percent.
+ * @return Characters written (without the NUL), 0 if @p out is too small.
+ */
+std::size_t humidity_text(uint16_t pct10, char* out, std::size_t out_size) noexcept;
 const char* pilot_name(PilotQuantity p) noexcept;
 bool pilot_from_name(const char* s, PilotQuantity& out) noexcept;
 

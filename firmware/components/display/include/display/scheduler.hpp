@@ -28,6 +28,8 @@ enum class SceneKind : uint8_t {
     Night,       ///< Dim clock, no blink.
     Test,        ///< Commissioning pattern.
     Air,         ///< Air-quality logo 8x8 + pilot value.
+    Temperature, ///< Thermometer icon + local AHT21 temperature.
+    Humidity,    ///< Drop icon + local AHT21 humidity.
 };
 
 /// One entry of the rotation.
@@ -55,6 +57,7 @@ struct SceneAvailability {
     bool date;
     bool scroll;
     bool air;   ///< Air sensor present (even warming up: the grey logo is honest).
+    bool climate;  ///< Local temperature / humidity valid (Temperature and Humidity scenes).
     std::array<bool, kValueMax> values;
 };
 

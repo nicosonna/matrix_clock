@@ -170,7 +170,9 @@ Un **ordonnanceur** pur enchaîne des scènes selon la configuration. Chaque ent
 |---|---|---|
 | `Heure` | `HH:MM` en 5×7, séparateur clignotant à 1 Hz (réglable : fixe / 1 Hz / éteint) | active, 20 s |
 | `Date` | `SAM 05.11` en 3×5 | active, 5 s |
-| `Valeur` | Icône 8×8 + valeur en 5×7 (`21.5°`) — une entrée Home Assistant, **ou** la température / l'humidité locales de l'AHT21 | active, 8 s par valeur affichable |
+| `Valeur` | Icône 8×8 + valeur en 5×7 (`21.5°`) — une entrée Home Assistant | active, 8 s par valeur affichable |
+| `Temperature` | Icône thermomètre + température **du capteur de l'horloge** (AHT21, après le décalage d'auto-échauffement), une décimale (`27.6°`) ; **sautée** tant que la mesure n'est pas valide *(ajoutée le 2026-11-16)* | inactive |
+| `Humidite` | Icône goutte + humidité du capteur de l'horloge, arrondie à l'unité (`46%`) ; sautée de même | inactive |
 | `Air` | Logo air 8×8 coloré selon le niveau + grandeur pilote (`AQI 3`, `820PPM`) ; `--` et logo gris en préchauffage | active si `logo_air = Scene`, 6 s |
 | `DeuxLignes` | Deux valeurs courtes en 3×4 (ex. heure et température) | inactive |
 | `Defilement` | Texte long qui défile (notification, message poussé) | déclenchée, pas périodique |
@@ -196,6 +198,20 @@ l'échelle entière sur la cadence de trame pour éviter le tremblement
 (`spec-alertes.md` §3 — rien ne s'acquitte).
 
 ---
+
+### Couleurs (réglage, 2026-11-16)
+
+Les couleurs des scènes sont des **réglages** (`settings::ColorSettings`, page
+`/couleurs`, blob NVS `colors` v1), par **rôle** et non par scène : chiffres,
+deux-points et barre des secondes de l'heure ; jour et nombre de la date ;
+icône et texte des valeurs (Home Assistant, température, humidité, deux
+lignes) ; grandeur pilote de l'air ; heure de la scène `Nuit`. Toute valeur
+RGB est valide ; les défauts sont les anciennes constantes du firmware. Ne se
+règlent **pas** : le logo air (couleurs de niveau, sémantiques), les alertes
+(couleur par règle), le gris de `--`, les messages système. Un **essai de
+10 s** (`POST /api/couleurs/essai`) affiche des couleurs sans les enregistrer.
+La scène `Nuit` n'atténue plus l'heure par un facteur : elle utilise la
+couleur `nuit_heure`, sombre par défaut (`#303030`).
 
 ## 5. Validité de l'heure (EX-02)
 

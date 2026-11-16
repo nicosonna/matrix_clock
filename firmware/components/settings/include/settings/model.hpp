@@ -16,6 +16,7 @@
 #include "alerts/rules.hpp"
 #include "air_quality/sensor.hpp"
 #include "brightness/brightness.hpp"
+#include "display/color.hpp"
 #include "display/current_limit.hpp"
 #include "display/panel_map.hpp"
 #include "display/scheduler.hpp"
@@ -85,6 +86,25 @@ struct AlertSettings {
 };
 
 /// Everything the clock remembers.
+/// Panel colours by role (page /couleurs). Every RGB value is valid; the defaults
+/// are the colours the firmware used before they became settings.
+struct ColorSettings {
+    display::Rgb clock_digits;       ///< HH:MM digits.
+    display::Rgb clock_colon;        ///< Blinking colon.
+    display::Rgb clock_seconds_bar;  ///< Seconds bar on the last row.
+    display::Rgb date_weekday;       ///< "SAM".
+    display::Rgb date_number;        ///< "16.11".
+    display::Rgb value_icon;         ///< Icon of a tracked value or of the local climate.
+    display::Rgb value_text;         ///< Text of a tracked value, local climate, two-line scene.
+    display::Rgb air_text;           ///< Pilot value of the Air scene (the logo keeps its level colours).
+    display::Rgb night_clock;        ///< Night scene clock, dim by default.
+};
+
+/// @return The historical colours: white digits, amber colon and weekday, blue icons, dim grey night.
+ColorSettings default_color_settings() noexcept;
+/// @return true always (any RGB is a colour); kept for the store's uniform contract.
+bool is_valid(const ColorSettings& c) noexcept;
+
 struct Settings {
     DisplaySettings display;
     brightness::Config brightness;
@@ -93,6 +113,7 @@ struct Settings {
     HaSettings ha;
     homeassistant::MqttConfig mqtt;   ///< MQTT publication (page /mqtt).
     AlertSettings alerts;
+    ColorSettings colors;             ///< Panel colours (page /couleurs).
 };
 
 DisplaySettings default_display_settings() noexcept;

@@ -72,7 +72,8 @@ std::size_t display_model_json(char* out, std::size_t out_size) noexcept {
     const char* const axes[] = {"Colonne", "Ligne"};
     const char* const origins[] = {"HautGauche", "HautDroite", "BasGauche", "BasDroite"};
     const char* const widths[] = {"0", "8"};
-    const char* const kinds[] = {"Heure", "Date", "Valeur", "DeuxLignes", "Defilement", "Nuit", "Test", "Air"};
+    const char* const kinds[] = {"Heure", "Date", "Valeur", "DeuxLignes", "Defilement", "Nuit", "Test", "Air",
+                                  "Temperature", "Humidite"};
     bool ok = w.begin_object() && w.key("champs") && w.begin_object();
     ok = ok && choice_field(w, "axe_premier", "Premier axe du ruban", axes, 2U, axis_name(d.map.first_axis),
                             "Sens du ruban depuis l'origine : colonnes de 8 ou rangées de 32.");
@@ -86,14 +87,93 @@ std::size_t display_model_json(char* out, std::size_t out_size) noexcept {
     ok = ok && bool_field(w, "barre_secondes", "Barre des secondes", d.seconds_bar, "Barre des secondes sur la dernière ligne.");
     ok = ok && int_field(w, "vitesse_defilement", "Vitesse de défilement", "px/s", display::kScrollSpeedMin, display::kScrollSpeedMax, d.scroll_speed_px_s,
                          "Vitesse des textes défilants, pixels par seconde.");
-    ok = ok && text_field(w, "scenes", "scenes", "Rotation des scènes", 255, scenes,
-                          "Scènes affichées tour à tour, avec leur durée en secondes (0 = jusqu'à la fin du texte).");
-    ok = ok && w.end_object();
-    ok = ok && w.key("types_scene") && w.begin_array();
+    // The scene editor of the page reads the kinds from its own field model.
+    ok = ok && head(w, "scenes", "scenes", "Rotation des scènes") && w.field("max", static_cast<int64_t>(255)) &&
+         w.field("defaut", scenes) &&
+         w.field("aide", "Scènes affichées tour à tour, avec leur durée en secondes (0 = jusqu'à la fin du texte).") &&
+         w.key("types_scene") && w.begin_array();
     for (const char* k : kinds) {
         ok = ok && w.str(k);
     }
     ok = ok && w.end_array() && w.end_object();
+    ok = ok && w.end_object() && w.end_object();
+    return finish(w);
+}
+
+namespace {
+
+constexpr display::Rgb hex(uint32_t rgb) noexcept {
+    return display::Rgb{static_cast<uint8_t>((rgb >> 16U) & 0xFFU), static_cast<uint8_t>((rgb >> 8U) & 0xFFU),
+                        static_cast<uint8_t>(rgb & 0xFFU)};
+}
+
+/// Field order of kColorFields: digits, colon, bar, weekday, date, icon, value, air text, night.
+constexpr ColorSettings palette(uint32_t digits, uint32_t colon, uint32_t bar, uint32_t weekday, uint32_t date,
+                                uint32_t icon, uint32_t value, uint32_t air, uint32_t night) noexcept {
+    return ColorSettings{hex(digits), hex(colon), hex(bar), hex(weekday), hex(date), hex(icon), hex(value), hex(air), hex(night)};
+}
+
+constexpr ColorPalette kPalettes[] = {
+    {"Classique", palette(0xFFFFFFU, 0xFFA028U, 0x2850C8U, 0xFFA028U, 0xFFFFFFU, 0x5AA0FFU, 0xFFFFFFU, 0xFFFFFFU, 0x303030U)},
+    {"Ambre", palette(0xFFB000U, 0xFF6A00U, 0xA04000U, 0xFF6A00U, 0xFFB000U, 0xFF6A00U, 0xFFB000U, 0xFFB000U, 0x5A2600U)},
+    {"Glace", palette(0xDFF4FFU, 0x40B0FFU, 0x1060C0U, 0x40B0FFU, 0xDFF4FFU, 0x40B0FFU, 0xDFF4FFU, 0xDFF4FFU, 0x102A50U)},
+    {"Forêt", palette(0xC8FFC8U, 0x30D060U, 0x108030U, 0x30D060U, 0xC8FFC8U, 0x30D060U, 0xC8FFC8U, 0xC8FFC8U, 0x0C3A18U)},
+    {"Braise", palette(0xFF5030U, 0xFF9060U, 0x802010U, 0xFF9060U, 0xFF5030U, 0xFF9060U, 0xFF5030U, 0xFF5030U, 0x500C04U)},
+};
+constexpr std::size_t kPaletteCount = sizeof(kPalettes) / sizeof(kPalettes[0]);
+
+}  // namespace
+
+const ColorPalette* color_palettes(std::size_t& count) noexcept {
+    count = kPaletteCount;
+    return kPalettes;
+}
+
+std::size_t color_model_json(char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    const ColorSettings d = default_color_settings();
+    const char* const labels[] = {"Chiffres de l'heure", "Deux-points", "Barre des secondes", "Jour de la semaine",
+                                  "Date", "Icône des valeurs", "Texte des valeurs", "Grandeur pilote de l'air",
+                                  "Heure en scène Nuit"};
+    const char* const helps[] = {"HH:MM en 5×7.",
+                                 "Les deux points entre heures et minutes, clignotants à 1 Hz.",
+                                 "Barre de progression des secondes sur la dernière ligne.",
+                                 "Le jour abrégé de la scène Date (SAM).",
+                                 "Le jour et le mois de la scène Date (16.11).",
+                                 "Icône 8×8 des valeurs Home Assistant, de la température et de l'humidité.",
+                                 "Texte des valeurs Home Assistant, de la température, de l'humidité et de la scène deux lignes.",
+                                 "Valeur à côté du logo air ; le logo garde ses couleurs de niveau.",
+                                 "Heure de la scène Nuit, sombre par défaut, sans clignotement."};
+    bool ok = w.begin_object() && w.key("champs") && w.begin_object();
+    for (std::size_t i = 0U; i < kColorFieldCount; ++i) {
+        char def[8];
+        (void)color_to_text(color_field(d, i), def, sizeof(def));
+        ok = ok && head(w, kColorFields[i], "couleur", labels[i]) && w.field("defaut", def) && w.field("aide", helps[i]) &&
+             w.end_object();
+    }
+    ok = ok && w.end_object() && w.key("palettes") && w.begin_array();
+    for (std::size_t k = 0U; k < kPaletteCount; ++k) {
+        ok = ok && w.begin_object() && w.field("nom", kPalettes[k].name) && w.key("couleurs") && w.begin_object();
+        for (std::size_t i = 0U; i < kColorFieldCount; ++i) {
+            char text[8];
+            (void)color_to_text(color_field(kPalettes[k].colors, i), text, sizeof(text));
+            ok = ok && w.field(kColorFields[i], text);
+        }
+        ok = ok && w.end_object() && w.end_object();
+    }
+    ok = ok && w.end_array() && w.end_object();
+    return finish(w);
+}
+
+std::size_t color_json(const ColorSettings& c, char* out, std::size_t out_size) noexcept {
+    JsonWriter w(out, out_size);
+    bool ok = w.begin_object();
+    for (std::size_t i = 0U; i < kColorFieldCount; ++i) {
+        char text[8];
+        (void)color_to_text(color_field(c, i), text, sizeof(text));
+        ok = ok && w.field(kColorFields[i], text);
+    }
+    ok = ok && w.end_object();
     return finish(w);
 }
 

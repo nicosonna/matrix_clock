@@ -47,7 +47,7 @@ créés par Nicolas, ou avec un Home Assistant de test (Docker + Mosquitto).
 | `spec-home-assistant.md` §6 bis (MQTT) | `homeassistant::mqtt` (pur, repris de ThermoSync), `clock_homeassistant/mqtt_link` | MQ-01 → MQ-10 : **10 PASSE** | HW-MQ-01/03 mécanique vérifiée sur le **broker de banc** ; HW-MQ-02 à observer | Mosquitto + découverte sur le vrai Home Assistant, préchauffage `null` au démarrage à froid, testament par coupure brutale |
 | `spec-alertes.md` §6 | `alerts` (pur), rendu dans `app_main` | ALR-01 → ALR-18 : **18 PASSE** | HW-ALR-02 mécanique vérifiée, HW-ALR-04 PASSE ; HW-ALR-01/03 à faire | Sonde refroidie (règle `GEL`), une nuit complète en heures silencieuses |
 | `spec-qualite-air.md` §10 | `air_quality` (pur), `clock_hal` I²C | AIR-01 → AIR-22 : **22 PASSE** | HW-AIR-02/05/08 vérifiés ; HW-AIR-01/03/04/06/07 à faire | Préchauffage chronométré, solvant, pièce fermée, référence de température, débranchement à chaud |
-| `spec-serveur-web.md` §7 | `settings` (pur), `clock_web`, `www/app.html` | WEB-01 → WEB-07 : **7 PASSE** + WEB-07 vérifié par HTTP (7 domaines, aucun champ orphelin, wizards cohérents) | HW-WEB-02/04 PASSE ; HW-WEB-01/03/05/06 à faire | Téléphone, image cassée (rollback), couleurs à l'œil |
+| `spec-serveur-web.md` §7 | `settings` (pur), `clock_web`, `www/app.html` | WEB-01 → WEB-07, COL-01/02 : **PASSE** + WEB-07 vérifié par HTTP (8 domaines dont `couleurs`, aucun champ orphelin, wizards cohérents) | HW-WEB-02/04 PASSE ; HW-WEB-01/03/05/06 à faire | Téléphone, image cassée (rollback), couleurs à l'œil |
 | heure (`timekeeping`, `clock_time`) | `timekeeping` (pur) | TIME-01 → TIME-08 : **8 PASSE** | HW-TIME-01 PASSE ; HW-SYS-01 à jouer ; HW-TIME-02 en mars | Fuseau changé à chaud sur la carte, bascule réelle d'heure d'été |
 | Garde-fous transverses | tout | GEN-01 → GEN-05 : **5 PASSE** (g++ nu, `-Werror`, couverture, aucune allocation, harnais sans `assert`) | — | — |
 
@@ -70,7 +70,7 @@ les vérifications matérielles sont une **campagne** (§4).
 | **Aucun acquittement** (EX-46) : passages toutes les `rappel_s`, retrait **par la règle** ou **par la source** seulement | ALR-06, ALR-07, ALR-13, ALR-18 (aucun champ `acquitt…`), HW-ALR-02, HW-ALR-04 |
 | **Entrée non sûre** : tout ce qui vient du réseau est borné, rejeté plutôt que réparé | RES-01 → RES-10 (formulaire, DNS), HA-09, HA-10 (trames, JSON), ALR-15 (notification), WEB-02, WEB-03, MQ-08, MQ-09, ALR-08 (formulaires tout-ou-rien, `%ZZ` sur chaque champ) |
 | **Aucune allocation après init** | GEN-04, AFF-17, ALR-16, MQ-06 (`AllocGuard`) |
-| **Wizards = modèle = firmware** (une seule source de vérité) | WEB-04 (7 domaines), AIR-22, MQ-09, ALR-18 |
+| **Wizards = modèle = firmware** (une seule source de vérité) | WEB-04 (8 domaines), AIR-22, MQ-09, ALR-18, COL-02 |
 | **Plafond de courant** | AFF-05 → AFF-07, HW-AFF-01 |
 | **Pas de flottant, unités entières** | build host `-Wdouble-promotion -Wfloat-equal -Werror` (GEN-02) |
 | **Débordement 32 bits des compteurs ms** | AFF-14, LUM-09, RES-24, HA-11, ALR-17, MQ-06 |

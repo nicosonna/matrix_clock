@@ -125,6 +125,15 @@ void test_display_form() {
     display::SceneList again{};
     CHECK(settings::scenes_from_text(text, again));
     CHECK_EQ(again.count, 4);
+    // Local climate scenes, round trip.
+    const char* sc2 = "scenes=Heure:20:1,Temperature:6:1,Humidite:6:0";
+    CHECK(settings::apply_display_form(sc2, slen(sc2), cur, out, err));
+    CHECK_EQ(out.scenes.count, 3);
+    CHECK_ENUM(out.scenes.entries[1].kind, display::SceneKind::Temperature);
+    CHECK_ENUM(out.scenes.entries[2].kind, display::SceneKind::Humidity);
+    CHECK(!out.scenes.entries[2].enabled);
+    CHECK(settings::scenes_to_text(out.scenes, text, sizeof(text)) > 0U);
+    CHECK(std::strcmp(text, "Heure:20:1,Temperature:6:1,Humidite:6:0") == 0);
 
     // Bad scenes: unknown kind, index 8, 9 entries, trailing comma, bad number.
     const char* bads[] = {"scenes=Lune:5:1", "scenes=Valeur8:5:1", "scenes=Heure:5:1,Heure:5:1,Heure:5:1,Heure:5:1,Heure:5:1,Heure:5:1,Heure:5:1,Heure:5:1,Heure:5:1",
@@ -453,7 +462,7 @@ void test_ha_form() {
 
 /// Reads the embedded page into a static buffer (host only).
 const char* read_page() {
-    static char page[65536];
+    static char page[131072];  // the raw page (served gzipped) must fit whole, or literals go unseen
     std::FILE* f = std::fopen(CLOCK_WWW "/app.html", "rb");
     if (f == nullptr) {
         page[0] = '\0';
@@ -461,6 +470,7 @@ const char* read_page() {
     }
     const std::size_t n = std::fread(page, 1U, sizeof(page) - 1U, f);
     page[n] = '\0';
+    CHECK(n < sizeof(page) - 1U);  // not truncated
     (void)std::fclose(f);
     return page;
 }
@@ -667,13 +677,14 @@ struct PageLiteral {
 bool is_model_field(const char* name) {
     const char* const* lists[] = {settings::kDisplayFields, settings::kBrightnessFields, settings::kSystemFields,
                                   settings::kAirFields, settings::kHaFields, settings::kHaValueFields, settings::kMqttFields,
-                                  settings::kAlertFields, settings::kAlertRuleFields};
+                                  settings::kAlertFields, settings::kAlertRuleFields, settings::kColorFields};
     const std::size_t counts[] = {settings::kDisplayFieldCount, settings::kBrightnessFieldCount, settings::kSystemFieldCount,
                                   settings::kAirFieldCount, settings::kHaFieldCount, settings::kHaValueFieldCount,
-                                  settings::kMqttFieldCount, settings::kAlertFieldCount, settings::kAlertRuleFieldCount};
+                                  settings::kMqttFieldCount, settings::kAlertFieldCount, settings::kAlertRuleFieldCount,
+                                  settings::kColorFieldCount};
     const char* const extra[] = {"ssid", "password", "cle", "texte", "priorite", "duree_s", "confirme", "motif",
                                  "brut_nuit", "brut_nuit_allume", "brut_soir", "brut_jour", "firmware", "reference"};
-    for (std::size_t l = 0U; l < 9U; ++l) {
+    for (std::size_t l = 0U; l < 10U; ++l) {
         for (std::size_t i = 0U; i < counts[l]; ++i) {
             if (std::strcmp(lists[l][i], name) == 0) {
                 return true;
@@ -702,6 +713,36 @@ void test_page_orphans() {
     check_domain_dynamic(page, settings::kHaFields, settings::kHaFieldCount, "ha");
     check_domain_dynamic(page, settings::kMqttFields, settings::kMqttFieldCount, "mqtt");
     check_domain_dynamic(page, settings::kAlertFields, settings::kAlertFieldCount, "alertes");
+    check_domain_dynamic(page, settings::kColorFields, settings::kColorFieldCount, "couleurs");
+    // The colour page reads its palettes from the model, never from a list of its own.
+    CHECK(std::strstr(page, "modeleCouleurs.palettes") != nullptr);
+    CHECK(std::strstr(page, "'Classique'") == nullptr);
+
+    // The scene kinds travel inside the "scenes" field model (the editor reads
+    // modele.types_scene from its own field): a root-level list left the page's
+    // drop-downs empty (defect seen on 2026-11-16).
+    static char dmodel[settings::kJsonMax];
+    CHECK(settings::display_model_json(dmodel, sizeof(dmodel)) > 0U);
+    const char* scenes_field = std::strstr(dmodel, "\"scenes\":{\"type\":\"scenes\"");
+    const char* kinds = std::strstr(dmodel, "\"types_scene\":[");
+    CHECK((scenes_field != nullptr) && (kinds != nullptr) && (kinds > scenes_field) &&
+          (std::strchr(scenes_field, '}') > kinds));
+    CHECK(std::strstr(page, "modele.types_scene") != nullptr);
+    // Every scene kind the firmware knows has a label on the page (the editor
+    // lists the kinds from the model; a missing label would show the raw name).
+    const char* labels = std::strstr(page, "var libelleScene");
+    CHECK(labels != nullptr);
+    if (labels != nullptr) {
+        for (uint8_t k = 0U; k <= static_cast<uint8_t>(display::SceneKind::Humidity); ++k) {
+            char key[24];
+            (void)std::snprintf(key, sizeof(key), " %s:", settings::scene_kind_name(static_cast<display::SceneKind>(k)));
+            const char* hit = std::strstr(labels, key);
+            if ((hit == nullptr) || (hit > std::strstr(labels, "};"))) {
+                std::printf("  scene sans libelle sur la page : %s\n", key);
+            }
+            CHECK((hit != nullptr) && (hit < std::strstr(labels, "};")));
+        }
+    }
 
     // Every name="..." left in the page (uploads, portal) is a known field.
     const char* p = page;
@@ -917,6 +958,116 @@ void test_page_orphans() {
     CHECK_EQ(g_alloc_count, 0);
 }
 
+// ---------------------------------------------------------------- COL-01 / COL-02
+
+void test_color_form() {
+    const settings::ColorSettings d = settings::default_color_settings();
+    CHECK(settings::is_valid(d));
+    CHECK_EQ(settings::kColorFieldCount, 9U);
+    char t[8];
+    CHECK_EQ(static_cast<int>(settings::color_to_text(d.clock_digits, t, sizeof(t))), 7);
+    CHECK(std::strcmp(t, "#ffffff") == 0);
+    CHECK(settings::color_to_text(d.clock_colon, t, sizeof(t)) == 7U);
+    CHECK(std::strcmp(t, "#ffa028") == 0);
+    CHECK(settings::color_to_text(d.night_clock, t, sizeof(t)) == 7U);
+    CHECK(std::strcmp(t, "#303030") == 0);
+    CHECK_EQ(static_cast<int>(settings::color_to_text(d.clock_digits, t, 7U)), 0);
+    CHECK(t[0] == '\0');
+    CHECK_EQ(static_cast<int>(settings::color_to_text(d.clock_digits, nullptr, 0U)), 0);
+
+    // Present fields are decoded, absent ones kept.
+    settings::ColorSettings out{};
+    settings::FormError err{};
+    const char* body = "heure_chiffres=%23ff0000&nuit_heure=%23102030";
+    CHECK(settings::apply_color_form(body, slen(body), d, out, err));
+    CHECK_EQ(out.clock_digits.r, 255);
+    CHECK_EQ(out.clock_digits.g, 0);
+    CHECK_EQ(out.clock_digits.b, 0);
+    CHECK_EQ(out.night_clock.r, 0x10);
+    CHECK_EQ(out.night_clock.b, 0x30);
+    CHECK_EQ(out.clock_colon.g, 160);
+    CHECK_EQ(out.value_icon.b, 255);
+    // Every role by name, upper-case hex accepted, slot mapping exact.
+    for (std::size_t i = 0U; i < settings::kColorFieldCount; ++i) {
+        char b[48];
+        (void)std::snprintf(b, sizeof(b), "%s=%%23%02X%02x%02X", settings::kColorFields[i], static_cast<unsigned>(i * 20U),
+                            static_cast<unsigned>(255U - (i * 20U)), static_cast<unsigned>(i * 7U));
+        settings::ColorSettings one{};
+        CHECK(settings::apply_color_form(b, slen(b), d, one, err));
+        const display::Rgb& c = settings::color_field(one, i);
+        CHECK_EQ(c.r, static_cast<int>(i * 20U));
+        CHECK_EQ(c.g, static_cast<int>(255U - (i * 20U)));
+        CHECK_EQ(c.b, static_cast<int>(i * 7U));
+        // The other roles are untouched.
+        for (std::size_t j = 0U; j < settings::kColorFieldCount; ++j) {
+            if (j != i) {
+                const display::Rgb& o = settings::color_field(one, j);
+                const display::Rgb& e = settings::color_field(d, j);
+                CHECK((o.r == e.r) && (o.g == e.g) && (o.b == e.b));
+            }
+        }
+    }
+    CHECK(&settings::color_field(out, 99U) == &out.clock_digits);  // out of range: the first role
+    // Refusals, all or nothing, by field name.
+    const char* bad[] = {"heure_chiffres=", "heure_chiffres=ff0000", "heure_chiffres=%23ff00", "heure_chiffres=%23gg0000",
+                         "heure_chiffres=%23ff00000", "date_jour=rouge", "valeur_icone=%ZZ", "nuit_heure=%23ff0000&air_texte=x"};
+    for (const char* b : bad) {
+        settings::ColorSettings untouched = d;
+        err = settings::FormError{};
+        const bool ok = settings::apply_color_form(b, slen(b), d, untouched, err);
+        if (ok) {
+            std::printf("  couleur acceptee a tort : %s\n", b);
+        }
+        CHECK(!ok);
+        CHECK((err.field != nullptr) && (err.reason != nullptr));
+        CHECK(std::memcmp(&untouched, &d, sizeof(d)) == 0);
+    }
+    for (std::size_t i = 0U; i < settings::kColorFieldCount; ++i) {
+        char b[64];
+        (void)std::snprintf(b, sizeof(b), "%s=%%ZZ", settings::kColorFields[i]);
+        err = settings::FormError{};
+        CHECK(!settings::apply_color_form(b, slen(b), d, out, err));
+        CHECK((err.field != nullptr) && (std::strcmp(err.field, settings::kColorFields[i]) == 0));
+    }
+
+    // COL-02: model JSON, every field typed "couleur" with its default, five complete palettes, Classique = defaults.
+    static char json[settings::kJsonMax];
+    const std::size_t len = settings::color_model_json(json, sizeof(json));
+    CHECK(len > 0U);
+    for (std::size_t i = 0U; i < settings::kColorFieldCount; ++i) {
+        char needle[80];
+        (void)std::snprintf(needle, sizeof(needle), "\"%s\":{\"type\":\"couleur\"", settings::kColorFields[i]);
+        const bool present = std::strstr(json, needle) != nullptr;
+        if (!present) {
+            std::printf("  champ absent du modele couleurs : %s\n", settings::kColorFields[i]);
+        }
+        CHECK(present);
+    }
+    CHECK(std::strstr(json, "\"defaut\":\"#ffffff\"") != nullptr);
+    CHECK(std::strstr(json, "\"defaut\":\"#303030\"") != nullptr);
+    CHECK(std::strstr(json, "\"palettes\":[{\"nom\":\"Classique\",\"couleurs\":{\"heure_chiffres\":\"#ffffff\"") != nullptr);
+    std::size_t count = 0U;
+    const settings::ColorPalette* pal = settings::color_palettes(count);
+    CHECK_EQ(count, 5U);
+    CHECK((pal != nullptr) && (std::memcmp(&pal[0].colors, &d, sizeof(d)) == 0));
+    for (std::size_t k = 0U; k < count; ++k) {
+        char needle[48];
+        (void)std::snprintf(needle, sizeof(needle), "\"nom\":\"%s\"", pal[k].name);
+        CHECK(std::strstr(json, needle) != nullptr);
+        for (std::size_t j = 0U; j < count; ++j) {  // names unique
+            CHECK((j == k) || (std::strcmp(pal[j].name, pal[k].name) != 0));
+        }
+    }
+    CHECK_EQ(settings::color_model_json(json, 32U), 0U);
+    // Values JSON round trip through the form.
+    const std::size_t vlen = settings::color_json(out, json, sizeof(json));
+    CHECK(vlen > 0U);
+    CHECK(std::strstr(json, "\"heure_chiffres\":\"#ff0000\"") != nullptr);
+    CHECK(std::strstr(json, "\"nuit_heure\":\"#102030\"") != nullptr);
+    CHECK(std::strstr(json, "\"heure_deux_points\":\"#ffa028\"") != nullptr);
+    CHECK_EQ(settings::color_json(out, json, 16U), 0U);
+}
+
 }  // namespace
 
 void run_settings_tests() {
@@ -927,5 +1078,6 @@ void run_settings_tests() {
     test_air_form();
     test_ha_form();
     test_alert_form();
+    test_color_form();
     test_page_orphans();
 }

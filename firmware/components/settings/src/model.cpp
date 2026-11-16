@@ -77,6 +77,7 @@ void default_settings_into(Settings& s) noexcept {
     s.air = default_air_settings();
     default_ha_settings_into(s.ha);
     s.mqtt = homeassistant::default_mqtt_config();
+    s.colors = default_color_settings();
     default_alert_settings_into(s.alerts);
 }
 
@@ -169,6 +170,25 @@ std::size_t ha_uri(const HaSettings& s, char* out, std::size_t size) noexcept {
         return 0U;
     }
     return static_cast<std::size_t>(n);
+}
+
+ColorSettings default_color_settings() noexcept {
+    ColorSettings c{};
+    c.clock_digits = display::Rgb{255U, 255U, 255U};
+    c.clock_colon = display::Rgb{255U, 160U, 40U};
+    c.clock_seconds_bar = display::Rgb{40U, 80U, 200U};
+    c.date_weekday = display::Rgb{255U, 160U, 40U};
+    c.date_number = display::Rgb{255U, 255U, 255U};
+    c.value_icon = display::Rgb{90U, 160U, 255U};
+    c.value_text = display::Rgb{255U, 255U, 255U};
+    c.air_text = display::Rgb{255U, 255U, 255U};
+    c.night_clock = display::Rgb{48U, 48U, 48U};  // the former white scaled by 48/255
+    return c;
+}
+
+bool is_valid(const ColorSettings& c) noexcept {
+    (void)c;
+    return true;
 }
 
 }  // namespace settings

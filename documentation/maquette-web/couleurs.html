@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maquette — Couleurs de l'horloge</title>
+<style>
+:root { --fond:#f5f6f8; --carte:#ffffff; --texte:#1d2024; --doux:#5d636b; --accent:#2f5d8a; --erreur:#b3261e; --ok:#2f7d5b; --bord:#d9dde3; }
+@media (prefers-color-scheme: dark) {
+  :root { --fond:#14171b; --carte:#1d2126; --texte:#e7eaee; --doux:#9aa2ab; --accent:#6fa8dc; --erreur:#f2b8b5; --ok:#5fbf92; --bord:#323840; }
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--fond); color:var(--texte); }
+header { display:flex; align-items:center; gap:.6rem; padding:.9rem 1rem .4rem; max-width:40rem; margin:0 auto; }
+header svg { width:1.5rem; height:1.5rem; stroke:var(--accent); fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+header h1 { font-size:1.2rem; margin:0; flex:1; }
+.maquette { max-width:40rem; margin:0 auto; padding:0 1rem; font-size:.85rem; color:var(--doux); }
+nav { max-width:40rem; margin:0 auto; padding:0 1rem; display:flex; gap:.25rem; flex-wrap:wrap; border-bottom:1px solid var(--bord); }
+nav a { padding:.55rem .8rem; text-decoration:none; color:var(--doux); border-bottom:2px solid transparent; }
+nav a.actif { color:var(--accent); border-color:var(--accent); font-weight:600; }
+main { max-width:40rem; margin:0 auto; padding:1rem 1rem 2rem; }
+.carte { background:var(--carte); border:1px solid var(--bord); border-radius:.75rem; padding:1rem; margin-bottom:1rem; }
+.carte h2 { font-size:1.05rem; margin:0 0 .5rem; }
+.aide { font-size:.85rem; color:var(--doux); margin:.25rem 0 0; }
+button { padding:.6rem 1rem; font-size:1rem; font-weight:600; border:0; border-radius:.5rem; background:var(--accent); color:#fff; cursor:pointer; }
+button.second { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+button.petit { padding:.3rem .55rem; font-size:.9rem; }
+.apercu { display:grid; gap:.5rem; }
+.dalle { display:flex; align-items:center; gap:.8rem; }
+.dalle canvas { width:100%; max-width:26rem; background:#0b0c0e; border-radius:.4rem; border:1px solid #2a2e34; image-rendering:pixelated; }
+.dalle span { width:6rem; font-size:.85rem; color:var(--doux); }
+.palettes { display:flex; flex-wrap:wrap; gap:.5rem; margin:.4rem 0; }
+.palette { display:flex; align-items:center; gap:.5rem; padding:.4rem .7rem; border:1px solid var(--bord); border-radius:.6rem; background:var(--fond); cursor:pointer; font-weight:600; font-size:.9rem; color:var(--texte); }
+.palette.actif { border-color:var(--accent); outline:2px solid var(--accent); }
+.palette i { display:inline-block; width:.9rem; height:.9rem; border-radius:50%; border:1px solid rgba(0,0,0,.25); }
+.groupe { border-top:1px solid var(--bord); padding-top:.6rem; margin-top:.8rem; }
+.groupe h3 { font-size:.95rem; margin:0 0 .3rem; }
+.role { display:grid; grid-template-columns:2.4rem 1fr auto; align-items:center; gap:.6rem; padding:.35rem 0; }
+.role input[type=color] { width:2.4rem; height:1.8rem; padding:0; border:1px solid var(--bord); border-radius:.4rem; background:var(--fond); cursor:pointer; }
+.role label { font-weight:600; }
+.role small { display:block; font-weight:400; color:var(--doux); }
+.role code { font-size:.8rem; color:var(--doux); }
+.etapes { display:flex; gap:.4rem; margin:.3rem 0 .8rem; flex-wrap:wrap; }
+.etapes span { padding:.25rem .6rem; border-radius:1rem; border:1px solid var(--bord); font-size:.85rem; color:var(--doux); }
+.etapes span.actif { background:var(--accent); color:#fff; border-color:var(--accent); }
+.actions { display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.8rem; }
+.msg { min-height:1.4rem; margin-top:.6rem; font-size:.95rem; color:var(--ok); }
+.note { background:var(--fond); border:1px dashed var(--bord); border-radius:.6rem; padding:.6rem .8rem; font-size:.85rem; color:var(--doux); }
+</style>
+</head>
+<body>
+<header>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+  <h1>Horloge</h1>
+</header>
+<p class="maquette">Maquette simulée, pas la page du firmware : les couleurs ne sont pas enregistrées, l'aperçu ne tient pas compte du gamma ni de la luminosité automatique.</p>
+<nav>
+  <a href="#">État</a><a href="#">WiFi</a><a href="#">Affichage</a><a href="#" class="actif">Couleurs</a><a href="#">Luminosité</a><a href="#">Qualité d'air</a><a href="#">Home Assistant</a><a href="#">MQTT</a><a href="#">Alertes</a><a href="#">Système</a>
+</nav>
+<main>
+
+<div class="carte">
+  <h2>Aperçu</h2>
+  <div class="apercu">
+    <div class="dalle"><span>Heure</span><canvas id="c-heure" width="320" height="80"></canvas></div>
+    <div class="dalle"><span>Date</span><canvas id="c-date" width="320" height="80"></canvas></div>
+    <div class="dalle"><span>Valeur / Température</span><canvas id="c-valeur" width="320" height="80"></canvas></div>
+    <div class="dalle"><span>Qualité d'air</span><canvas id="c-air" width="320" height="80"></canvas></div>
+    <div class="dalle"><span>Nuit</span><canvas id="c-nuit" width="320" height="80"></canvas></div>
+  </div>
+  <p class="aide">L'aperçu suit les couleurs ci-dessous en direct. Le logo air garde ses couleurs de niveau (vert, jaune, orange, rouge, gris) : elles portent un sens et ne se personnalisent pas, comme les couleurs des alertes qui restent réglées règle par règle.</p>
+</div>
+
+<div class="carte">
+  <h2>Palette</h2>
+  <div class="palettes" id="palettes"></div>
+  <p class="aide">Une palette remplit toutes les couleurs d'un coup ; toute retouche ci-dessous passe en « Personnalisée ».</p>
+</div>
+
+<div class="carte">
+  <h2>Couleurs</h2>
+  <div id="roles"></div>
+  <div class="actions">
+    <button type="button" id="appliquer">Enregistrer</button>
+    <button type="button" class="second" id="defaut">Valeurs d'usine</button>
+    <button type="button" class="second" id="essai">Essayer 10 s sur la dalle</button>
+  </div>
+  <div class="msg" id="msg"></div>
+  <p class="aide">« Essayer » enverrait les couleurs à la dalle sans les enregistrer (elles retombent après 10 s), pour juger à l'œil avant d'enregistrer. Format transporté : <code>#RRGGBB</code>, comme la couleur des règles d'alerte.</p>
+</div>
+
+<div class="carte">
+  <h2>Assistant couleurs</h2>
+  <div class="etapes"><span class="actif">1 · Palette</span><span>2 · Heure et date</span><span>3 · Valeurs</span><span>4 · Essai sur la dalle</span></div>
+  <p class="aide">Même parcours que les autres assistants : choisir une palette de départ, ajuster l'heure et la date en voyant la dalle, puis les valeurs, et finir par un essai de 10 s sur la vraie dalle avant d'enregistrer. Les textes, bornes et défauts viennent du modèle <code>/api/couleurs/modele</code>.</p>
+</div>
+
+<div class="note">
+  <strong>Ce que la maquette propose (à approuver)</strong><br>
+  · Un domaine de réglage <code>couleurs</code> à part entière : onglet, API <code>/api/couleurs</code>, modèle, wizard, stockage NVS, tests WEB-04 étendus.<br>
+  · 9 rôles de couleur, regroupés par scène (ci-dessus). Le texte « indisponible » (<code>--</code>) reste gris fixe : une donnée absente doit toujours se voir.<br>
+  · 5 palettes prédéfinies plus « Personnalisée ». La palette « Classique » reproduit les couleurs actuelles du firmware.<br>
+  · Bouton « Essayer 10 s » : aperçu réel sans enregistrer.<br>
+  · Hors périmètre : couleurs des alertes (déjà par règle), du logo air (sémantiques), des messages système (état, OTA).
+</div>
+
+</main>
+<script>
+(function () {
+  'use strict';
+  // ---- colour roles (defaults = the firmware's current constants)
+  var roles = [
+    { groupe: 'Heure', id: 'heure_chiffres', nom: 'Chiffres', aide: 'HH:MM en 5×7', defaut: '#ffffff' },
+    { groupe: 'Heure', id: 'heure_deux_points', nom: 'Deux-points', aide: 'Clignotant à 1 Hz', defaut: '#ffa028' },
+    { groupe: 'Heure', id: 'heure_barre', nom: 'Barre des secondes', aide: 'Dernière ligne', defaut: '#5aa0ff' },
+    { groupe: 'Date', id: 'date_jour', nom: 'Jour de la semaine', aide: 'SAM', defaut: '#ffa028' },
+    { groupe: 'Date', id: 'date_nombre', nom: 'Date', aide: '16.11', defaut: '#ffffff' },
+    { groupe: 'Valeurs (Home Assistant, température, humidité)', id: 'valeur_icone', nom: 'Icône', aide: 'Thermomètre, goutte, éclair…', defaut: '#5aa0ff' },
+    { groupe: 'Valeurs (Home Assistant, température, humidité)', id: 'valeur_texte', nom: 'Valeur', aide: '21.5°, 46%', defaut: '#ffffff' },
+    { groupe: 'Qualité d’air', id: 'air_texte', nom: 'Grandeur pilote', aide: 'AQI 3, 820 ppm (le logo garde ses couleurs de niveau)', defaut: '#ffffff' },
+    { groupe: 'Nuit', id: 'nuit_heure', nom: 'Heure en scène Nuit', aide: 'Au plancher de luminosité, sans clignotement', defaut: '#8a3c10' }
+  ];
+  var palettes = {
+    'Classique': { heure_chiffres: '#ffffff', heure_deux_points: '#ffa028', heure_barre: '#5aa0ff', date_jour: '#ffa028', date_nombre: '#ffffff', valeur_icone: '#5aa0ff', valeur_texte: '#ffffff', air_texte: '#ffffff', nuit_heure: '#8a3c10' },
+    'Ambre': { heure_chiffres: '#ffb000', heure_deux_points: '#ff6a00', heure_barre: '#a04000', date_jour: '#ff6a00', date_nombre: '#ffb000', valeur_icone: '#ff6a00', valeur_texte: '#ffb000', air_texte: '#ffb000', nuit_heure: '#5a2600' },
+    'Glace': { heure_chiffres: '#dff4ff', heure_deux_points: '#40b0ff', heure_barre: '#1060c0', date_jour: '#40b0ff', date_nombre: '#dff4ff', valeur_icone: '#40b0ff', valeur_texte: '#dff4ff', air_texte: '#dff4ff', nuit_heure: '#102a50' },
+    'Forêt': { heure_chiffres: '#c8ffc8', heure_deux_points: '#30d060', heure_barre: '#108030', date_jour: '#30d060', date_nombre: '#c8ffc8', valeur_icone: '#30d060', valeur_texte: '#c8ffc8', air_texte: '#c8ffc8', nuit_heure: '#0c3a18' },
+    'Braise': { heure_chiffres: '#ff5030', heure_deux_points: '#ff9060', heure_barre: '#802010', date_jour: '#ff9060', date_nombre: '#ff5030', valeur_icone: '#ff9060', valeur_texte: '#ff5030', air_texte: '#ff5030', nuit_heure: '#500c04' }
+  };
+  var courant = {};
+  var paletteActive = 'Classique';
+
+  // ---- pixel fonts (subset, same geometry as the firmware: 5x7 digits, 3x5 text, 8x8 icons)
+  var F57 = {
+    '0': ['01110','10001','10011','10101','11001','10001','01110'],
+    '1': ['00100','01100','00100','00100','00100','00100','01110'],
+    '2': ['01110','10001','00001','00010','00100','01000','11111'],
+    '3': ['11111','00010','00100','00010','00001','10001','01110'],
+    '4': ['00010','00110','01010','10010','11111','00010','00010'],
+    '5': ['11111','10000','11110','00001','00001','10001','01110'],
+    '6': ['00110','01000','10000','11110','10001','10001','01110'],
+    '7': ['11111','00001','00010','00100','01000','01000','01000'],
+    '8': ['01110','10001','10001','01110','10001','10001','01110'],
+    '9': ['01110','10001','10001','01111','00001','00010','01100']
+  };
+  var F35 = {
+    '0': ['111','101','101','101','111'], '1': ['010','110','010','010','111'], '2': ['111','001','111','100','111'],
+    '3': ['111','001','111','001','111'], '4': ['101','101','111','001','001'], '5': ['111','100','111','001','111'],
+    '6': ['111','100','111','101','111'], '7': ['111','001','001','001','001'], '8': ['111','101','111','101','111'],
+    '9': ['111','101','111','001','111'], 'A': ['010','101','111','101','101'], 'S': ['111','100','111','001','111'],
+    'M': ['101','111','111','101','101'], 'Q': ['111','101','101','111','001'], 'I': ['111','010','010','010','111'],
+    '.': ['000','000','000','000','010'], '°': ['110','110','000','000','000'], '%': ['100','001','010','100','001'],
+    ' ': ['000','000','000','000','000']
+  };
+  var THERMO = ['00100000','01010000','01010000','01010000','01110000','11111000','11111000','01110000'];
+  var LOGO = ['00111100','01000010','10011001','10100101','10100101','10011001','01000010','00111100'];
+
+  function dessiner(id, fn) {
+    var c = document.getElementById(id), ctx = c.getContext('2d');
+    ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, 0, c.width, c.height);
+    var fb = []; for (var y = 0; y < 8; y++) { fb.push(new Array(32).fill(null)); }
+    function px(x, y, col) { if (x >= 0 && x < 32 && y >= 0 && y < 8) { fb[y][x] = col; } }
+    function glyphes(font, x, y, texte, col, larg) {
+      for (var i = 0; i < texte.length; i++) {
+        var g = font[texte[i]]; if (g) { for (var r = 0; r < g.length; r++) { for (var k = 0; k < g[r].length; k++) { if (g[r][k] === '1') { px(x + k, y + r, col); } } } }
+        x += larg + 1;
+      }
+    }
+    function icone(bits, x, y, col) { for (var r = 0; r < 8; r++) { for (var k = 0; k < 8; k++) { if (bits[r][k] === '1') { px(x + k, y + r, col); } } } }
+    fn(px, glyphes, icone);
+    for (var yy = 0; yy < 8; yy++) { for (var xx = 0; xx < 32; xx++) {
+      var col = fb[yy][xx] || '#15181c';
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(xx * 10 + 5, yy * 10 + 5, 3.6, 0, 6.283); ctx.fill();
+    } }
+  }
+  function redessiner() {
+    var k = courant;
+    dessiner('c-heure', function (px, gl) {
+      gl(F57, 3, 0, '12', k.heure_chiffres, 5); gl(F57, 17, 0, '34', k.heure_chiffres, 5);
+      px(15, 2, k.heure_deux_points); px(15, 4, k.heure_deux_points);
+      for (var x = 0; x < 18; x++) { px(x, 7, k.heure_barre); }
+    });
+    dessiner('c-date', function (px, gl) { gl(F35, 1, 1, 'SAM', k.date_jour, 3); gl(F35, 15, 1, '16.11', k.date_nombre, 3); });
+    dessiner('c-valeur', function (px, gl, ic) { ic(THERMO, 0, 0, k.valeur_icone); gl(F35, 10, 1, '21.5°', k.valeur_texte, 3); });
+    dessiner('c-air', function (px, gl, ic) { ic(LOGO, 0, 0, '#30c050'); gl(F35, 10, 1, 'AQI 3', k.air_texte, 3); });
+    dessiner('c-nuit', function (px, gl) { gl(F57, 3, 0, '03', k.nuit_heure, 5); gl(F57, 17, 0, '12', k.nuit_heure, 5); px(15, 2, k.nuit_heure); px(15, 4, k.nuit_heure); });
+  }
+
+  // ---- palettes
+  var zonePal = document.getElementById('palettes');
+  function dessinerPalettes() {
+    zonePal.innerHTML = '';
+    Object.keys(palettes).concat(['Personnalisée']).forEach(function (nom) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'palette' + (nom === paletteActive ? ' actif' : '');
+      var p = palettes[nom] || courant;
+      ['heure_chiffres', 'heure_deux_points', 'valeur_icone'].forEach(function (r) { var i = document.createElement('i'); i.style.background = p[r]; b.appendChild(i); });
+      b.appendChild(document.createTextNode(nom));
+      if (palettes[nom]) { b.onclick = function () { paletteActive = nom; Object.keys(palettes[nom]).forEach(function (r) { courant[r] = palettes[nom][r]; }); synchroniser(); }; } else { b.disabled = (paletteActive !== nom); }
+      zonePal.appendChild(b);
+    });
+  }
+
+  // ---- roles
+  var zoneRoles = document.getElementById('roles');
+  var entrees = {};
+  function dessinerRoles() {
+    var groupe = null;
+    roles.forEach(function (r) {
+      if (r.groupe !== groupe) { groupe = r.groupe; var g = document.createElement('div'); g.className = 'groupe'; var h = document.createElement('h3'); h.textContent = groupe; g.appendChild(h); zoneRoles.appendChild(g); }
+      var ligne = document.createElement('div'); ligne.className = 'role';
+      var inp = document.createElement('input'); inp.type = 'color'; inp.id = r.id; inp.value = r.defaut;
+      inp.oninput = function () { courant[r.id] = inp.value; paletteActive = 'Personnalisée'; synchroniser(); };
+      var lab = document.createElement('label'); lab.htmlFor = r.id; lab.textContent = r.nom;
+      var sm = document.createElement('small'); sm.textContent = r.aide + ' · défaut ' + r.defaut.toUpperCase(); lab.appendChild(sm);
+      var code = document.createElement('code'); code.textContent = r.id;
+      ligne.appendChild(inp); ligne.appendChild(lab); ligne.appendChild(code);
+      zoneRoles.lastChild.appendChild(ligne);
+      entrees[r.id] = inp;
+    });
+  }
+  function synchroniser() {
+    roles.forEach(function (r) { entrees[r.id].value = courant[r.id]; });
+    dessinerPalettes(); redessiner();
+  }
+  document.getElementById('appliquer').onclick = function () { document.getElementById('msg').textContent = 'Maquette : rien n’est enregistré (le firmware ferait POST /api/couleurs).'; };
+  document.getElementById('defaut').onclick = function () { paletteActive = 'Classique'; roles.forEach(function (r) { courant[r.id] = r.defaut; }); synchroniser(); document.getElementById('msg').textContent = ''; };
+  document.getElementById('essai').onclick = function () { document.getElementById('msg').textContent = 'Maquette : la dalle afficherait ces couleurs pendant 10 s sans les enregistrer.'; };
+
+  roles.forEach(function (r) { courant[r.id] = r.defaut; });
+  dessinerRoles(); dessinerPalettes(); redessiner();
+})();
+</script>
+</body>
+</html>

@@ -29,6 +29,7 @@ settings::SystemSettings system() noexcept;
 settings::AirSettings air() noexcept;
 void ha(settings::HaSettings& out) noexcept;
 homeassistant::MqttConfig mqtt() noexcept;
+settings::ColorSettings colors() noexcept;
 /// ~2 KB: copied into @p out (keep it static).
 void alerts(settings::AlertSettings& out) noexcept;
 
@@ -45,6 +46,7 @@ bool save_system(const settings::SystemSettings& s) noexcept;
 bool save_air(const settings::AirSettings& s) noexcept;
 bool save_ha(const settings::HaSettings& s) noexcept;
 bool save_mqtt(const homeassistant::MqttConfig& c) noexcept;
+bool save_colors(const settings::ColorSettings& c) noexcept;
 bool save_alerts(const settings::AlertSettings& a) noexcept;
 
 /// Erases every stored setting (Wi-Fi credentials included). The caller reboots.

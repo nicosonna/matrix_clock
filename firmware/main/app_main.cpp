@@ -85,14 +85,10 @@ constexpr uint8_t kAirLogoX = 26U;            ///< 6x6 logo next to a left-align
 constexpr uint8_t kAirLogoY = 1U;
 
 // Colours (a theme, until the page lets the user choose them).
-constexpr display::ClockColors kClockColors{display::Rgb{255U, 255U, 255U}, display::Rgb{255U, 160U, 40U},
-                                            display::Rgb{40U, 80U, 200U}};
-constexpr display::DateColors kDateColors{display::Rgb{255U, 160U, 40U}, display::Rgb{255U, 255U, 255U}};
 constexpr display::Rgb kStatusColor{90U, 160U, 255U};
 constexpr display::Rgb kOtaColor{255U, 255U, 255U};
-constexpr display::Rgb kValueIconColor{90U, 160U, 255U};
 constexpr display::Rgb kDimColor{90U, 90U, 90U};
-constexpr uint8_t kNightScale = 48U;  ///< Night scene brightness factor (/255).
+constexpr uint32_t kColorTrialMs = 10000U;  ///< "Essayer" on /couleurs: the colours stay this long, then the saved ones return.
 /// Notification colour by priority: info, notable, important, critical.
 constexpr display::Rgb kPriorityColor[4] = {
     display::Rgb{90U, 160U, 255U}, display::Rgb{255U, 190U, 40U}, display::Rgb{255U, 110U, 0U},
@@ -251,6 +247,21 @@ void fill_mqtt_state(homeassistant::MqttState& out) {
     out.ldr_raw = s_shared.ldr_raw;
     taskEXIT_CRITICAL(&s_mux);
     out.time_sure = clock_time::now().sure;
+}
+
+// Colour trial from the page: shown instead of the saved colours until it expires.
+settings::ColorSettings s_trial_colors{};
+uint32_t s_trial_until_ms = 0U;
+bool s_trial_on = false;
+
+void on_colors_try(const settings::ColorSettings& colors) {
+    const uint32_t until = now_ms() + kColorTrialMs;
+    taskENTER_CRITICAL(&s_mux);
+    s_trial_colors = colors;
+    s_trial_until_ms = until;
+    s_trial_on = true;
+    taskEXIT_CRITICAL(&s_mux);
+    ESP_LOGI(kTag, "colour trial for %lu ms", static_cast<unsigned long>(kColorTrialMs));
 }
 
 void on_mqtt_discovery() {
@@ -701,11 +712,25 @@ void display_task(void* /*arg*/) {
 
         const air_quality::LevelColor lc = air_quality::level_color(air.level);
         const display::Rgb air_color{lc.r, lc.g, lc.b};
+        // Colours by role; a running trial from /couleurs overrides the saved ones.
+        settings::ColorSettings col = cfg.colors;
+        taskENTER_CRITICAL(&s_mux);
+        if (s_trial_on) {
+            if (static_cast<int32_t>(s_trial_until_ms - now) > 0) {
+                col = s_trial_colors;
+            } else {
+                s_trial_on = false;
+            }
+        }
+        taskEXIT_CRITICAL(&s_mux);
+        const display::ClockColors clock_colors{col.clock_digits, col.clock_colon, col.clock_seconds_bar};
+        const display::DateColors date_colors{col.date_weekday, col.date_number};
         const bool air_shown = air.enabled && air.reading.present;
         display::SceneAvailability avail{};
         avail.date = time_info.sure;
         avail.scroll = false;
         avail.air = air_shown && (cfg.air.logo == settings::AirLogoMode::Scene);
+        avail.climate = air_shown && air.reading.climate_valid;
         for (std::size_t i = 0U; i < homeassistant::kValuesMax; ++i) {
             avail.values[i] = ha.values[i].enabled && ha.values[i].valid;
         }
@@ -801,14 +826,14 @@ void display_task(void* /*arg*/) {
             }
             switch (kind) {
                 case display::SceneKind::Date:
-                    display::draw_date(fb, time_info, 1U, 1U, kDateColors);
+                    display::draw_date(fb, time_info, 1U, 1U, date_colors);
                     break;
                 case display::SceneKind::Value: {
                     const clock_homeassistant::ValueSnapshot& v = ha.values[shown.scene != display::kSyntheticClock ? cfg.display.scenes.entries[shown.scene].value_index : 0U];
                     const display::Icon icon = static_cast<display::Icon>(v.icon);
                     int16_t x = 0;
                     if (icon != display::Icon::None) {
-                        display::draw_icon(fb, icon, 0, 0, kValueIconColor);
+                        display::draw_icon(fb, icon, 0, 0, col.value_icon);
                         x = 10;
                     }
                     char text[display::kTextMax + 1U];
@@ -816,7 +841,7 @@ void display_task(void* /*arg*/) {
                     const uint16_t room = static_cast<uint16_t>(display::kWidth - x);
                     const bool big = display::text_width(display::kFont5x7, text) <= room;
                     display::draw_text(fb, big ? display::kFont5x7 : display::kFont3x5, x, big ? 0 : 1, text,
-                                       v.valid ? kClockColors.digits : kDimColor);
+                                       v.valid ? col.value_text : kDimColor);
                     break;
                 }
                 case display::SceneKind::TwoLines: {
@@ -826,7 +851,7 @@ void display_task(void* /*arg*/) {
                         const clock_homeassistant::ValueSnapshot& v = ha.values[row];
                         (void)display::transliterate((v.enabled && v.valid) ? v.text : "--", text, sizeof(text));
                         display::draw_text(fb, display::kFont3x4, 0, static_cast<int16_t>(row * 4U), text,
-                                           (row == 0U) ? kClockColors.digits : kDateColors.weekday);
+                                           (row == 0U) ? col.value_text : date_colors.weekday);
                     }
                     break;
                 }
@@ -858,8 +883,7 @@ void display_task(void* /*arg*/) {
                 }
                 case display::SceneKind::Night: {
                     // Dim, steady clock (no blink, no bar): for a bedroom.
-                    display::ClockColors dim{display::scale(kClockColors.digits, kNightScale), display::scale(kClockColors.colon, kNightScale),
-                                             display::scale(kClockColors.seconds_bar, kNightScale)};
+                    const display::ClockColors dim{col.night_clock, col.night_clock, col.night_clock};
                     display::draw_clock(fb, time_info, display::kClockCentredX, true, false, dim);
                     break;
                 }
@@ -876,7 +900,29 @@ void display_task(void* /*arg*/) {
                         (void)std::snprintf(text, sizeof(text), "%u", static_cast<unsigned>(pv.value));
                     }
                     const display::Font& font = (display::text_width(display::kFont5x7, text) <= 22U) ? display::kFont5x7 : display::kFont3x5;
-                    display::draw_text(fb, font, 10, (&font == &display::kFont5x7) ? 0 : 1, text, pv.valid ? kClockColors.digits : air_color);
+                    display::draw_text(fb, font, 10, (&font == &display::kFont5x7) ? 0 : 1, text, pv.valid ? col.air_text : air_color);
+                    break;
+                }
+                case display::SceneKind::Temperature:
+                case display::SceneKind::Humidity: {
+                    // Local AHT21 reading, drawn like a tracked value: icon + text. The
+                    // scheduler skips the scene while the climate is invalid; "--" only
+                    // shows if it turns invalid during the scene.
+                    const bool is_temp = (kind == display::SceneKind::Temperature);
+                    display::draw_icon(fb, is_temp ? display::Icon::Thermometer : display::Icon::Drop, 0, 0, col.value_icon);
+                    char raw[16];
+                    if (!air.reading.climate_valid) {
+                        (void)std::snprintf(raw, sizeof(raw), "--");
+                    } else if (is_temp) {
+                        (void)air_quality::temperature_text(air.reading.temperature_centi, raw, sizeof(raw));
+                    } else {
+                        (void)air_quality::humidity_text(air.reading.humidity_pct10, raw, sizeof(raw));
+                    }
+                    char text[display::kTextMax + 1U];
+                    (void)display::transliterate(raw, text, sizeof(text));
+                    const bool big = display::text_width(display::kFont5x7, text) <= 22U;
+                    display::draw_text(fb, big ? display::kFont5x7 : display::kFont3x5, 10, big ? 0 : 1, text,
+                                       air.reading.climate_valid ? col.value_text : kDimColor);
                     break;
                 }
                 case display::SceneKind::Clock:
@@ -893,7 +939,7 @@ void display_task(void* /*arg*/) {
                     const display::IconZone zone =
                         display::choose_icon_zone(held, air_shown && (cfg.air.logo == settings::AirLogoMode::IconZone));
                     display::draw_clock(fb, time_info, (zone != display::IconZone::None) ? 0U : display::kClockCentredX, colon_on,
-                                        cfg.display.seconds_bar, kClockColors);
+                                        cfg.display.seconds_bar, clock_colors);
                     if (zone == display::IconZone::Alert) {
                         display::draw_alert_mark(fb, kAirLogoX, kAirLogoY, kPriorityColor[(held_priority > 3U) ? 3U : held_priority]);
                     } else if (zone == display::IconZone::Air) {
@@ -964,6 +1010,7 @@ extern "C" void app_main(void) {
     hooks.ldr_raw = on_ldr_raw;
     hooks.ota_progress = on_ota_progress;
     hooks.air_raw_temperature = on_air_raw_temperature;
+    hooks.colors_try = on_colors_try;
     hooks.mqtt_discovery = on_mqtt_discovery;
     const clock_web::WebStatus web = clock_web::start(hooks);
     switch (web) {

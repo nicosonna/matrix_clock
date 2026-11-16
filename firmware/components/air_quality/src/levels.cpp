@@ -4,6 +4,7 @@
  */
 #include "air_quality/levels.hpp"
 
+#include <cstdio>
 #include <cstring>
 
 namespace air_quality {
@@ -215,6 +216,41 @@ bool build_offset(int16_t reference_centi, int16_t measured_centi, int16_t& out)
     }
     out = static_cast<int16_t>(diff);
     return true;
+}
+
+std::size_t temperature_text(int16_t centi, char* out, std::size_t out_size) noexcept {
+    if ((out == nullptr) || (out_size == 0U)) {
+        return 0U;
+    }
+    const uint32_t magnitude = (centi < 0) ? static_cast<uint32_t>(-static_cast<int32_t>(centi)) : static_cast<uint32_t>(centi);
+    // Rounded to the nearest tenth; a carry rolls into the units (21.95 -> 22.0).
+    const uint32_t tenths = (magnitude + 5U) / 10U;
+    const bool negative = (centi < 0) && (tenths != 0U);  // never "-0.0"
+    const uint32_t whole = tenths / 10U;
+    const uint32_t tenth = tenths % 10U;
+    const int n = std::snprintf(out, out_size, "%s%lu.%lu\xC2\xB0", negative ? "-" : "", static_cast<unsigned long>(whole),
+                                static_cast<unsigned long>(tenth));
+    if ((n <= 0) || (static_cast<std::size_t>(n) >= out_size)) {
+        out[0] = '\0';
+        return 0U;
+    }
+    return static_cast<std::size_t>(n);
+}
+
+std::size_t humidity_text(uint16_t pct10, char* out, std::size_t out_size) noexcept {
+    if ((out == nullptr) || (out_size == 0U)) {
+        return 0U;
+    }
+    uint32_t pct = (static_cast<uint32_t>(pct10) + 5U) / 10U;
+    if (pct > 100U) {
+        pct = 100U;
+    }
+    const int n = std::snprintf(out, out_size, "%lu%%", static_cast<unsigned long>(pct));
+    if ((n <= 0) || (static_cast<std::size_t>(n) >= out_size)) {
+        out[0] = '\0';
+        return 0U;
+    }
+    return static_cast<std::size_t>(n);
 }
 
 }  // namespace air_quality

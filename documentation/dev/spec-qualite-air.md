@@ -307,6 +307,7 @@ trames) :
 | AIR-18 | Couleur du logo : grise en préchauffage et en défaut, **jamais verte**. |
 | AIR-19 | `logo_air` : les trois modes produisent le tampon attendu. |
 | AIR-20 | Règles sur une source en préchauffage ou en défaut ⇒ **aucune levée** ; `AirCapteurDefaut` lève à sa place. |
+| AIR-21 | Textes de la dalle : `temperature_text()` une décimale arrondie avec retenue (21.95 → `22.0°`), signe gardé sauf `-0.0`, degré UTF-8 ; `humidity_text()` arrondi à l'unité, plafonné à 100 % ; tampon trop petit ⇒ 0 et chaîne vide. |
 | AIR-21 | Bus bloqué / NACK ⇒ réinitialisation, compteur, aucune attente bloquante. |
 | AIR-22 | Modèle ⇄ wizard `/air` : aucun paramètre orphelin. |
 

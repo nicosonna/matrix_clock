@@ -44,6 +44,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline:3px so
 .barre { height:.6rem; background:var(--bord); border-radius:.3rem; overflow:hidden; margin-top:.5rem; }
 .barre div { height:100%; width:0; background:var(--accent); transition:width .2s; }
 .boutons { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.8rem; }
+.apercu { display:grid; gap:.5rem; }
+.dalle { display:flex; align-items:center; gap:.8rem; }
+.dalle canvas { width:100%; max-width:24rem; background:#0b0c0e; border-radius:.4rem; border:1px solid #2a2e34; }
+.dalle span { width:4.5rem; font-size:.85rem; color:var(--doux); }
+.palettes { display:flex; flex-wrap:wrap; gap:.5rem; }
+.palette { display:flex; align-items:center; gap:.45rem; padding:.4rem .7rem; border:1px solid var(--bord); border-radius:.6rem; background:var(--fond); color:var(--texte); font-weight:600; font-size:.9rem; }
+.palette i { display:inline-block; width:.85rem; height:.85rem; border-radius:50%; border:1px solid rgba(0,0,0,.25); }
+input[type=color] { width:3rem; height:2.2rem; padding:.15rem; vertical-align:middle; }
+input.hexa { width:6.5rem; margin-left:.5rem; font-family:ui-monospace,Consolas,monospace; }
 table.liste { width:100%; border-collapse:collapse; }
 table.liste td, table.liste th { padding:.3rem .25rem; text-align:left; border-bottom:1px solid var(--bord); font-size:.95rem; }
 table.liste th { color:var(--doux); font-weight:600; font-size:.85rem; }
@@ -63,6 +72,7 @@ table.liste select { max-width:11rem; }
 <nav>
   <a href="/" data-page="tableau">Tableau de bord</a>
   <a href="/affichage" data-page="affichage">Affichage</a>
+  <a href="/couleurs" data-page="couleurs">Couleurs</a>
   <a href="/luminosite" data-page="luminosite">Luminosité</a>
   <a href="/air" data-page="air">Air</a>
   <a href="/ha" data-page="ha">Home Assistant</a>
@@ -98,6 +108,35 @@ table.liste select { max-width:11rem; }
   </div>
 </section>
 
+<section id="couleurs">
+  <div class="carte">
+    <h2>Aperçu</h2>
+    <p class="aide">Simulation de la dalle avec les couleurs du formulaire, en direct. Le logo air garde ses couleurs de niveau et les alertes leur couleur de règle ; « -- » reste gris.</p>
+    <div class="apercu">
+      <div class="dalle"><span>Heure</span><canvas id="c-heure" width="320" height="80"></canvas></div>
+      <div class="dalle"><span>Date</span><canvas id="c-date" width="320" height="80"></canvas></div>
+      <div class="dalle"><span>Valeur</span><canvas id="c-valeur" width="320" height="80"></canvas></div>
+      <div class="dalle"><span>Air</span><canvas id="c-air" width="320" height="80"></canvas></div>
+      <div class="dalle"><span>Nuit</span><canvas id="c-nuit" width="320" height="80"></canvas></div>
+    </div>
+  </div>
+  <div class="carte">
+    <h2>Palette</h2>
+    <div class="palettes" id="palettes-couleurs"></div>
+    <p class="aide">Une palette remplit toutes les couleurs d'un coup ; enregistrez ensuite, ou retouchez d'abord.</p>
+  </div>
+  <div class="carte">
+    <h2>Mise en service — wizard</h2>
+    <p class="aide">Palette de départ, heure et date, valeurs, essai sur la dalle.</p>
+    <div id="wiz-couleurs"></div>
+  </div>
+  <div class="carte">
+    <h2>Couleurs</h2>
+    <form id="form-couleurs" data-domaine="couleurs" data-groupe="couleurs"></form>
+    <div class="boutons"><button class="second" type="button" id="couleurs-essai">Essayer 10 s sur la dalle</button><button class="second" type="button" id="couleurs-usine">Valeurs d'usine</button></div>
+    <p class="msg" id="couleurs-msg"></p>
+  </div>
+</section>
 <section id="luminosite">
   <div class="carte">
     <h2>Luminosité</h2>
@@ -251,8 +290,8 @@ table.liste select { max-width:11rem; }
 <script>
 (function () {
   'use strict';
-  var pages = ['tableau', 'affichage', 'luminosite', 'air', 'ha', 'mqtt', 'alertes', 'systeme'];
-  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/luminosite': 'luminosite', '/air': 'air', '/ha': 'ha', '/mqtt': 'mqtt', '/alertes': 'alertes', '/systeme': 'systeme' };
+  var pages = ['tableau', 'affichage', 'couleurs', 'luminosite', 'air', 'ha', 'mqtt', 'alertes', 'systeme'];
+  var chemins = { '/': 'tableau', '/affichage': 'affichage', '/couleurs': 'couleurs', '/luminosite': 'luminosite', '/air': 'air', '/ha': 'ha', '/mqtt': 'mqtt', '/alertes': 'alertes', '/systeme': 'systeme' };
   // Which fields each form shows (the model stays the single source of truth for everything else).
   var groupes = {
     scenes: ['scenes', 'vitesse_defilement', 'clignotement', 'barre_secondes'],
@@ -265,12 +304,13 @@ table.liste select { max-width:11rem; }
     meteo: ['meteo_actif', 'latitude', 'longitude', 'meteo_periode_s'],
     mqtt: ['actif', 'hote', 'port', 'utilisateur', 'mot_de_passe', 'effacer_mdp', 'prefixe'],
     mqtt_avance: ['periode_s'],
+    couleurs: ['heure_chiffres', 'heure_deux_points', 'heure_barre', 'date_jour', 'date_nombre', 'valeur_icone', 'valeur_texte', 'air_texte', 'nuit_heure'],
     alertes: ['silence_actif', 'silence_debut', 'silence_fin', 'silence_outrepasse_par_p3'],
     alerte_regle: ['actif', 'nom', 'source', 'index', 'comparaison', 'seuil', 'hysteresis', 'confirmation_s', 'priorite', 'texte', 'couleur', 'icone', 'duree_s', 'rappel_s', 'outrepasse_silence'],
     ha_valeur: ['actif', 'nom', 'mode', 'entite', 'attribut', 'gabarit', 'type', 'decimales', 'unite', 'icone', 'peremption_s'],
     air_seuils: ['grandeur_pilote', 'seuil_eco2_bon', 'seuil_eco2_moyen', 'seuil_eco2_mauvais', 'seuil_eco2_tres_mauvais', 'seuil_tvoc_bon', 'seuil_tvoc_moyen', 'seuil_tvoc_mauvais', 'seuil_tvoc_tres_mauvais', 'hysteresis_eco2', 'hysteresis_tvoc', 'confirmation_s']
   };
-  var libelleScene = { Heure: 'Heure', Date: 'Date', Valeur: 'Valeur Home Assistant', DeuxLignes: 'Heure + valeur (deux lignes)', Defilement: 'Texte défilant', Nuit: 'Nuit (dalle sombre)', Test: 'Motif de test', Air: 'Qualité de l\u2019air (logo + valeur)' };
+  var libelleScene = { Heure: 'Heure', Date: 'Date', Valeur: 'Valeur Home Assistant', DeuxLignes: 'Heure + valeur (deux lignes)', Defilement: 'Texte défilant', Nuit: 'Nuit (dalle sombre)', Test: 'Motif de test', Air: 'Qualité de l\u2019air (logo + valeur)', Temperature: 'Température du capteur de l\u2019horloge', Humidite: 'Humidité du capteur de l\u2019horloge' };
   var ICONE_HAUT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
   var ICONE_BAS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>';
   var ICONE_X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -456,6 +496,16 @@ table.liste select { max-width:11rem; }
         ctrl = el('input', { type: 'number', id: id, min: m.min, max: m.max, step: 1, value: valeur });
       } else if (m.type === 'decimal') {
         ctrl = el('input', { type: 'text', id: id, inputMode: 'decimal', value: (valeur === undefined || valeur === null) ? m.defaut : valeur });
+      } else if (m.type === 'couleur' && m.defaut) {
+        var valide = /^#[0-9a-fA-F]{6}$/;
+        ctrl = el('input', { type: 'color', id: id, value: valide.test(valeur || '') ? valeur : m.defaut });
+        var hexa = el('input', { type: 'text', class: 'hexa', maxLength: 7, value: ctrl.value });
+        ctrl.oninput = function () { hexa.value = ctrl.value; };
+        hexa.onchange = function () { if (valide.test(hexa.value)) { ctrl.value = hexa.value.toLowerCase(); ctrl.dispatchEvent(new Event('input', { bubbles: true })); } else { hexa.value = ctrl.value; } };
+        boite.appendChild(ctrl); boite.appendChild(hexa);
+        form.lecteurs.push(function () { return nom + '=' + encodeURIComponent(ctrl.value); });
+        if (m.aide) { boite.appendChild(el('p', { class: 'aide' }, m.aide + ' Défaut ' + m.defaut.toUpperCase() + '.')); }
+        return boite;
       } else if (m.type === 'couleur') {
         ctrl = el('input', { type: 'text', id: id, maxLength: 7, placeholder: '#RRGGBB', value: valeur || '' });
       } else {
@@ -499,10 +549,10 @@ table.liste select { max-width:11rem; }
   }
   function chargerDomaine(domaine) {
     var forms = document.querySelectorAll('form[data-domaine="' + domaine + '"]');
-    Promise.all([fetch('/api/' + domaine + '/modele').then(function (r) { return r.json(); }),
+    return Promise.all([fetch('/api/' + domaine + '/modele').then(function (r) { return r.json(); }),
                  fetch('/api/' + domaine).then(function (r) { return r.json(); })])
-      .then(function (res) { forms.forEach(function (f) { construire(f, res[0], res[1]); }); })
-      .catch(function () { forms.forEach(function (f) { f.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; }); });
+      .then(function (res) { forms.forEach(function (f) { construire(f, res[0], res[1]); }); return res; })
+      .catch(function () { forms.forEach(function (f) { f.innerHTML = '<p class="msg ko">Modèle indisponible.</p>'; }); return null; });
   }
 
   // ---- Home Assistant: value cards, live status, wizard
@@ -606,6 +656,97 @@ table.liste select { max-width:11rem; }
         };
         box.appendChild(b);
       });
+    }
+    boite.appendChild(box);
+  }
+
+  // ---- colours: live preview of the panel, palettes from the model, 10 s trial, wizard
+  var modeleCouleurs = null;
+  var F57 = { '0': ['01110','10001','10011','10101','11001','10001','01110'], '1': ['00100','01100','00100','00100','00100','00100','01110'], '2': ['01110','10001','00001','00010','00100','01000','11111'], '3': ['11111','00010','00100','00010','00001','10001','01110'], '4': ['00010','00110','01010','10010','11111','00010','00010'] };
+  var F35 = { '0': ['111','101','101','101','111'], '1': ['010','110','010','010','111'], '2': ['111','001','111','100','111'], '3': ['111','001','111','001','111'], '5': ['111','100','111','001','111'], '6': ['111','100','111','101','111'], 'A': ['010','101','111','101','101'], 'S': ['111','100','111','001','111'], 'M': ['101','111','111','101','101'], 'Q': ['111','101','101','111','001'], 'I': ['111','010','010','010','111'], '.': ['000','000','000','000','010'], '°': ['110','110','000','000','000'], ' ': ['000','000','000','000','000'] };
+  var ICO_THERMO = ['00100000','01010000','01010000','01010000','01110000','11111000','11111000','01110000'];
+  var ICO_AIR = ['00111100','01000010','10011001','10100101','10100101','10011001','01000010','00111100'];
+  function dessinerDalle(id, fn) {
+    var c = document.getElementById(id); if (!c) { return; }
+    var ctx = c.getContext('2d'); ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, 0, c.width, c.height);
+    var fb = []; for (var y = 0; y < 8; y++) { fb.push(new Array(32).fill(null)); }
+    function px(x, yy, col) { if (x >= 0 && x < 32 && yy >= 0 && yy < 8) { fb[yy][x] = col; } }
+    function gl(font, x, y0, texte, col, larg) { for (var i = 0; i < texte.length; i++) { var g = font[texte[i]]; if (g) { for (var r = 0; r < g.length; r++) { for (var k = 0; k < g[r].length; k++) { if (g[r][k] === '1') { px(x + k, y0 + r, col); } } } } x += larg + 1; } }
+    function ic(bits, x, y0, col) { for (var r = 0; r < 8; r++) { for (var k = 0; k < 8; k++) { if (bits[r][k] === '1') { px(x + k, y0 + r, col); } } } }
+    fn(px, gl, ic);
+    for (var yy = 0; yy < 8; yy++) { for (var xx = 0; xx < 32; xx++) { ctx.fillStyle = fb[yy][xx] || '#15181c'; ctx.beginPath(); ctx.arc(xx * 10 + 5, yy * 10 + 5, 3.6, 0, 6.283); ctx.fill(); } }
+  }
+  function valeursCouleurs() { var v = {}; groupes.couleurs.forEach(function (n) { var c = document.getElementById('f-form-couleurs-' + n); v[n] = c ? c.value : '#000000'; }); return v; }
+  function apercuCouleurs() {
+    var k = valeursCouleurs();
+    dessinerDalle('c-heure', function (px, gl) { gl(F57, 3, 0, '12', k.heure_chiffres, 5); gl(F57, 17, 0, '34', k.heure_chiffres, 5); px(15, 2, k.heure_deux_points); px(15, 4, k.heure_deux_points); for (var x = 0; x < 18; x++) { px(x, 7, k.heure_barre); } });
+    dessinerDalle('c-date', function (px, gl) { gl(F35, 1, 1, 'SAM', k.date_jour, 3); gl(F35, 15, 1, '16.11', k.date_nombre, 3); });
+    dessinerDalle('c-valeur', function (px, gl, ic) { ic(ICO_THERMO, 0, 0, k.valeur_icone); gl(F35, 10, 1, '21.5°', k.valeur_texte, 3); });
+    dessinerDalle('c-air', function (px, gl, ic) { ic(ICO_AIR, 0, 0, '#30c050'); gl(F35, 10, 1, 'AQI 3', k.air_texte, 3); });
+    dessinerDalle('c-nuit', function (px, gl) { gl(F57, 3, 0, '03', k.nuit_heure, 5); gl(F57, 17, 0, '12', k.nuit_heure, 5); px(15, 2, k.nuit_heure); px(15, 4, k.nuit_heure); });
+  }
+  function remplirCouleurs(c) {
+    groupes.couleurs.forEach(function (n) { var i = document.getElementById('f-form-couleurs-' + n); if (i && c[n]) { i.value = c[n]; if (i.nextSibling && i.nextSibling.className === 'hexa') { i.nextSibling.value = c[n]; } } });
+    apercuCouleurs();
+  }
+  function corpsCouleurs() { var f = document.getElementById('form-couleurs'); return f.lecteurs ? f.lecteurs.map(function (x) { return x(); }).join('&') : ''; }
+  function dessinerPalettes(boite, apres) {
+    boite.innerHTML = '';
+    ((modeleCouleurs && modeleCouleurs.palettes) || []).forEach(function (p) {
+      var b = el('button', { type: 'button', class: 'palette' });
+      ['heure_chiffres', 'heure_deux_points', 'valeur_icone'].forEach(function (r) { var i = el('i'); i.style.background = p.couleurs[r]; b.appendChild(i); });
+      b.appendChild(document.createTextNode(p.nom));
+      b.onclick = function () { remplirCouleurs(p.couleurs); if (apres) { apres(); } };
+      boite.appendChild(b);
+    });
+  }
+  function initCouleurs() {
+    var msg = document.getElementById('couleurs-msg');
+    chargerDomaine('couleurs').then(function (res) {
+      if (!res) { return; }
+      modeleCouleurs = res[0];
+      dessinerPalettes(document.getElementById('palettes-couleurs'));
+      apercuCouleurs();
+      document.getElementById('form-couleurs').addEventListener('input', apercuCouleurs);
+    });
+    document.getElementById('couleurs-essai').onclick = function () {
+      post('/api/couleurs/essai', corpsCouleurs()).then(function (r) { dire(msg, r.ok ? 'Couleurs affichées 10 s sur la dalle, rien d\u2019enregistré.' : erreurTexte(r.texte), r.ok); });
+    };
+    document.getElementById('couleurs-usine').onclick = function () {
+      if (!modeleCouleurs) { return; }
+      var d = {}; groupes.couleurs.forEach(function (n) { d[n] = modeleCouleurs.champs[n].defaut; });
+      remplirCouleurs(d); dire(msg, 'Valeurs d\u2019usine dans le formulaire ; enregistrez pour les appliquer.', true);
+    };
+  }
+  function wizardCouleurs(i) {
+    var boite = document.getElementById('wiz-couleurs');
+    boite.innerHTML = '';
+    var box = el('div', { class: 'etapes' });
+    if (i === 0) {
+      boite.appendChild(el('p', {}, '1/4 — Choisissez une palette de départ : elle remplit le formulaire et l\u2019aperçu.'));
+      var pal = el('div', { class: 'palettes' }); boite.appendChild(pal);
+      dessinerPalettes(pal, function () { wizardCouleurs(1); });
+      var garder = el('button', { type: 'button', class: 'second' }, 'Garder les couleurs actuelles');
+      garder.onclick = function () { wizardCouleurs(1); }; box.appendChild(garder);
+    } else if (i === 1) {
+      boite.appendChild(el('p', {}, '2/4 — Réglez les couleurs de l\u2019heure et de la date dans le formulaire ci-dessous en regardant l\u2019aperçu Heure et Date.'));
+      var ok1 = el('button', { type: 'button', class: 'second' }, 'Continuer'); ok1.onclick = function () { wizardCouleurs(2); }; box.appendChild(ok1);
+    } else if (i === 2) {
+      boite.appendChild(el('p', {}, '3/4 — Puis l\u2019icône et le texte des valeurs, la grandeur de l\u2019air et l\u2019heure de nuit.'));
+      var ok2 = el('button', { type: 'button', class: 'second' }, 'Continuer'); ok2.onclick = function () { wizardCouleurs(3); }; box.appendChild(ok2);
+    } else {
+      boite.appendChild(el('p', {}, '4/4 — Essayez le résultat 10 s sur la vraie dalle, puis enregistrez.'));
+      var msg = el('p', { class: 'msg' }); boite.appendChild(msg);
+      var essai = el('button', { type: 'button', class: 'second' }, 'Essayer 10 s');
+      essai.onclick = function () { post('/api/couleurs/essai', corpsCouleurs()).then(function (r) { dire(msg, r.ok ? 'Regardez la dalle.' : erreurTexte(r.texte), r.ok); }); };
+      var fin = el('button', { type: 'button' }, 'Enregistrer');
+      fin.onclick = function () {
+        post('/api/couleurs', corpsCouleurs()).then(function (r) {
+          if (r.ok) { boutonWizard('wiz-couleurs', 'Relancer le wizard', function () { wizardCouleurs(0); }, 'Couleurs enregistrées et appliquées.', true); chargerDomaine('couleurs'); }
+          else { dire(msg, erreurTexte(r.texte), false); }
+        });
+      };
+      box.appendChild(essai); box.appendChild(fin);
     }
     boite.appendChild(box);
   }
@@ -1037,6 +1178,7 @@ table.liste select { max-width:11rem; }
     if (alertesTimer) { clearInterval(alertesTimer); alertesTimer = null; }
     if (page === 'tableau') { lireEtat(); etatTimer = setInterval(lireEtat, 2000); }
     if (page === 'affichage') { chargerDomaine('affichage'); boutonWizard('wiz-map', 'Lancer le wizard', function () { wizardMap(0); }); }
+    if (page === 'couleurs') { initCouleurs(); boutonWizard('wiz-couleurs', 'Lancer le wizard', function () { wizardCouleurs(0); }); }
     if (page === 'luminosite') { chargerDomaine('luminosite'); lireBrut(); brutTimer = setInterval(lireBrut, 1000); boutonWizard('wiz-lum', 'Lancer le wizard', function () { wizardLum(0); }); }
     if (page === 'air') { chargerDomaine('air'); lireAir(); airTimer = setInterval(lireAir, 2000); boutonWizard('wiz-air', 'Lancer le wizard', function () { wizardAir(0); }); }
     if (page === 'ha') { chargerDomaine('ha'); chargerValeursHa(); lireHa(); haTimer = setInterval(lireHa, 2000); boutonWizard('wiz-ha', 'Lancer le wizard', function () { wizardHa(0); }); }

@@ -27,6 +27,13 @@
 
 ## Phase 1 — à faire, dans l'ordre
 
+- [x] ~~**Couleurs personnalisables**~~ : domaine `couleurs` livré le 2026-11-16
+      (maquette `documentation/maquette-web/couleurs.html` approuvée, base de
+      design). Reste HW-COL-01 à l'œil.
+- [ ] **Décalage de température** de l'horloge installée (2026-11-16) : le
+      capteur lit ~27,6 °C (auto-échauffement), décalage à 0 — jouer le wizard
+      Qualité d'air avec un thermomètre de référence avant d'afficher la scène
+      `Temperature`.
 - [ ] **Alimentation de l'installation** (2026-11-16) : la carte redémarre en
       `baisse_tension` au-delà de ~1,6 A estimés sur la dalle (boucle en auto à
       niveau 186+). Pansement en place : `budget_ma` = 800 dans les réglages.

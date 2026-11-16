@@ -5,6 +5,91 @@
 
 ---
 
+## 2026-11-16 (suite 2) — Domaine `couleurs`, éditeur de scènes réparé
+
+**Couleurs personnalisables** (maquette approuvée par Nicolas, puis firmware) :
+
+- `settings::ColorSettings` : 9 rôles (chiffres, deux-points, barre des
+  secondes, jour, date, icône et texte des valeurs, grandeur de l'air, heure
+  de nuit), défauts = anciennes constantes de `app_main`, qui disparaissent.
+  `kColorFields`, `apply_color_form` (tout-ou-rien, `#RRGGBB`),
+  `color_to_text`, `color_field`, `color_model_json` (champs `couleur` +
+  **palettes** Classique / Ambre / Glace / Forêt / Braise, constantes du
+  firmware), `color_json`. Blob NVS `colors` v1, `clock_settings::colors()` /
+  `save_colors()`.
+- Rendu : `app_main` lit `cfg.colors` à chaque trame ; un **essai** de 10 s
+  (`POST /api/couleurs/essai`, hook `colors_try`) remplace les couleurs sans
+  rien enregistrer, puis les enregistrées reviennent. La scène `Nuit` utilise
+  `nuit_heure` (`#303030` par défaut) au lieu d'un facteur d'atténuation.
+- Page : onglet **Couleurs** (`/couleurs`) avec aperçu simulé 8×32 en direct
+  (polices 5×7 / 3×5 et icônes réduites, en JS), palettes lues du modèle,
+  sélecteur de couleur natif + champ `#RRGGBB` pour tout champ `couleur`
+  ayant un défaut (les règles d'alerte gardent le champ texte : vide =
+  couleur de la priorité), boutons « Essayer 10 s » et « Valeurs d'usine »,
+  **wizard** en 4 étapes (palette → heure et date → valeurs → essai et
+  enregistrement). `chargerDomaine()` rend maintenant sa promesse.
+- Tests : COL-01, COL-02, WEB-04 étendu (domaine `couleurs`, palettes lues du
+  modèle, aucun libellé de palette recopié). 5 142 lignes couvertes à 96,8 %.
+
+**Éditeur de scènes réparé** (signalé par Nicolas : impossible de choisir une
+scène). `editeurScenes()` lisait `modele.types_scene` dans le modèle **du
+champ**, alors que le firmware publiait la liste à la racine du modèle :
+listes déroulantes vides depuis le début, jamais vues à l'œil (vérifications
+faites par l'API). La liste voyage désormais dans le champ `scenes`
+(`display_model_json`), test WEB-04 de non-régression (position de
+`types_scene` dans le champ, lecture `modele.types_scene` dans la page).
+
+**Au passage.** Le test lisait la page dans 64 Ko : la page (78 Ko bruts,
+20 Ko gzippés) dépassait et les littéraux du wizard de correspondance
+n'étaient plus trouvés ; tampon de 128 Ko avec garde anti-troncature.
+
+**Sur la carte.** OTA, `/api/couleurs/modele` (9 champs, 5 palettes), essai
+accepté sans toucher l'enregistré, refus nommé, palette Ambre enregistrée et
+relue, défauts restaurés ; page `/couleurs` vue dans le navigateur
+(HW-COL-01). Couleurs à l'œil sur la dalle : Nicolas.
+
+**Reste.** Rien côté code ; vérification à l'œil.
+
+---
+
+## 2026-11-16 (suite) — Scènes `Temperature` et `Humidite` du capteur local
+
+**Quoi.** Deux nouveaux types de scène, lus directement sur l'AHT21 de
+l'horloge (pas par le détour Home Assistant) : icône thermomètre + `27.6°`
+(une décimale, après le décalage d'auto-échauffement), icône goutte + `46%`.
+`SceneAvailability::climate` (capteur présent et climat valide) : la scène
+est **sautée** tant que la mesure n'est pas valide, quittée si elle le
+devient en cours (règle d'honnêteté : jamais `--` pendant 6 s). Texte formaté
+par deux fonctions pures `air_quality::temperature_text()` /
+`humidity_text()` (AIR-21). Modèle `types_scene`, noms `Temperature` /
+`Humidite`, libellés de la page ; l'éditeur de scènes et le wizard
+d'affichage les listent automatiquement depuis le modèle. Test WEB-04 étendu :
+chaque type de scène du firmware doit avoir un libellé sur la page.
+
+**Tests.** AFF-12 (ordonnanceur), AIR-21 (textes), WEB-04 (libellés),
+aller-retour du texte de scènes dans `test_alert_form` ; tout `PASSE`,
+couverture 96,8 % sur 5 050 lignes.
+
+**Attention.** Le capteur de l'horloge installée lit ~27,6 °C : c'est
+l'auto-échauffement (spec qualité d'air §8), le décalage est encore à 0.
+Avant d'activer la scène, mesurer l'écart avec un thermomètre de référence
+(wizard Qualité d'air) ou déporter le capteur.
+
+**Sur la carte.** OTA (dalle au minimum pendant l'envoi), `types_scene`
+liste les deux nouveaux types, rotation `Heure → Date → Temperature →
+Humidite` observée sur `/api/etat` (HW-AFF-10) ; les deux scènes sont
+laissées actives sur l'horloge (6 s chacune).
+
+**Couleurs personnalisables.** Maquette simulée
+`documentation/maquette-web/couleurs.html` (aperçu 8×32 en direct, 9 rôles
+de couleur par scène, 5 palettes, essai 10 s, assistant en 4 étapes) soumise
+à Nicolas avant toute implémentation.
+
+**Reste.** Rendu des scènes à l'œil ; décalage de température ; couleurs
+après approbation de la maquette.
+
+---
+
 ## 2026-11-16 — Luminosité « inversée » : les butées de l'ADC ne sont plus un défaut capteur
 
 **Symptôme (Nicolas).** Plus lumineuse la nuit que le jour.

@@ -685,6 +685,36 @@ void test_logo() {
     CHECK_EQ(fb.out_of_bounds_count(), 0U);
 }
 
+// ---------------------------------------------------------------- AIR-21
+
+void test_climate_text() {
+    char t[16];
+    CHECK_EQ(static_cast<int>(air_quality::temperature_text(2758, t, sizeof(t))), 6);  // "27.6" + 2-byte degree
+    CHECK(std::strcmp(t, "27.6\xC2\xB0") == 0);
+    CHECK(air_quality::temperature_text(-350, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "-3.5\xC2\xB0") == 0);
+    CHECK(air_quality::temperature_text(2195, t, sizeof(t)) > 0U);  // rounds up with a carry
+    CHECK(std::strcmp(t, "22.0\xC2\xB0") == 0);
+    CHECK(air_quality::temperature_text(0, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "0.0\xC2\xB0") == 0);
+    CHECK(air_quality::temperature_text(-4, t, sizeof(t)) > 0U);  // -0.04 rounds to 0.0, never "-0.0"
+    CHECK(std::strcmp(t, "0.0\xC2\xB0") == 0);
+    CHECK_EQ(static_cast<int>(air_quality::temperature_text(2758, t, 4U)), 0);  // too small: empty
+    CHECK(t[0] == '\0');
+    CHECK_EQ(static_cast<int>(air_quality::temperature_text(2758, nullptr, 0U)), 0);
+
+    CHECK(air_quality::humidity_text(457, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "46%") == 0);
+    CHECK(air_quality::humidity_text(995, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "100%") == 0);
+    CHECK(air_quality::humidity_text(1200, t, sizeof(t)) > 0U);  // capped
+    CHECK(std::strcmp(t, "100%") == 0);
+    CHECK(air_quality::humidity_text(4, t, sizeof(t)) > 0U);
+    CHECK(std::strcmp(t, "0%") == 0);
+    CHECK_EQ(static_cast<int>(air_quality::humidity_text(457, t, 3U)), 0);
+    CHECK_EQ(static_cast<int>(air_quality::humidity_text(457, nullptr, 0U)), 0);
+}
+
 }  // namespace
 
 void run_air_quality_tests() {
@@ -693,4 +723,5 @@ void run_air_quality_tests() {
     test_sensor_loop();
     test_levels();
     test_logo();
+    test_climate_text();
 }

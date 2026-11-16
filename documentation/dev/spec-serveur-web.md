@@ -31,6 +31,7 @@
 | `/affichage` | Correspondance du panneau, scènes et durées, polices, budget de courant, séparateur, barre de secondes, transitions. | correspondance (§4.1) |
 | `/luminosite` | Mode, courbe, plancher/plafond, pas, compensation, plage d'extinction. | étalonnage (§4.2) |
 | `/ha` | Schéma, hôte, port, jeton, 8 valeurs suivies, notifications, météo de repli. | liaison en 4 étapes |
+| `/couleurs` | Couleurs de la dalle par rôle (9 : chiffres, deux-points, barre des secondes, jour, date, icône et texte des valeurs, grandeur de l'air, heure de nuit), sélecteur natif + code `#RRGGBB`, **aperçu simulé** 8×32 en direct, palettes prédéfinies venant du modèle, bouton « Essayer 10 s » (affiché sans enregistrer), valeurs d'usine. *(Ajoutée le 2026-11-16, maquette `maquette-web/couleurs.html`.)* | palette → heure et date → valeurs → essai sur la dalle |
 | `/mqtt` | Broker, port, utilisateur, mot de passe (écriture seule), préfixe, période ; état de la liaison ; bouton « renvoyer la découverte ». **Page reprise de ThermoSync.** | broker → utilisateur → découverte |
 | `/alertes` | Les 16 règles, leur état en direct, la file de notifications. | création de règle en 5 étapes |
 | `/air` | État du capteur (présent, préchauffage avec compte à rebours, défaut), 5 grandeurs en direct, niveau courant, seuils, couleurs, textes, logo, décalages. | détection → préchauffage → auto-échauffement → niveaux (`spec-qualite-air.md` §7) |
@@ -52,7 +53,7 @@ allocation**, dans un tampon statique.
 | Méthode | URI | Rôle |
 |---|---|---|
 | `GET` | `/api/etat` | État complet pour le tableau de bord. Rafraîchi par le client toutes les 2 s. |
-| `GET` | `/api/<domaine>/modele` | Bornes, défauts, énumérés et textes d'aide d'un domaine (`wifi`, `display`, `brightness`, `air_quality`, `ha`, `mqtt`, `alerts`, `systeme`). **Construit par le firmware.** |
+| `GET` | `/api/<domaine>/modele` | Bornes, défauts, énumérés et textes d'aide d'un domaine (`wifi`, `display`, `brightness`, `air_quality`, `ha`, `mqtt`, `alerts`, `couleurs`, `systeme`). **Construit par le firmware.** |
 | `GET` | `/api/air/brut` | Les 5 grandeurs brutes et le drapeau de validité en direct, pour le wizard. |
 | `POST` | `/api/<domaine>` | Écrit les réglages du domaine. |
 | `GET` | `/api/wifi/reseaux` | Résultat du dernier balayage (SSID, puissance, chiffré ou non). |
@@ -61,6 +62,8 @@ allocation**, dans un tampon statique.
 | `POST` | `/api/ha/test` | Teste la liaison : `auth_ok`, `auth_invalid`, `injoignable`, avec la version de Home Assistant. *(Réalisé autrement : le wizard active la liaison et suit `/api/etat.ha.etat` — `running`, `token_rejected`, autre.)* |
 | `POST` | `/api/ha/valeur/<0..7>` | Écrit une valeur suivie (tout ou rien). |
 | `POST` | `/api/mqtt/decouverte` | Renvoie la découverte MQTT (bouton de `/mqtt`). |
+| `GET`/`POST` | `/api/couleurs` | Couleurs par rôle, `#rrggbb` par champ ; le modèle `/api/couleurs/modele` porte aussi les `palettes`. |
+| `POST` | `/api/couleurs/essai` | Même formulaire : les couleurs sont **affichées 10 s** sans être enregistrées, puis les couleurs enregistrées reviennent. |
 | `POST` | `/api/notification` | **Canal d'alerte entrant** (mêmes champs que l'événement Home Assistant, `spec-home-assistant.md` §4). |
 | `POST` | `/api/notification/effacer` | Retire une notification **externe** par `cle` — réservé à la **source** qui l'a levée (Node-RED, hub, script). Une alerte de règle ne se retire pas par ici : elle tombe quand sa condition retombe (EX-46). |
 | `GET` | `/api/journal` | Les 64 dernières lignes de log (tampon circulaire en RAM). |

@@ -42,6 +42,7 @@ SceneAvailability all_available() {
     SceneAvailability a{};
     a.date = true;
     a.scroll = true;
+    a.climate = true;
     for (bool& v : a.values) {
         v = true;
     }
@@ -214,6 +215,33 @@ void test_scheduler_rotation() {
     Scheduler se(empty, 0U);
     s = se.step(0U, avail, false);
     CHECK_EQ(s.scene, display::kSyntheticClock);
+
+    // Temperature and Humidity follow the local climate validity: both skipped
+    // while the AHT21 has nothing valid, both played once it has.
+    SceneList climate{};
+    climate.entries[0] = SceneEntry{SceneKind::Clock, 0U, 2U, true};
+    climate.entries[1] = SceneEntry{SceneKind::Temperature, 0U, 3U, true};
+    climate.entries[2] = SceneEntry{SceneKind::Humidity, 0U, 3U, true};
+    climate.count = 3U;
+    CHECK(display::is_valid(climate));
+    SceneAvailability no_climate = all_available();
+    no_climate.climate = false;
+    Scheduler sc(climate, 0U);
+    s = sc.step(0U, no_climate, false);
+    CHECK_EQ(s.scene, 0);
+    s = sc.step(2000U, no_climate, false);
+    CHECK_EQ(s.scene, 0);                 // both skipped: clock again
+    SceneAvailability yes_climate = all_available();
+    s = sc.step(4000U, yes_climate, false);
+    CHECK_EQ(s.scene, 1);                 // Temperature
+    s = sc.step(7000U, yes_climate, false);
+    CHECK_EQ(s.scene, 2);                 // Humidity
+    s = sc.step(8000U, no_climate, false);
+    CHECK_EQ(s.scene, 0);                 // climate lost mid-scene: left at once
+    SceneList beyond{};
+    beyond.entries[0] = SceneEntry{static_cast<SceneKind>(static_cast<uint8_t>(SceneKind::Humidity) + 1U), 0U, 5U, true};
+    beyond.count = 1U;
+    CHECK(!display::is_valid(beyond));
 }
 
 void test_scheduler_notifications() {

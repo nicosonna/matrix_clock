@@ -496,6 +496,58 @@ esp_err_t handle_mqtt_post(httpd_req_t* req) {
     return send_text(req, "200 OK", "{\"ok\":true}");
 }
 
+esp_err_t handle_colors_model(httpd_req_t* req) {
+    char* const body = s_json;
+    return send_json(req, body, settings::color_model_json(body, settings::kJsonMax));
+}
+
+esp_err_t handle_colors_get(httpd_req_t* req) {
+    char* const body = s_json;
+    const settings::ColorSettings c = clock_settings::colors();
+    return send_json(req, body, settings::color_json(c, body, settings::kJsonMax));
+}
+
+/// Decodes the colour form against the saved colours; false after answering the client.
+bool read_colors_form(httpd_req_t* req, settings::ColorSettings& next) {
+    char body[kFormMax + 1U];
+    size_t got = 0U;
+    if (!read_body(req, body, kFormMax, got)) {
+        (void)send_text(req, "400 Bad Request", "Formulaire vide, incomplet ou trop long.");
+        return false;
+    }
+    const settings::ColorSettings current = clock_settings::colors();
+    next = current;
+    settings::FormError err{};
+    if (!settings::apply_color_form(body, got, current, next, err)) {
+        (void)send_form_error(req, err);
+        return false;
+    }
+    return true;
+}
+
+esp_err_t handle_colors_post(httpd_req_t* req) {
+    settings::ColorSettings next{};
+    if (!read_colors_form(req, next)) {
+        return ESP_OK;
+    }
+    if (!clock_settings::save_colors(next)) {
+        return send_text(req, "500 Internal Server Error", "{\"ok\":false,\"raison\":\"enregistrement impossible\"}");
+    }
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
+esp_err_t handle_colors_try(httpd_req_t* req) {
+    settings::ColorSettings next{};
+    if (!read_colors_form(req, next)) {
+        return ESP_OK;
+    }
+    if (s_hooks.colors_try == nullptr) {
+        return send_text(req, "503 Service Unavailable", "Essai indisponible.");
+    }
+    s_hooks.colors_try(next);
+    return send_text(req, "200 OK", "{\"ok\":true}");
+}
+
 esp_err_t handle_alerts_model(httpd_req_t* req) {
     char* const body = s_json;
     return send_json(req, body, settings::alert_model_json(body, settings::kJsonMax));
@@ -801,6 +853,7 @@ bool start_http() {
         {"/ha", HTTP_GET, handle_app_page, nullptr},
         {"/mqtt", HTTP_GET, handle_app_page, nullptr},
         {"/alertes", HTTP_GET, handle_app_page, nullptr},
+        {"/couleurs", HTTP_GET, handle_app_page, nullptr},
         {"/wifi", HTTP_GET, handle_wifi_page, nullptr},
         {"/api/info", HTTP_GET, handle_info, nullptr},
         {"/api/etat", HTTP_GET, handle_status, nullptr},
@@ -829,6 +882,10 @@ bool start_http() {
         {"/api/mqtt", HTTP_GET, handle_mqtt_get, nullptr},
         {"/api/mqtt", HTTP_POST, handle_mqtt_post, nullptr},
         {"/api/mqtt/decouverte", HTTP_POST, handle_mqtt_discovery, nullptr},
+        {"/api/couleurs/modele", HTTP_GET, handle_colors_model, nullptr},
+        {"/api/couleurs", HTTP_GET, handle_colors_get, nullptr},
+        {"/api/couleurs", HTTP_POST, handle_colors_post, nullptr},
+        {"/api/couleurs/essai", HTTP_POST, handle_colors_try, nullptr},
         {"/api/alertes/modele", HTTP_GET, handle_alerts_model, nullptr},
         {"/api/alertes", HTTP_GET, handle_alerts_get, nullptr},
         {"/api/alertes", HTTP_POST, handle_alerts_post, nullptr},

@@ -38,6 +38,8 @@ extern const char* const kMqttFields[];
 extern const std::size_t kMqttFieldCount;
 extern const char* const kAlertFields[];
 extern const std::size_t kAlertFieldCount;
+extern const char* const kColorFields[];
+extern const std::size_t kColorFieldCount;
 extern const char* const kAlertRuleFields[];
 extern const std::size_t kAlertRuleFieldCount;
 
@@ -78,6 +80,14 @@ bool parse_fixed(const char* s, uint8_t decimals, int32_t& out) noexcept;
 std::size_t fixed_to_text(int32_t v, uint8_t decimals, char* out, std::size_t size) noexcept;
 /// `#RRGGBB` <-> bytes; an empty text means "no colour" (false, rgb untouched).
 bool parse_color(const char* s, uint8_t rgb[3]) noexcept;
+/// Writes "#rrggbb" (lower case); @return 7, or 0 if @p out holds fewer than 8 bytes.
+std::size_t color_to_text(display::Rgb c, char* out, std::size_t out_size) noexcept;
+/// The colour role at @p index in kColorFields order (index >= kColorFieldCount: the first one).
+display::Rgb& color_field(ColorSettings& c, std::size_t index) noexcept;
+const display::Rgb& color_field(const ColorSettings& c, std::size_t index) noexcept;
+/// Decodes the /couleurs form: each present field is "#RRGGBB"; absent fields keep their value.
+bool apply_color_form(const char* body, std::size_t len, const ColorSettings& current, ColorSettings& out,
+                      FormError& err) noexcept;
 
 /// Enumerations, as the page shows them (French labels are the API values).
 const char* axis_name(display::FirstAxis a) noexcept;

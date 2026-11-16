@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "alerts/notification.hpp"
+#include "settings/model.hpp"
 
 namespace clock_web {
 
@@ -48,6 +49,8 @@ struct Hooks {
     bool (*air_raw_temperature)(int16_t& centi);
     /// Page button of /mqtt: publish the discovery again.
     void (*mqtt_discovery)();
+    /// "Essayer" on /couleurs: show these colours for a few seconds without saving them.
+    void (*colors_try)(const settings::ColorSettings& colors);
 };
 
 /// Snapshot of the network state for the display and `/api/info`.

@@ -840,7 +840,7 @@ table.liste select { max-width:11rem; }
       g.appendChild(tuile('Date', h.sure ? h.date : '—'));
       g.appendChild(tuile('Luminosité appliquée', l.niveau + ' / 255'));
       g.appendChild(tuile('Capteur (brut / filtré)', (l.defaut ? 'DÉFAUT ' : '') + l.brut + ' / ' + l.filtre));
-      g.appendChild(tuile('Courant estimé', c.estime_ma + ' mA / ' + c.budget_ma + (c.ecretage ? ' (écrêté)' : '')));
+      g.appendChild(tuile('Courant dalle', c.ecretage ? (c.applique_ma + ' mA appliqués, ' + c.estime_ma + ' demandés (écrêté) / budget ' + c.budget_ma) : (c.estime_ma + ' mA / budget ' + c.budget_ma)));
       g.appendChild(tuile('Réseau', n.etat + (n.ip ? ' — ' + n.ip : '')));
       g.appendChild(tuile('Scène', e.scene));
       if (e.alertes) { g.appendChild(tuile('Alertes en cours', String((e.alertes.file || []).length) + (e.alertes.silence ? ' (silence)' : ''))); }

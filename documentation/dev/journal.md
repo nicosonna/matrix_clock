@@ -29,10 +29,31 @@ dans les deux sens), 12 180 vérifications, 0 échec. Fiche carte, plan de test
 (HW-LUM-01 à rejouer : `brut` 4095 en plein jour ⇒ plafond, jamais `defaut`),
 plan final, todo.
 
-**Reste.** Vérifier sur la carte (injoignable depuis le PC au moment de la
-correction : ni sur le réseau à son ancienne adresse, ni en USB) ; si la
-courbe elle-même a été inversée par un wizard joué dans de mauvaises
-conditions, le rejouer ou corriger les points sur `/luminosite`.
+**Sur la carte (plus tard le même jour, horloge installée, OTA seulement).**
+
+- Réglages de luminosité lus avant la mise à jour : **ceux par défaut**
+  (courbe croissante, câblage (a)) — le sens de la courbe n'était pas en
+  cause, seule la règle « butée = défaut » l'était.
+- **Baisse de tension à l'emplacement d'installation.** Le premier envoi OTA
+  (dalle en auto, niveau ~176, ~1,6 A estimés) a fait redémarrer la carte en
+  `baisse_tension` ; remise en manuel 8, l'OTA passe (`ota_1`, redémarrage
+  `volontaire`). Retour en auto (niveau 186–204) ⇒ **boucle de redémarrages
+  `baisse_tension`** toutes les 3–4 s ; en manuel 24 (~270 mA) la carte tient.
+  Mitigation appliquée dans les réglages (NVS, pas dans le code) :
+  **`budget_ma` 2000 → 800** ; essai de 150 s en auto (niveau 80–99,
+  460–700 mA) sans redémarrage. Le plafond de 800 mA n'a pas encore été
+  exercé en pleine lumière (la pièce s'assombrissait). L'alimentation ou le
+  câble 5 V de l'installation est à revoir : fiche carte §3, `todo.md`.
+- Une image servant à ce diagnostic a été ajoutée dans la foulée : la page et
+  `/api/etat` donnent maintenant le **courant appliqué** (`applique_ma`, après
+  écrêtage) à côté de l'estimation (`estime_ma`, avant) — la tuile affichait
+  « 2328 mA (écrêté) » alors que 800 étaient envoyés. Log `%lu mA (applied
+  %lu)`. Installée par OTA sur `ota_0` après retour au manuel 24 le temps de
+  l'envoi.
+
+**Reste.** HW-LUM-01 en plein jour (`brut` 4095 ⇒ plafond, jamais `defaut`) ;
+alimentation de l'installation (le budget de 800 mA est un pansement) ;
+rejouer l'écrêtage à 800 mA en pleine lumière.
 
 ---
 

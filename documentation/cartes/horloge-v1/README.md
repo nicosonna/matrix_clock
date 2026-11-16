@@ -131,6 +131,16 @@ Deux remèdes, au choix :
 
 ---
 
+### Relevé du 2026-11-16 — baisse de tension à l'installation
+
+Horloge installée, alimentée par le câble de l'installation : au-delà de
+~1,6 A estimés sur la dalle (niveau ~176 en auto), l'ESP32 redémarre en
+`baisse_tension` (brownout), en boucle dès que la luminosité automatique
+remonte. À ~270 mA (niveau 24) tout tient. **Pansement** : `budget_ma` = 800
+dans les réglages d'affichage (écrêtage proportionnel). **Vraie correction** :
+alimentation 5 V / 5 A, câble court et épais, injection aux deux extrémités,
+condensateur de 1000 µF près de la dalle — le budget pourra alors remonter.
+
 ## 5. Diviseur de la photorésistance
 
 ```

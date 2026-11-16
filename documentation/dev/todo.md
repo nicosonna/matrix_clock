@@ -27,6 +27,11 @@
 
 ## Phase 1 — à faire, dans l'ordre
 
+- [ ] **Alimentation de l'installation** (2026-11-16) : la carte redémarre en
+      `baisse_tension` au-delà de ~1,6 A estimés sur la dalle (boucle en auto à
+      niveau 186+). Pansement en place : `budget_ma` = 800 dans les réglages.
+      À faire : alimentation 5 V / 5 A au plus près de la dalle, injection aux
+      deux extrémités, câble court (fiche carte §3), puis remonter le budget.
 - [ ] **HW-LUM-01 à rejouer** après la correction des butées (2026-11-16) :
       relever `brut` / `niveau` / `defaut` sur `/api/etat` en plein jour, le
       soir sous la lampe et la nuit noire — attendu plafond / intermédiaire /

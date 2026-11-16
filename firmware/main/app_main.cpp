@@ -166,7 +166,8 @@ struct Shared {
     uint16_t ldr_filtered;
     uint8_t level;
     bool ldr_fault;
-    uint32_t estimated_ma;
+    uint32_t estimated_ma;  ///< Frame current before the budget clip.
+    uint32_t applied_ma;    ///< Frame current actually sent (after the clip).
     uint16_t budget_ma;
     bool limited;
     char scene[12];
@@ -281,7 +282,7 @@ std::size_t status_json(char* out, std::size_t size) {
          w.field("niveau", static_cast<int64_t>(sh.level)) && w.field("defaut", sh.ldr_fault) &&
          w.field("mode", settings::brightness_mode_name(sh.mode)) && w.end_object();
     ok = ok && w.key("courant") && w.begin_object() && w.field("estime_ma", static_cast<int64_t>(sh.estimated_ma)) &&
-         w.field("budget_ma", static_cast<int64_t>(sh.budget_ma)) && w.field("ecretage", sh.limited) && w.end_object();
+         w.field("applique_ma", static_cast<int64_t>(sh.applied_ma)) && w.field("budget_ma", static_cast<int64_t>(sh.budget_ma)) && w.field("ecretage", sh.limited) && w.end_object();
     ok = ok && w.key("reseau") && w.begin_object() && w.field("etat", net.state) && w.field("ip", net.ip) &&
          w.field("portail", net.portal) && w.field("ap", net.ap_ssid) && w.end_object();
     AirShared air{};
@@ -921,6 +922,7 @@ void display_task(void* /*arg*/) {
         s_shared.level = applied;
         s_shared.ldr_fault = lum.sensor_fault;
         s_shared.estimated_ma = stats.estimated_ua / 1000U;
+        s_shared.applied_ma = stats.applied_ua / 1000U;
         s_shared.budget_ma = cfg.display.budget_ma;
         s_shared.limited = stats.limited;
         s_shared.mode = cfg.brightness.mode;
@@ -929,8 +931,9 @@ void display_task(void* /*arg*/) {
 
         if ((now - last_status_log) >= kStatusPeriodMs) {
             last_status_log = now;
-            ESP_LOGI(kTag, "%s: %lu mA, limited=%d | ldr %u -> level %u fault=%d | net %s | time %s %02u:%02u:%02u",
-                     scene_name, static_cast<unsigned long>(stats.estimated_ua / 1000U), stats.limited ? 1 : 0,
+            ESP_LOGI(kTag, "%s: %lu mA (applied %lu), limited=%d | ldr %u -> level %u fault=%d | net %s | time %s %02u:%02u:%02u",
+                     scene_name, static_cast<unsigned long>(stats.estimated_ua / 1000U),
+                     static_cast<unsigned long>(stats.applied_ua / 1000U), stats.limited ? 1 : 0,
                      static_cast<unsigned>(sample.raw), static_cast<unsigned>(applied), lum.sensor_fault ? 1 : 0,
                      clock_web::info().state, ts.sure ? "sure" : "unsure", static_cast<unsigned>(ts.local.hour),
                      static_cast<unsigned>(ts.local.minute), static_cast<unsigned>(ts.local.second));

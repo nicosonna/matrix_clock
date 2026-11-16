@@ -31,7 +31,8 @@ const char* const kSystemFields[] = {"fuseau", "serveur_ntp"};
 const char* const kAirFields[] = {"actif", "adresse", "grandeur_pilote", "seuil_eco2_bon", "seuil_eco2_moyen",
                                   "seuil_eco2_mauvais", "seuil_eco2_tres_mauvais", "seuil_tvoc_bon", "seuil_tvoc_moyen",
                                   "seuil_tvoc_mauvais", "seuil_tvoc_tres_mauvais", "hysteresis_eco2", "hysteresis_tvoc",
-                                  "confirmation_s", "logo_air", "decalage_temperature"};
+                                  "confirmation_s", "logo_air", "decalage_temperature", "cycle_chauffe",
+                                  "periode_cycle_min"};
 const std::size_t kAirFieldCount = sizeof(kAirFields) / sizeof(kAirFields[0]);
 const char* const kHaFields[] = {"actif", "securise", "hote", "port", "jeton", "effacer_jeton", "notifications",
                                  "ping_s", "pong_ms", "meteo_actif", "latitude", "longitude", "meteo_periode_s"};
@@ -702,6 +703,21 @@ bool apply_air_form(const char* body, std::size_t len, const AirSettings& curren
             return fail(err, "decalage_temperature", "centièmes de degré, -1000 à 1000");
         }
         a.temperature_offset_centi = static_cast<int16_t>(i);
+    }
+    if ((r = fetch(body, len, "cycle_chauffe", v, sizeof(v))) < 0) {
+        return fail(err, "cycle_chauffe", kBadEncoding);
+    }
+    if ((r > 0) && !parse_bool(v, a.heater_cycle)) {
+        return fail(err, "cycle_chauffe", "0 ou 1");
+    }
+    if ((r = fetch(body, len, "periode_cycle_min", v, sizeof(v))) < 0) {
+        return fail(err, "periode_cycle_min", kBadEncoding);
+    }
+    if (r > 0) {
+        if (!parse_int(v, kCyclePeriodMinMin, kCyclePeriodMaxMin, i)) {
+            return fail(err, "periode_cycle_min", "minutes, 5 à 60");
+        }
+        a.cycle_period_min = static_cast<uint16_t>(i);
     }
     if (!air_quality::is_valid(a.levels)) {
         return fail(err, "seuil_eco2_bon", "seuils strictement croissants, hystérésis plus petite que l'écart entre deux seuils");

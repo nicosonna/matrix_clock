@@ -304,6 +304,13 @@ std::size_t air_model_json(char* out, std::size_t out_size) noexcept {
          w.field("defaut", static_cast<int64_t>(a.temperature_offset_centi)) &&
          w.field("aide", "Retiré à la mesure du capteur, qui chauffe à côté de la dalle. Le wizard le mesure.") &&
          w.end_object();
+    ok = ok && bool_field(w, "cycle_chauffe", "Chauffe cyclique de l'ENS160", a.heater_cycle,
+                          "La plaque chauffante de l'ENS160 est coupée entre deux mesures : le module chauffe moins l'AHT21, "
+                          "mais la qualité d'air n'est rafraîchie qu'une fois par période (préchauffage à chaque réveil, "
+                          "4 min au plus), et la première valeur peut demander plusieurs cycles.");
+    ok = ok && int_field(w, "periode_cycle_min", "Période de la chauffe cyclique", "min", kCyclePeriodMinMin,
+                         kCyclePeriodMaxMin, a.cycle_period_min,
+                         "D'un réveil au suivant. À 5 min la plaque chauffe jusqu'à 60 % du temps, à 15 min 20 %, à 30 min 10 %.");
     ok = ok && w.end_object() && w.end_object();
     return finish(w);
 }
@@ -326,7 +333,9 @@ std::size_t air_json(const AirSettings& s, char* out, std::size_t out_size) noex
          w.field("hysteresis_tvoc", static_cast<int64_t>(s.levels.hysteresis_tvoc)) &&
          w.field("confirmation_s", static_cast<int64_t>(s.levels.confirmation_s)) &&
          w.field("logo_air", air_logo_name(s.logo)) &&
-         w.field("decalage_temperature", static_cast<int64_t>(s.temperature_offset_centi)) && w.end_object();
+         w.field("decalage_temperature", static_cast<int64_t>(s.temperature_offset_centi)) &&
+         w.field("cycle_chauffe", s.heater_cycle) &&
+         w.field("periode_cycle_min", static_cast<int64_t>(s.cycle_period_min)) && w.end_object();
     return finish(w);
 }
 

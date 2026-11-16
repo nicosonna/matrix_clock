@@ -298,7 +298,7 @@ table.liste select { max-width:11rem; }
     dalle: ['axe_premier', 'serpentin', 'origine', 'largeur_module', 'budget_ma'],
     reglage: ['mode', 'lum_manuelle', 'lum_min', 'lum_max', 'extinction_active', 'extinction_debut', 'extinction_fin'],
     avance: ['pas_lum', 'montee_s', 'descente_s', 'compensation_counts', 'courbe'],
-    air: ['actif', 'adresse', 'logo_air', 'decalage_temperature'],
+    air: ['actif', 'adresse', 'logo_air', 'decalage_temperature', 'cycle_chauffe', 'periode_cycle_min'],
     ha: ['actif', 'securise', 'hote', 'port', 'jeton', 'effacer_jeton', 'notifications'],
     ha_avance: ['ping_s', 'pong_ms'],
     meteo: ['meteo_actif', 'latitude', 'longitude', 'meteo_periode_s'],
@@ -1094,10 +1094,12 @@ table.liste select { max-width:11rem; }
       g.appendChild(tuile('TVOC', a.air_valide ? a.tvoc + ' ppb' : '--'));
       g.appendChild(tuile('Température', a.climat_valide ? (a.temperature_centi / 100).toFixed(1) + ' °C' : '--'));
       g.appendChild(tuile('Humidité', a.climat_valide ? (a.humidite_pct10 / 10).toFixed(0) + ' %' : '--'));
+      g.appendChild(tuile('Chauffe ENS160', a.cycle ? (a.chauffe ? 'en cours (cyclique)' : 'coupée, en veille') : 'continue'));
       var t = [];
       if (a.defaut) { t.push('Capteur en défaut (' + a.etat + ', ' + a.reinit_bus + ' réinitialisation(s) du bus).'); }
       if (a.prechauffage) { t.push('Préchauffage : valeurs invalides pendant 3 minutes après la mise sous tension.'); }
-      if (a.premiere_mise_en_service) { t.push('Première mise en service : le capteur se stabilise pendant environ une heure.'); }
+      if (a.premiere_mise_en_service) { t.push('Première mise en service : le capteur se stabilise pendant environ une heure' + (a.cycle ? ' de chauffe cumulée (plusieurs cycles)' : '') + '.'); }
+      if (a.cycle && !a.chauffe && a.air_valide) { t.push('Chauffe cyclique : la qualité d\u2019air affichée est la dernière mesure, rafraîchie à chaque réveil.'); }
       if (a.compensation_par_defaut) { t.push('AHT21 indisponible : compensation 25 °C / 50 % par défaut, précision réduite.'); }
       document.getElementById('air-etat').textContent = t.join(' ');
     }).catch(function () {});

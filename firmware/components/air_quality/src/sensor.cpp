@@ -20,6 +20,8 @@ SensorConfig default_sensor_config() noexcept {
     c.ens160_address = kEns160AddressHigh;
     c.temperature_offset_centi = 0;
     c.period_ms = kPeriodMinMs;
+    c.heater_cycle = false;
+    c.cycle_period_ms = kCyclePeriodDefaultMs;
     return c;
 }
 
@@ -27,21 +29,28 @@ bool is_valid(const SensorConfig& c) noexcept {
     const bool addr = (c.ens160_address == kEns160AddressHigh) || (c.ens160_address == kEns160AddressLow);
     const bool off = (c.temperature_offset_centi >= -kOffsetMaxCenti) && (c.temperature_offset_centi <= kOffsetMaxCenti);
     const bool per = (c.period_ms >= kPeriodMinMs) && (c.period_ms <= kPeriodMaxMs);
-    return addr && off && per;
+    const bool cyc = (c.cycle_period_ms >= kCyclePeriodMinMs) && (c.cycle_period_ms <= kCyclePeriodMaxMs);
+    return addr && off && per && cyc;
 }
 
 AirSensor::AirSensor(I2cBus& bus, const SensorConfig& config) noexcept
     : bus_(bus), config_(is_valid(config) ? config : default_sensor_config()), reading_{}, state_(State::Probe),
       wait_until_ms_(0U), last_cycle_ms_(0U), failures_(0U), aht_crc_failures_(0U), aht_busy_retries_(0U),
-      aht_ok_(false), seen_(false), aht_{}, status_{} {}
+      aht_ok_(false), seen_(false), awake_(false), captured_(false), wake_ms_(0U), aht_{}, status_{} {}
 
 void AirSensor::configure(const SensorConfig& config) noexcept {
     if (is_valid(config)) {
         const bool address_changed = config.ens160_address != config_.ens160_address;
+        const bool cycle_off = config_.heater_cycle && !config.heater_cycle;
+        const bool cycle_on = !config_.heater_cycle && config.heater_cycle;
         config_ = config;
         if (address_changed) {
             state_ = State::Probe;
             wait_until_ms_ = 0U;
+        } else if (cycle_off && !awake_ && reading_.present && (state_ == State::Idle)) {
+            state_ = State::SetMode;  // continuous mode again: heater back on now
+        } else if (cycle_on && awake_) {
+            captured_ = false;        // the running wake ends at the next valid reading (or the cap)
         }
     }
 }
@@ -60,6 +69,7 @@ const char* AirSensor::state_name() const noexcept {
         case State::EnsCompensate: return "ens_compensate";
         case State::EnsStatus: return "ens_status";
         case State::EnsData: return "ens_data";
+        case State::SetIdle: return "set_idle";
         case State::Recover: return "recover";
         default: return "?";
     }
@@ -133,6 +143,10 @@ void AirSensor::step(uint32_t now_ms) noexcept {
                 fail(now_ms);
                 return;
             }
+            awake_ = true;
+            captured_ = false;
+            wake_ms_ = now_ms;
+            reading_.heater_on = true;
             state_ = State::ReadMode;
             return;
         }
@@ -238,6 +252,27 @@ void AirSensor::step(uint32_t now_ms) noexcept {
             return;
         }
         case State::EnsCompensate: {
+            if (config_.heater_cycle && !awake_) {
+                // Heater off: publish the climate only, wake the ENS160 when its period is due.
+                if (aht_ok_ && (aht_crc_failures_ < kConsecutiveFailuresMax)) {
+                    reading_.climate_valid = true;
+                    reading_.temperature_centi =
+                        static_cast<int16_t>(static_cast<int32_t>(aht_.temperature_centi) - config_.temperature_offset_centi);
+                    reading_.humidity_pct10 = aht_.humidity_pct10;
+                    reading_.compensation_default = false;
+                } else {
+                    reading_.climate_valid = false;
+                }
+                reading_.updated_ms = now_ms;
+                failures_ = 0U;
+                if (elapsed(now_ms, wake_ms_ + config_.cycle_period_ms)) {
+                    state_ = State::SetMode;
+                    return;
+                }
+                state_ = State::Idle;
+                wait_until_ms_ = last_cycle_ms_ + config_.period_ms;
+                return;
+            }
             int16_t t = kFallbackTemperatureCenti;
             uint16_t h = kFallbackHumidityPct10;
             const bool aht_fault = aht_crc_failures_ >= kConsecutiveFailuresMax;
@@ -278,8 +313,13 @@ void AirSensor::step(uint32_t now_ms) noexcept {
                     return;
                 }
                 // No new sample: the previous values stay valid only if they existed (AIR-03).
-            } else {
+            } else if (!(config_.heater_cycle && reading_.air_valid && !status_.error)) {
+                // Duty cycle: a warm-up after a wake keeps the previous (last measured) values.
                 reading_.air_valid = false;
+            }
+            if (config_.heater_cycle && awake_ && !captured_ && elapsed(now_ms, wake_ms_ + kCycleWarmupMaxMs)) {
+                state_ = State::SetIdle;  // never became valid: stop heating anyway
+                return;
             }
             state_ = State::Idle;
             wait_until_ms_ = last_cycle_ms_ + config_.period_ms;
@@ -297,6 +337,24 @@ void AirSensor::step(uint32_t now_ms) noexcept {
             reading_.tvoc_ppb = d.tvoc_ppb;
             reading_.eco2_ppm = d.eco2_ppm;
             reading_.air_valid = (d.aqi >= 1U) && (d.aqi <= 5U);
+            if (config_.heater_cycle && reading_.air_valid) {
+                captured_ = true;
+                state_ = State::SetIdle;
+                return;
+            }
+            state_ = State::Idle;
+            wait_until_ms_ = last_cycle_ms_ + config_.period_ms;
+            return;
+        }
+        case State::SetIdle: {
+            const uint8_t cmd[2] = {kEns160RegOpMode, kEns160OpModeIdle};
+            if (!bus_.write(config_.ens160_address, cmd, 2U)) {
+                fail(now_ms);
+                return;
+            }
+            awake_ = false;
+            reading_.heater_on = false;
+            reading_.opmode_raw = kEns160OpModeIdle;
             state_ = State::Idle;
             wait_until_ms_ = last_cycle_ms_ + config_.period_ms;
             return;

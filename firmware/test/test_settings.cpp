@@ -260,7 +260,8 @@ void test_air_form() {
     AirSettings out = cur;
     FormError err{};
     const char* ok = "actif=0&adresse=0x52&grandeur_pilote=Eco2&seuil_eco2_bon=500&seuil_eco2_moyen=700&seuil_eco2_mauvais=900"
-                     "&seuil_eco2_tres_mauvais=1400&hysteresis_eco2=40&confirmation_s=120&logo_air=Scene&decalage_temperature=-150";
+                     "&seuil_eco2_tres_mauvais=1400&hysteresis_eco2=40&confirmation_s=120&logo_air=Scene&decalage_temperature=-150"
+                     "&cycle_chauffe=1&periode_cycle_min=5";
     CHECK(settings::apply_air_form(ok, slen(ok), cur, out, err));
     CHECK(!out.enabled);
     CHECK_EQ(out.ens160_address, air_quality::kEns160AddressLow);
@@ -275,12 +276,19 @@ void test_air_form() {
     const air_quality::SensorConfig sc = settings::sensor_config(out);
     CHECK_EQ(sc.ens160_address, air_quality::kEns160AddressLow);
     CHECK_EQ(sc.temperature_offset_centi, -150);
+    CHECK(out.heater_cycle);
+    CHECK_EQ(out.cycle_period_min, 5U);
+    CHECK(sc.heater_cycle);
+    CHECK_EQ(sc.cycle_period_ms, 300000U);
+    CHECK(!cur.heater_cycle);
+    CHECK_EQ(cur.cycle_period_min, 15U);
     // All or nothing: a bad field leaves `keep` untouched.
     AirSettings keep = cur;
     const char* bads[] = {"adresse=0x50", "grandeur_pilote=Co2", "seuil_eco2_moyen=500", "seuil_tvoc_bon=0",
                           "hysteresis_tvoc=500", "confirmation_s=3601", "logo_air=Grand", "decalage_temperature=1001",
                           "actif=peut-etre", "seuil_eco2_bon=%ZZ", "logo_air=%ZZ", "decalage_temperature=%ZZ",
-                          "actif=%ZZ", "adresse=%ZZ", "grandeur_pilote=%ZZ"};
+                          "actif=%ZZ", "adresse=%ZZ", "grandeur_pilote=%ZZ", "cycle_chauffe=2", "periode_cycle_min=4",
+                          "periode_cycle_min=61", "cycle_chauffe=%ZZ", "periode_cycle_min=%ZZ"};
     for (const char* b : bads) {
         CHECK(!settings::apply_air_form(b, slen(b), cur, keep, err));
         CHECK(err.field[0] != '\0');

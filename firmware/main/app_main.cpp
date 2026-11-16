@@ -310,6 +310,7 @@ std::size_t status_json(char* out, std::size_t size) {
          w.field("temperature_centi", static_cast<int64_t>(r.temperature_centi)) &&
          w.field("humidite_pct10", static_cast<int64_t>(r.humidity_pct10)) &&
          w.field("compensation_par_defaut", r.compensation_default) &&
+         w.field("chauffe", r.heater_on) && w.field("cycle", air_cfg.heater_cycle) &&
          w.field("niveau", air_quality::level_name(air.level)) && w.field("etat", air.state) &&
          w.field("reinit_bus", static_cast<int64_t>(r.bus_resets)) &&
          w.field("statut_brut", static_cast<int64_t>(r.status_raw)) && w.field("opmode_brut", static_cast<int64_t>(r.opmode_raw)) &&

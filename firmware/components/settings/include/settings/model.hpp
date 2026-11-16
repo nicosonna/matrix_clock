@@ -61,7 +61,13 @@ struct AirSettings {
     air_quality::LevelConfig levels;   ///< Pilot quantity, thresholds, hysteresis, confirmation.
     AirLogoMode logo;
     int16_t temperature_offset_centi;  ///< Self-heating offset subtracted from the AHT21 (wizard).
+    bool heater_cycle;                 ///< ENS160 heater off between captures (less self-heating).
+    uint16_t cycle_period_min;         ///< Wake-to-wake period of the heater cycle, kCyclePeriodMinMin..Max.
 };
+
+inline constexpr uint16_t kCyclePeriodMinMin = 5U;
+inline constexpr uint16_t kCyclePeriodMaxMin = 60U;
+inline constexpr uint16_t kCyclePeriodDefaultMin = 15U;
 
 /// Home Assistant domain (page /ha): WebSocket link, tracked values, weather fallback.
 struct HaSettings {

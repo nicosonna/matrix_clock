@@ -223,6 +223,8 @@ Bornes lues sur `/api/air/modele`.
 | `offset_temperature_centi` | **0** | ±1000 (±10 °C) — §8 |
 | `offset_humidite_pour_mille` | 0 | ±200 |
 | `periode_s` | 1 | 1–60 |
+| `cycle_chauffe` | **non** | oui / non — §8, chauffe cyclique de l'ENS160 |
+| `periode_cycle_min` | 15 | 5–60 min, d'un réveil au suivant |
 
 **Wizard en 4 étapes** : détection (`PART_ID`, adresses trouvées sur le bus) →
 attente du préchauffage avec **compte à rebours réel** lu dans le drapeau de
@@ -251,6 +253,34 @@ Donc, dans l'ordre :
    « le capteur chauffe trop pour être compensé proprement : déporte-le ». Un
    décalage constant se corrige ; un décalage qui dépend de la scène affichée ne
    se corrige pas.
+
+### Chauffe cyclique (option, 2026-11-16)
+
+La plaque chauffante de l'ENS160 (mode standard, en continu) est la première
+source de chaleur du module : c'est elle qui tiédit la carte et fait lire
+l'AHT21 quelques degrés trop haut, bien avant la dalle. L'option
+`cycle_chauffe` (demandée par Nicolas) coupe la plaque entre deux mesures :
+
+- au réveil, `OPMODE` standard ; on attend le **drapeau de validité** du
+  capteur, pas un délai fixe ; dès qu'une lecture valide est capturée,
+  `OPMODE` idle (plaque coupée, étalonnage interne conservé) ;
+- si le capteur ne se déclare jamais valide, la chauffe s'arrête au bout de
+  **4 min** et on réessaie au réveil suivant ;
+- réveil toutes les `periode_cycle_min` (5–60, défaut **15**). À 5 min la
+  plaque chauffe jusqu'à 60 % du temps, à 15 min 20 %, à 30 min 10 % ;
+- pendant la veille, l'AHT21 continue d'être lu chaque seconde (il ne chauffe
+  pas) ; la qualité d'air affichée est la **dernière mesure** (son âge est
+  connu, `/api/etat` → `age_s`), et le préchauffage du réveil suivant ne
+  l'efface pas ; un défaut capteur, lui, l'efface ;
+- honnêteté : tant qu'aucune lecture valide n'a été capturée depuis la mise
+  sous tension, `--` ; la « première mise en service » (1 h de chauffe
+  cumulée) peut donc demander plusieurs cycles ;
+- la page dit si la plaque chauffe (`chauffe`) et que la valeur est celle du
+  dernier réveil.
+
+Ce que l'option **ne** fait pas : rendre la température juste. Elle réduit
+l'écart, elle ne l'annule pas (la plaque chauffe encore 4 min par cycle) ;
+le décalage mesuré par le wizard reste nécessaire, plus petit.
 
 Le décalage est appliqué **à la mesure publiée et à la compensation de l'ENS160**,
 et le fait qu'un décalage non nul soit actif est **visible sur la page** : une
@@ -307,8 +337,9 @@ trames) :
 | AIR-18 | Couleur du logo : grise en préchauffage et en défaut, **jamais verte**. |
 | AIR-19 | `logo_air` : les trois modes produisent le tampon attendu. |
 | AIR-20 | Règles sur une source en préchauffage ou en défaut ⇒ **aucune levée** ; `AirCapteurDefaut` lève à sa place. |
-| AIR-21 | Textes de la dalle : `temperature_text()` une décimale arrondie avec retenue (21.95 → `22.0°`), signe gardé sauf `-0.0`, degré UTF-8 ; `humidity_text()` arrondi à l'unité, plafonné à 100 % ; tampon trop petit ⇒ 0 et chaîne vide. |
+| AIR-23 | Textes de la dalle : `temperature_text()` une décimale arrondie avec retenue (21.95 → `22.0°`), signe gardé sauf `-0.0`, degré UTF-8 ; `humidity_text()` arrondi à l'unité, plafonné à 100 % ; tampon trop petit ⇒ 0 et chaîne vide. |
 | AIR-21 | Bus bloqué / NACK ⇒ réinitialisation, compteur, aucune attente bloquante. |
+| AIR-24 | Chauffe cyclique (§8) : veille `OPMODE` idle après une capture valide, AHT21 lu pendant la veille, réveil à la période, dernière mesure gardée pendant le préchauffage, plafond de 4 min, retour au continu immédiat, défaut ⇒ défaut. |
 | AIR-22 | Modèle ⇄ wizard `/air` : aucun paramètre orphelin. |
 
 Vérifications matérielles :

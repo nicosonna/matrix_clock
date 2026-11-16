@@ -30,6 +30,8 @@
 - [x] ~~**Couleurs personnalisables**~~ : domaine `couleurs` livré le 2026-11-16
       (maquette `documentation/maquette-web/couleurs.html` approuvée, base de
       design). Reste HW-COL-01 à l'œil.
+- [ ] **HW-AIR-07** (2026-11-16) : jouer la chauffe cyclique sur l'horloge
+      et relever la baisse de température pendant la veille.
 - [ ] **Décalage de température** de l'horloge installée (2026-11-16) : le
       capteur lit ~27,6 °C (auto-échauffement), décalage à 0 — jouer le wizard
       Qualité d'air avec un thermomètre de référence avant d'afficher la scène

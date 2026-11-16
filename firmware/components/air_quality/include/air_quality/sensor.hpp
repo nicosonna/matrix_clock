@@ -11,6 +11,14 @@
  * compensation written **before** the data is read → status → data if valid
  * and new. Everything the sensor declares invalid stays invalid in the
  * published reading (warm-up, initial start, fault): nothing is invented.
+ *
+ * Heater duty cycle (SensorConfig::heater_cycle, AIR-24): the ENS160 hot
+ * plate is the main source of the module's self-heating. In this mode the
+ * ENS160 is put in IDLE (heater off) as soon as one valid reading has been
+ * captured, and woken up again every cycle_period_ms; while it warms up the
+ * previous reading stays published (it is the last measurement, its age is
+ * known), and a wake that never becomes valid within kCycleWarmupMaxMs goes
+ * back to sleep anyway. The AHT21 keeps being read every period_ms.
  */
 
 #include <cstdint>
@@ -39,6 +47,7 @@ struct AirReading {
     uint8_t bus_resets;        ///< Recoveries performed so far (diagnostics).
     uint8_t status_raw;        ///< Last DEVICE_STATUS byte (diagnostics).
     uint8_t opmode_raw;        ///< OPMODE read back after it was set (diagnostics).
+    bool heater_on;            ///< ENS160 in STANDARD mode (hot plate on); false while idle in the duty cycle.
 };
 
 /// Loop configuration.
@@ -46,11 +55,18 @@ struct SensorConfig {
     uint8_t ens160_address;    ///< 0x52 or 0x53.
     int16_t temperature_offset_centi;  ///< Subtracted from the AHT21 reading (self-heating), -1000..1000.
     uint32_t period_ms;        ///< Cycle period, >= 1000.
+    bool heater_cycle;         ///< true: ENS160 idle between captures (less self-heating, slower air data).
+    uint32_t cycle_period_ms;  ///< Wake-to-wake period of the heater cycle, kCyclePeriodMinMs..kCyclePeriodMaxMs.
 };
 
 inline constexpr int16_t kOffsetMaxCenti = 1000;
 inline constexpr uint32_t kPeriodMinMs = 1000U;
 inline constexpr uint32_t kPeriodMaxMs = 60000U;
+inline constexpr uint32_t kCyclePeriodMinMs = 5U * 60U * 1000U;
+inline constexpr uint32_t kCyclePeriodMaxMs = 60U * 60U * 1000U;
+inline constexpr uint32_t kCyclePeriodDefaultMs = 15U * 60U * 1000U;
+/// Longest the heater stays on per wake when the sensor never declares its data valid.
+inline constexpr uint32_t kCycleWarmupMaxMs = 4U * 60U * 1000U;
 inline constexpr uint8_t kConsecutiveFailuresMax = 3U;
 /// A missing sensor is probed again this often.
 inline constexpr uint32_t kProbeRetryMs = 60000U;
@@ -88,6 +104,7 @@ private:
         EnsCompensate,  ///< Write TEMP_IN / RH_IN.
         EnsStatus,      ///< Read DEVICE_STATUS.
         EnsData,        ///< Read AQI / TVOC / eCO2.
+        SetIdle,        ///< Duty cycle: write OPMODE idle (heater off) until the next wake.
         Recover,        ///< Bus recovery after repeated failures.
     };
 
@@ -105,6 +122,9 @@ private:
     uint8_t aht_busy_retries_;
     bool aht_ok_;              ///< This cycle's AHT21 reading is usable.
     bool seen_;                ///< The ENS160 answered at least once (NACK afterwards = fault).
+    bool awake_;               ///< ENS160 in STANDARD mode as far as we know.
+    bool captured_;            ///< A valid reading was taken since the last wake (duty cycle).
+    uint32_t wake_ms_;         ///< When the heater was last switched on (duty cycle).
     Aht21Reading aht_;
     Ens160Status status_;
 };

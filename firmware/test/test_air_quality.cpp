@@ -685,7 +685,7 @@ void test_logo() {
     CHECK_EQ(fb.out_of_bounds_count(), 0U);
 }
 
-// ---------------------------------------------------------------- AIR-21
+// ---------------------------------------------------------------- AIR-23
 
 void test_climate_text() {
     char t[16];
@@ -715,6 +715,94 @@ void test_climate_text() {
     CHECK_EQ(static_cast<int>(air_quality::humidity_text(457, nullptr, 0U)), 0);
 }
 
+// ---------------------------------------------------------------- AIR-24
+
+void test_heater_cycle() {
+    SensorConfig cfg = default_sensor_config();
+    cfg.heater_cycle = true;
+    cfg.cycle_period_ms = kCyclePeriodMinMs;  // 5 min
+    CHECK(is_valid(cfg));
+    SensorConfig bad = cfg;
+    bad.cycle_period_ms = kCyclePeriodMinMs - 1U;
+    CHECK(!is_valid(bad));
+    bad.cycle_period_ms = kCyclePeriodMaxMs + 1U;
+    CHECK(!is_valid(bad));
+
+    FakeBus bus;
+    bus.ens_status = 0x06U;  // warm-up after power-up
+    AirSensor s(bus, cfg);
+    uint32_t now = 0U;
+    run(s, now, 2500U);
+    CHECK_EQ(bus.opmode, kEns160OpModeStandard);  // first wake: heater on
+    CHECK(s.reading().heater_on);
+    CHECK(!s.reading().air_valid);                 // nothing captured yet: honest
+    CHECK(s.reading().warming_up);
+    CHECK(s.reading().climate_valid);
+    // The sensor becomes valid: one reading is captured, then the heater goes off.
+    bus.ens_status = 0x02U;
+    run(s, now, 2500U);
+    CHECK(s.reading().air_valid);
+    CHECK_EQ(s.reading().aqi, 3U);
+    CHECK_EQ(bus.opmode, kEns160OpModeIdle);
+    CHECK(!s.reading().heater_on);
+    CHECK_EQ(s.reading().opmode_raw, kEns160OpModeIdle);
+    // Asleep: the AHT21 keeps being read every second, the ENS160 is left alone.
+    const uint32_t comp_before = bus.comp_writes;
+    const uint32_t status_before = bus.status_reads;
+    const uint32_t aht_before = bus.aht_triggers;
+    bus.set_aht(2100, 500U);
+    run(s, now, 5000U);
+    CHECK_EQ(bus.comp_writes, comp_before);
+    CHECK_EQ(bus.status_reads, status_before);
+    CHECK((bus.aht_triggers - aht_before) >= 4U);
+    CHECK((s.reading().temperature_centi >= 2099) && (s.reading().temperature_centi <= 2101));
+    CHECK(s.reading().air_valid);                  // last measurement, kept
+    CHECK_EQ(s.reading().aqi, 3U);
+    // Not woken before the period: 4 min 50 s after the wake, still idle.
+    run(s, now, 290000U - now);
+    CHECK_EQ(bus.opmode, kEns160OpModeIdle);
+    // Woken at 5 min; warming up again: the previous values stay, flagged warm-up.
+    bus.ens_status = 0x06U;
+    bus.ens_data[0] = 4U;
+    run(s, now, 302000U - now);
+    CHECK_EQ(bus.opmode, kEns160OpModeStandard);
+    CHECK(s.reading().heater_on);
+    CHECK(s.reading().warming_up);
+    CHECK(s.reading().air_valid);
+    CHECK_EQ(s.reading().aqi, 3U);
+    // Never valid within the cap: heater off again at wake + 4 min, values untouched.
+    run(s, now, 545000U - now);
+    CHECK_EQ(bus.opmode, kEns160OpModeIdle);
+    CHECK(!s.reading().heater_on);
+    CHECK_EQ(s.reading().aqi, 3U);
+    CHECK(s.reading().air_valid);
+    // Next wake at 10 min captures the new value and sleeps.
+    run(s, now, 603000U - now);
+    CHECK_EQ(bus.opmode, kEns160OpModeStandard);
+    bus.ens_status = 0x02U;
+    run(s, now, 3000U);
+    CHECK_EQ(s.reading().aqi, 4U);
+    CHECK(!s.reading().warming_up);
+    CHECK_EQ(bus.opmode, kEns160OpModeIdle);
+    // Back to continuous mode while asleep: heater on at once and it stays on.
+    SensorConfig cont = cfg;
+    cont.heater_cycle = false;
+    s.configure(cont);
+    run(s, now, 2000U);
+    CHECK_EQ(bus.opmode, kEns160OpModeStandard);
+    CHECK(s.reading().heater_on);
+    run(s, now, 5000U);
+    CHECK_EQ(bus.opmode, kEns160OpModeStandard);
+    CHECK(bus.comp_writes > comp_before);
+    // A sensor fault while cycling is still a fault (nothing kept).
+    bus.ens_status = 0x0EU;  // validity 3 (invalid)
+    s.configure(cfg);
+    run(s, now, 2500U);
+    CHECK(!s.reading().air_valid);
+    CHECK(s.reading().fault);
+    CHECK_EQ(g_alloc_count, 0U);
+}
+
 }  // namespace
 
 void run_air_quality_tests() {
@@ -724,4 +812,5 @@ void run_air_quality_tests() {
     test_levels();
     test_logo();
     test_climate_text();
+    test_heater_cycle();
 }

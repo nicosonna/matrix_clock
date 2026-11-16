@@ -36,6 +36,8 @@ AirSettings default_air_settings() noexcept {
     a.levels = air_quality::default_level_config();
     a.logo = AirLogoMode::IconZone;
     a.temperature_offset_centi = 0;
+    a.heater_cycle = false;
+    a.cycle_period_min = kCyclePeriodDefaultMin;
     return a;
 }
 
@@ -126,6 +128,8 @@ air_quality::SensorConfig sensor_config(const AirSettings& s) noexcept {
     air_quality::SensorConfig c = air_quality::default_sensor_config();
     c.ens160_address = s.ens160_address;
     c.temperature_offset_centi = s.temperature_offset_centi;
+    c.heater_cycle = s.heater_cycle;
+    c.cycle_period_ms = static_cast<uint32_t>(s.cycle_period_min) * 60U * 1000U;
     return c;
 }
 

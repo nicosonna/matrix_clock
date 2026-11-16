@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-11-16 (suite 3) — Chauffe cyclique de l'ENS160
+
+**Pourquoi.** Nicolas trouve le module tiède et l'AHT21 lit 26 °C : ce n'est
+ni un défaut ni la fréquence des lectures I²C, c'est la plaque chauffante de
+l'ENS160, allumée en permanence en mode standard. Il a choisi de la couper
+entre deux mesures (conséquences expliquées : rafraîchissement de l'air une
+fois par cycle, préchauffage à chaque réveil).
+
+**Quoi.** `SensorConfig::heater_cycle` / `cycle_period_ms` ; dans la machine
+d'état : réveil (`SetMode`, `heater_on`), capture d'une lecture valide ⇒
+`SetIdle` (`OPMODE` idle), AHT21 lu pendant la veille sans toucher l'ENS160,
+réveil à la période, préchauffage du réveil qui **garde** la dernière mesure,
+plafond `kCycleWarmupMaxMs` (4 min), retour au mode continu ⇒ chauffe
+immédiate. Réglages `cycle_chauffe` (défaut non) et `periode_cycle_min`
+(5–60, défaut **15** : à 5 min la plaque chauffe encore 60 % du temps),
+blob NVS `air` **v2** (les réglages air reviennent aux défauts une fois),
+`/api/etat` → `air.chauffe` / `air.cycle`, tuile « Chauffe ENS160 » et
+mention « dernière mesure » sur la page `/air`.
+
+**Tests.** AIR-24 (cycle complet simulé : 10 min de machine d'état à 10 ms),
+AIR-22 à 18 champs, formulaire air (bornes 5–60, `cycle_chauffe=2` refusé).
+Mon doublon d'identifiant AIR-21 d'hier (textes de la dalle) renommé AIR-23.
+Couverture 96,8 % sur 5 210 lignes.
+
+**Reste.** HW-AIR-07 sur la carte (observer un cycle et la baisse de
+température pendant la veille), activer l'option sur l'horloge (période à
+choisir par Nicolas : 15 min proposé).
+
+---
+
 ## 2026-11-16 (suite 2) — Domaine `couleurs`, éditeur de scènes réparé
 
 **Couleurs personnalisables** (maquette approuvée par Nicolas, puis firmware) :

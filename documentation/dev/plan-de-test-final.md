@@ -66,7 +66,7 @@ les vérifications matérielles sont une **campagne** (§4).
 
 | Règle (CLAUDE.md) | Tests |
 |---|---|
-| **Honnêteté de l'affichage** : `--:--` sans heure sûre, `--` valeur absente/périmée, luminosité de repli nommée, air `--` + logo gris en préchauffage, `null` vers MQTT, règle sans source ⇒ `Indisponible` | AFF-11, TIME-07, HA-05 → HA-07, HA-12, LUM-11, AIR-02, AIR-03, AIR-18, AIR-19, MQ-04, MQ-05, ALR-04, ALR-05, AIR-20 |
+| **Honnêteté de l'affichage** : `--:--` sans heure sûre, `--` valeur absente/périmée, luminosité de repli nommée, air `--` + logo gris en préchauffage, `null` vers MQTT, règle sans source ⇒ `Indisponible` | AFF-11, TIME-07, HA-05 → HA-07, HA-12, LUM-10, AIR-02, AIR-03, AIR-18, AIR-19, MQ-04, MQ-05, ALR-04, ALR-05, AIR-20 |
 | **Aucun acquittement** (EX-46) : passages toutes les `rappel_s`, retrait **par la règle** ou **par la source** seulement | ALR-06, ALR-07, ALR-13, ALR-18 (aucun champ `acquitt…`), HW-ALR-02, HW-ALR-04 |
 | **Entrée non sûre** : tout ce qui vient du réseau est borné, rejeté plutôt que réparé | RES-01 → RES-10 (formulaire, DNS), HA-09, HA-10 (trames, JSON), ALR-15 (notification), WEB-02, WEB-03, MQ-08, MQ-09, ALR-08 (formulaires tout-ou-rien, `%ZZ` sur chaque champ) |
 | **Aucune allocation après init** | GEN-04, AFF-17, ALR-16, MQ-06 (`AllocGuard`) |

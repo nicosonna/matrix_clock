@@ -37,6 +37,18 @@ le sens de la luminosité. Le wizard d'étalonnage détermine le sens tout seul.
 - Cadence d'acquisition **1 Hz**. L'échec de lecture rend `{ valeur, valide=false }` ;
   on ne renvoie **jamais** une valeur inventée ni la précédente présentée comme
   fraîche.
+- **Butées = saturation, pas défaut** *(correction du 2026-11-16)*. Avec un
+  diviseur de 10 kΩ, l'ADC est **à 4095 en plein jour** et **à 0 dans une
+  pièce noire** (câblage (a) ; l'inverse en (b)) : ce sont des mesures
+  légitimes, aux extrémités de la courbe, qui donnent le plafond et le
+  plancher. Les traiter comme un capteur en défaut (ancienne règle LUM-11)
+  envoyait l'horloge sur le repli 64 **en plein jour et en pleine nuit** :
+  moins lumineuse le jour que le soir sous la lampe, plus lumineuse la nuit
+  que le plancher — exactement « inversé » vu de la pièce. Seule une lecture
+  ADC **en échec** compte pour le défaut capteur. Une LDR débranchée (0 en
+  câblage (a)) donne donc le plancher de nuit, visible sur la page comme
+  `brut = 0` permanent : limite assumée, la photorésistance est une pièce
+  passive qui ne tombe pas en panne ouverte en pratique.
 
 ---
 
@@ -155,7 +167,7 @@ Tests host du composant pur `brightness` :
 | LUM-08 | Quantification par `pas_lum`. |
 | LUM-09 | Plancher et plafond respectés, y compris `lum_min = 0`. |
 | LUM-10 | 5 lectures invalides consécutives ⇒ `kLumRepli` + drapeau ; une lecture valide rétablit. |
-| LUM-11 | Mesure collée à 0 ou à 4095 traitée comme capteur en défaut. |
+| LUM-11 | Mesure aux butées 0 / 4095 = **saturation**, pas défaut : plancher et plafond selon le sens de la courbe (câblages (a) et (b)), jamais le repli. |
 | LUM-12 | Plage d'extinction qui franchit minuit (23:30 → 06:30) : dedans et dehors. |
 | LUM-13 | Mode `Manuel` ignore la mesure ; mode `Eteint` donne 0. |
 | LUM-14 | Construction de la courbe par le wizard à partir des 4 mesures, y compris quand le câblage inverse l'ordre. |

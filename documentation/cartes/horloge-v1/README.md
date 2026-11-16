@@ -145,6 +145,9 @@ Les deux câblages sont acceptés : la courbe d'étalonnage peut être croissant
 décroissante (`../../dev/spec-luminosite.md` §1), et le wizard détermine le sens
 tout seul. **Carte en main : câblage (a)**, vérifié le 2026-11-05 (main sur la
 LDR ⇒ la dalle s'assombrit) ; ~2086 comptes (1,9 V) sous l'éclairage du bureau.
+En plein jour l'ADC **sature à 4095** et dans le noir il lit **0** : le firmware
+traite ces butées comme des mesures (plafond / plancher), pas comme un défaut
+(`dev/spec-luminosite.md` §1, corrigé le 2026-11-16).
 
 Choix de la résistance fixe : prendre l'ordre de grandeur de la résistance du LDR
 à la luminosité où l'on veut le plus de résolution — **l'éclairage du soir**,

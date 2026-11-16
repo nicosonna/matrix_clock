@@ -55,7 +55,7 @@ chaque cas est dans la spec citée.
 | LUM-08 | idem | Changement réel ⇒ saut à un multiple de `step` | **PASSE** 2026-11-05 |
 | LUM-09 | idem | Plancher et plafond, `min_level = 0` inclus | **PASSE** 2026-11-05 |
 | LUM-10 | `Controller::step()` | 4 ratés = maintien ; 5 ⇒ `kFallbackLevel` (64) + drapeau ; 1 lecture valide rétablit ; défaut dès le boot ⇒ 64 | **PASSE** 2026-11-05 |
-| LUM-11 | idem | Collé à 0 ou 4095 ⇒ capteur en défaut | **PASSE** 2026-11-05 |
+| LUM-11 | idem | Butées 0 / 4095 = saturation, **pas** défaut : plancher / plafond selon le sens de la courbe (a) et (b), jamais 64 (défaut corrigé le 2026-11-16 : l'horloge passait au repli en plein jour et en pleine nuit) | **PASSE** 2026-11-16 |
 | LUM-12 | `in_window()` | 23:30 → 06:30 franchit minuit, fenêtre même jour, fenêtre vide ; **ignorée si l'heure n'est pas sûre** | **PASSE** 2026-11-05 |
 | LUM-13 | `Controller::step()` | `Manual` ignore la mesure (même invalide) ; `Off` ⇒ 0 | **PASSE** 2026-11-05 |
 | LUM-14 | `build_from_wizard()` | Compensation signée, 3 points triés par mesure, câblage (b) ⇒ courbe décroissante et contrôleur dans le bon sens, mesures égales ou > 4095 refusées sans toucher la config ; aucune allocation | **PASSE** 2026-11-05 |
@@ -236,7 +236,7 @@ référence calculés avec Python (`datetime`, UTC).
 | HW-AFF-03 | Tension **à la dalle** sur scène `plein` | ≥ 4,7 V | À FAIRE |
 | HW-AFF-04 | Observation à 25 trames/s, lisibilité à 4 m | Aucun scintillement, heure lisible | À FAIRE |
 | HW-AFF-05 | 1 h sur une scène claire | Dalle et alimentation tièdes | À FAIRE |
-| HW-LUM-01 | Relevés nuit noire / soir / plein jour | Trois valeurs nettement distinctes | **EN COURS** 2026-11-05 : ADC1_CH5 étalonné (eFuse), ~2086 comptes / 1,9 V en éclairage de bureau ; **câblage (a) confirmé** (main sur la LDR ⇒ la dalle s'assombrit). Relevés nuit/soir/jour à faire en conditions stables. |
+| HW-LUM-01 | Relevés nuit noire / soir / plein jour | Trois valeurs nettement distinctes ; en plein jour `brut` peut être **4095** et doit donner le **plafond**, pas `defaut` | **EN COURS** 2026-11-05 : ADC1_CH5 étalonné (eFuse), ~2086 comptes / 1,9 V en éclairage de bureau ; **câblage (a) confirmé** (main sur la LDR ⇒ la dalle s'assombrit). Relevés nuit/soir/jour à faire en conditions stables. |
 | HW-LUM-02 | Wizard d'étalonnage, étape 2 | Auto-éclairage **chiffré** ; > 150 ‰ ⇒ déplacer le capteur | À FAIRE |
 | HW-LUM-03 | Une journée complète d'observation | Aucun pompage, aucun scintillement | À FAIRE |
 | HW-RES-01 | Coupure secteur maison (horloge **et** box) | Reprise seule, heure affichée, **pas** de portail | À FAIRE |

@@ -263,18 +263,39 @@ void test_sensor_fault() {
     CHECK(!o.sensor_fault);
     CHECK_EQ(o.level, 100);
 
-    // LUM-11: stuck at a rail is a fault too, not "night" or "daylight".
+    // LUM-11: a reading at a rail is saturation, not a fault. With wiring (a)
+    // (increasing curve) 4095 is full daylight and 0 a dark room: the flat
+    // ends of the curve clamp, the fallback level never shows up.
     Controller rail(cfg);
-    for (uint8_t i = 0U; i < 5U; ++i) {
+    for (uint8_t i = 0U; i < 8U; ++i) {
         o = rail.step(ok(0U), 0U, false, 0U);
     }
-    CHECK(o.sensor_fault);
-    CHECK_EQ(o.level, brightness::kFallbackLevel);
+    CHECK(!o.sensor_fault);
+    CHECK_EQ(o.level, cfg.min_level);
     Controller rail_hi(cfg);
-    for (uint8_t i = 0U; i < 5U; ++i) {
+    for (uint8_t i = 0U; i < 8U; ++i) {
         o = rail_hi.step(ok(4095U), 0U, false, 0U);
     }
-    CHECK(o.sensor_fault);
+    CHECK(!o.sensor_fault);
+    CHECK_EQ(o.level, cfg.max_level);
+    // Wiring (b): decreasing curve, 4095 is the dark end and 0 the bright end.
+    Config inv = cfg;
+    inv.curve.points[0] = CurvePoint{300U, 255U};
+    inv.curve.points[1] = CurvePoint{900U, 160U};
+    inv.curve.points[2] = CurvePoint{2000U, 40U};
+    inv.curve.points[3] = CurvePoint{3600U, 8U};
+    Controller inv_lo(inv);
+    Controller inv_hi(inv);
+    for (uint8_t i = 0U; i < 8U; ++i) {
+        o = inv_lo.step(ok(0U), 0U, false, 0U);
+    }
+    CHECK(!o.sensor_fault);
+    CHECK_EQ(o.level, 255);
+    for (uint8_t i = 0U; i < 8U; ++i) {
+        o = inv_hi.step(ok(4095U), 0U, false, 0U);
+    }
+    CHECK(!o.sensor_fault);
+    CHECK_EQ(o.level, 8);
     // Fault from the very first samples: fallback, never 0 nor 255.
     Controller cold(cfg);
     for (uint8_t i = 0U; i < 5U; ++i) {

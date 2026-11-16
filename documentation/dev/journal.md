@@ -5,6 +5,37 @@
 
 ---
 
+## 2026-11-16 — Luminosité « inversée » : les butées de l'ADC ne sont plus un défaut capteur
+
+**Symptôme (Nicolas).** Plus lumineuse la nuit que le jour.
+
+**Cause.** `brightness::Controller::step()` traitait une mesure brute à 0 ou à
+4095 comme un capteur en défaut (ancienne LUM-11) et appliquait le repli 64.
+Or, avec le diviseur de 10 kΩ et le câblage (a) de la carte, l'ADC est
+**saturé à 4095 en plein jour** et **à 0 dans une pièce noire** : la dalle
+passait donc à 64 le jour (au lieu du plafond 255) et à 64 la nuit noire (au
+lieu du plancher 8), et n'était « juste » que le soir sous la lampe (~2000
+comptes ⇒ ~160). Vu de la pièce : inversé.
+
+**Correction.** Une butée est une **saturation**, pas un défaut : la mesure
+est valide et les extrémités plates de la courbe donnent plafond / plancher,
+dans les deux câblages. Seule une lecture ADC en échec (`valid == false`)
+compte pour le défaut capteur (LUM-10 inchangé). Une LDR débranchée donne le
+plancher de nuit et `brut = 0` sur la page : limite assumée, documentée
+(`spec-luminosite.md` §1).
+
+**Tests.** LUM-11 réécrit (échouait sur l'ancien code : 64 attendu 8 / 255,
+dans les deux sens), 12 180 vérifications, 0 échec. Fiche carte, plan de test
+(HW-LUM-01 à rejouer : `brut` 4095 en plein jour ⇒ plafond, jamais `defaut`),
+plan final, todo.
+
+**Reste.** Vérifier sur la carte (injoignable depuis le PC au moment de la
+correction : ni sur le réseau à son ancienne adresse, ni en USB) ; si la
+courbe elle-même a été inversée par un wizard joué dans de mauvaises
+conditions, le rejouer ou corriger les points sur `/luminosite`.
+
+---
+
 ## 2026-11-06 — Diagnostics, page gzippée, rollback OTA et chien de garde vérifiés, charge mesurée
 
 **Quoi.**

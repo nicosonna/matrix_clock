@@ -23,7 +23,9 @@ inline constexpr uint16_t kRawMax = 4095U;
 
 /// Brightness applied when the sensor is in fault: visible, not blinding (EX-13).
 inline constexpr uint8_t kFallbackLevel = 64U;
-/// Invalid samples in a row before the sensor is declared in fault.
+/// Failed reads in a row before the sensor is declared in fault.
+/// @note A reading at 0 or kRawMax is saturation (dark room, full daylight),
+///       never a fault: the curve clamps it (LUM-11).
 inline constexpr uint8_t kFaultAfterInvalid = 5U;
 
 /// Curve points at most.
@@ -88,8 +90,8 @@ bool in_window(uint16_t minute_of_day, uint16_t start, uint16_t end) noexcept;
 
 /// A raw ADC reading.
 struct Sample {
-    uint16_t raw;  ///< 0..kRawMax
-    bool valid;    ///< false: the read failed.
+    uint16_t raw;  ///< 0..kRawMax, rails included (saturation is a valid reading).
+    bool valid;    ///< false: the read failed (ADC error), the only fault source.
 };
 
 /// What the controller decided.

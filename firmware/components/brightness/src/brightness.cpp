@@ -127,8 +127,11 @@ Output Controller::step(Sample sample, uint8_t applied_level, bool time_sure, ui
     Output out{};
     out.config_replaced = replaced_;
 
-    // A reading stuck at either rail is a broken sensor, not darkness or daylight.
-    const bool valid = sample.valid && (sample.raw != 0U) && (sample.raw < kRawMax);
+    // A reading at a rail is saturation, not a fault: with a 10 k divider the
+    // ADC sits at 4095 in full daylight and at 0 in a dark room (wiring (a)),
+    // or the reverse (wiring (b)). The flat ends of the curve clamp it. Only a
+    // failed read (valid == false) counts towards the sensor fault.
+    const bool valid = sample.valid;
     if (valid) {
         invalid_run_ = 0U;
         const uint16_t med = median_.push(sample.raw);

@@ -27,6 +27,11 @@
 
 ## Phase 1 — à faire, dans l'ordre
 
+- [ ] **HW-LUM-01 à rejouer** après la correction des butées (2026-11-16) :
+      relever `brut` / `niveau` / `defaut` sur `/api/etat` en plein jour, le
+      soir sous la lampe et la nuit noire — attendu plafond / intermédiaire /
+      plancher, `defaut` jamais vrai.
+
 - [x] ~~Plan de test final consolidé~~ : `dev/plan-de-test-final.md`
       (2026-11-05). Reste : **jouer la campagne matérielle** de son §4 et
       dater chaque ligne dans `test-plan-hw.md`.

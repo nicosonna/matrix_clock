@@ -21,6 +21,7 @@ inline constexpr uint16_t kEns160PartId = 0x0160U;
 inline constexpr uint8_t kEns160RegPartId = 0x00U;        ///< 16 bits LE.
 inline constexpr uint8_t kEns160RegOpMode = 0x10U;
 inline constexpr uint8_t kEns160RegConfig = 0x11U;
+inline constexpr uint8_t kEns160RegCommand = 0x12U;       ///< Only in IDLE mode.
 inline constexpr uint8_t kEns160RegTempIn = 0x13U;        ///< 16 bits LE, Kelvin x 64.
 inline constexpr uint8_t kEns160RegRhIn = 0x15U;          ///< 16 bits LE, % x 512.
 inline constexpr uint8_t kEns160RegDeviceStatus = 0x20U;
@@ -33,6 +34,10 @@ inline constexpr uint8_t kEns160OpModeSleep = 0x00U;
 inline constexpr uint8_t kEns160OpModeIdle = 0x01U;
 inline constexpr uint8_t kEns160OpModeStandard = 0x02U;
 inline constexpr uint8_t kEns160OpModeReset = 0xF0U;
+
+/// COMMAND register values (IDLE mode only).
+inline constexpr uint8_t kEns160CommandNop = 0x00U;
+inline constexpr uint8_t kEns160CommandClearGpr = 0xCCU;
 
 /// DEVICE_STATUS bits.
 inline constexpr uint8_t kEns160StatusError = 0x40U;    ///< STATER.

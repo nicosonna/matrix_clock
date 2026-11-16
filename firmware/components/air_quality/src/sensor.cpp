@@ -36,7 +36,7 @@ bool is_valid(const SensorConfig& c) noexcept {
 AirSensor::AirSensor(I2cBus& bus, const SensorConfig& config) noexcept
     : bus_(bus), config_(is_valid(config) ? config : default_sensor_config()), reading_{}, state_(State::Probe),
       wait_until_ms_(0U), last_cycle_ms_(0U), failures_(0U), aht_crc_failures_(0U), aht_busy_retries_(0U),
-      aht_ok_(false), seen_(false), awake_(false), captured_(false), wake_ms_(0U), aht_{}, status_{} {}
+      aht_ok_(false), seen_(false), awake_(false), captured_(false), have_cold_(false), wake_step_(0U), wake_ms_(0U), aht_{}, status_{} {}
 
 void AirSensor::configure(const SensorConfig& config) noexcept {
     if (is_valid(config)) {
@@ -49,6 +49,10 @@ void AirSensor::configure(const SensorConfig& config) noexcept {
             wait_until_ms_ = 0U;
         } else if (cycle_off && !awake_ && reading_.present && (state_ == State::Idle)) {
             state_ = State::SetMode;  // continuous mode again: heater back on now
+        }
+        if (cycle_off) {
+            have_cold_ = false;
+            reading_.climate_cold = false;
         } else if (cycle_on && awake_) {
             captured_ = false;        // the running wake ends at the next valid reading (or the cap)
         }
@@ -70,6 +74,8 @@ const char* AirSensor::state_name() const noexcept {
         case State::EnsStatus: return "ens_status";
         case State::EnsData: return "ens_data";
         case State::SetIdle: return "set_idle";
+        case State::Wake: return "wake";
+        case State::WakeWait: return "wake_wait";
         case State::Recover: return "recover";
         default: return "?";
     }
@@ -123,13 +129,15 @@ void AirSensor::step(uint32_t now_ms) noexcept {
                 const uint8_t resets = reading_.bus_resets;
                 reading_ = AirReading{};
                 reading_.bus_resets = resets;
+                have_cold_ = false;
                 state_ = State::Absent;
                 wait_until_ms_ = now_ms + kProbeRetryMs;
                 return;
             }
             seen_ = true;
             reading_.present = true;
-            state_ = State::SetMode;
+            wake_step_ = 0U;
+            state_ = config_.heater_cycle ? State::Wake : State::SetMode;
             return;
         }
         case State::Absent:
@@ -260,13 +268,19 @@ void AirSensor::step(uint32_t now_ms) noexcept {
                         static_cast<int16_t>(static_cast<int32_t>(aht_.temperature_centi) - config_.temperature_offset_centi);
                     reading_.humidity_pct10 = aht_.humidity_pct10;
                     reading_.compensation_default = false;
+                    reading_.climate_cold = true;
+                    reading_.climate_ms = now_ms;
+                    have_cold_ = true;
                 } else {
                     reading_.climate_valid = false;
+                    reading_.climate_cold = false;
+                    have_cold_ = false;
                 }
                 reading_.updated_ms = now_ms;
                 failures_ = 0U;
                 if (elapsed(now_ms, wake_ms_ + config_.cycle_period_ms)) {
-                    state_ = State::SetMode;
+                    wake_step_ = 0U;
+                    state_ = State::Wake;  // full start sequence: STANDARD alone leaves the sensor silent
                     return;
                 }
                 state_ = State::Idle;
@@ -276,17 +290,27 @@ void AirSensor::step(uint32_t now_ms) noexcept {
             int16_t t = kFallbackTemperatureCenti;
             uint16_t h = kFallbackHumidityPct10;
             const bool aht_fault = aht_crc_failures_ >= kConsecutiveFailuresMax;
+            // Duty cycle: while the plate heats, the clock keeps showing the last
+            // plate-off reading; the ENS160 compensation still gets the live one.
+            const bool freeze = config_.heater_cycle && have_cold_ && reading_.climate_valid;
             if (aht_ok_ && !aht_fault) {
                 const int32_t corrected = static_cast<int32_t>(aht_.temperature_centi) - config_.temperature_offset_centi;
                 t = static_cast<int16_t>(corrected);
                 h = aht_.humidity_pct10;
-                reading_.climate_valid = true;
-                reading_.temperature_centi = t;
-                reading_.humidity_pct10 = h;
+                if (!freeze) {
+                    reading_.climate_valid = true;
+                    reading_.temperature_centi = t;
+                    reading_.humidity_pct10 = h;
+                    reading_.climate_cold = false;
+                    reading_.climate_ms = now_ms;
+                }
                 reading_.compensation_default = false;
-            } else {
+            } else if (!freeze) {
                 reading_.climate_valid = false;
+                reading_.climate_cold = false;
                 reading_.compensation_default = true;
+            } else {
+                reading_.compensation_default = true;  // the ENS160 gets the fallback, the frozen value stays
             }
             uint8_t cmd[kEns160CompensationSize];
             ens160_encode_compensation(t, h, cmd);
@@ -333,11 +357,16 @@ void AirSensor::step(uint32_t now_ms) noexcept {
                 return;
             }
             const Ens160Data d = ens160_decode_data(bytes);
-            reading_.aqi = d.aqi;
-            reading_.tvoc_ppb = d.tvoc_ppb;
-            reading_.eco2_ppm = d.eco2_ppm;
-            reading_.air_valid = (d.aqi >= 1U) && (d.aqi <= 5U);
-            if (config_.heater_cycle && reading_.air_valid) {
+            const bool good = (d.aqi >= 1U) && (d.aqi <= 5U);
+            // Duty cycle: right after the wake sequence the sensor can flag stale "new data"
+            // over registers the reset has cleared (AQI 0): keep the previous reading then.
+            if (good || !config_.heater_cycle) {
+                reading_.aqi = d.aqi;
+                reading_.tvoc_ppb = d.tvoc_ppb;
+                reading_.eco2_ppm = d.eco2_ppm;
+                reading_.air_valid = good;
+            }
+            if (config_.heater_cycle && good) {
                 captured_ = true;
                 state_ = State::SetIdle;
                 return;
@@ -346,6 +375,33 @@ void AirSensor::step(uint32_t now_ms) noexcept {
             wait_until_ms_ = last_cycle_ms_ + config_.period_ms;
             return;
         }
+        case State::Wake: {
+            // Reference start sequence, one write per step: reset, idle, clear GPR; then SetMode (standard).
+            uint8_t cmd[2] = {kEns160RegOpMode, kEns160OpModeReset};
+            if (wake_step_ == 1U) {
+                cmd[1] = kEns160OpModeIdle;
+            } else if (wake_step_ >= 2U) {
+                cmd[0] = kEns160RegCommand;
+                cmd[1] = kEns160CommandClearGpr;
+            }
+            if (!bus_.write(config_.ens160_address, cmd, 2U)) {
+                fail(now_ms);
+                return;
+            }
+            state_ = State::WakeWait;
+            wait_until_ms_ = now_ms + kEns160WakeStepDelayMs;
+            return;
+        }
+        case State::WakeWait:
+            if (elapsed(now_ms, wait_until_ms_)) {
+                if (wake_step_ >= 2U) {
+                    state_ = State::SetMode;
+                } else {
+                    ++wake_step_;
+                    state_ = State::Wake;
+                }
+            }
+            return;
         case State::SetIdle: {
             const uint8_t cmd[2] = {kEns160RegOpMode, kEns160OpModeIdle};
             if (!bus_.write(config_.ens160_address, cmd, 2U)) {

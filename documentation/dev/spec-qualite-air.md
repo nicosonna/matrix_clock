@@ -261,15 +261,25 @@ source de chaleur du module : c'est elle qui tiédit la carte et fait lire
 l'AHT21 quelques degrés trop haut, bien avant la dalle. L'option
 `cycle_chauffe` (demandée par Nicolas) coupe la plaque entre deux mesures :
 
-- au réveil, `OPMODE` standard ; on attend le **drapeau de validité** du
-  capteur, pas un délai fixe ; dès qu'une lecture valide est capturée,
-  `OPMODE` idle (plaque coupée, étalonnage interne conservé) ;
+- au réveil, la **séquence de démarrage de référence** (reset logiciel,
+  idle, effacement des registres GPR, standard, 20 ms entre chaque) : sur le
+  banc, idle → standard seul, et un reset seul, laissaient le capteur
+  « normal » sans jamais lever NEWDAT. Juste après le reset, un faux « nouvelle
+  donnée » sur des registres effacés (AQI 0) est ignoré : la dernière mesure
+  reste. On attend ensuite le **drapeau de validité** du capteur (préchauffage
+  de ~3 min), pas un délai fixe ; dès qu'une lecture valide est capturée,
+  `OPMODE` idle (plaque coupée) ;
 - si le capteur ne se déclare jamais valide, la chauffe s'arrête au bout de
   **4 min** et on réessaie au réveil suivant ;
 - réveil toutes les `periode_cycle_min` (5–60, défaut **15**). À 5 min la
   plaque chauffe jusqu'à 60 % du temps, à 15 min 20 %, à 30 min 10 % ;
 - pendant la veille, l'AHT21 continue d'être lu chaque seconde (il ne chauffe
-  pas) ; la qualité d'air affichée est la **dernière mesure** (son âge est
+  pas) ; pendant la chauffe, la température et l'humidité **publiées restent
+  figées** à la dernière lecture plaque froide (`climat_plaque_froide`,
+  `climat_age_s` sur `/api/etat`, mention sur la page) : la dalle, Home
+  Assistant et les règles ne voient pas la montée, l'ENS160 reçoit quand même
+  la lecture vive pour sa compensation ; un AHT21 en échec pendant la chauffe
+  ne fait pas tomber la valeur figée (AIR-25) ; la qualité d'air affichée est la **dernière mesure** (son âge est
   connu, `/api/etat` → `age_s`), et le préchauffage du réveil suivant ne
   l'efface pas ; un défaut capteur, lui, l'efface ;
 - honnêteté : tant qu'aucune lecture valide n'a été capturée depuis la mise
@@ -339,7 +349,8 @@ trames) :
 | AIR-20 | Règles sur une source en préchauffage ou en défaut ⇒ **aucune levée** ; `AirCapteurDefaut` lève à sa place. |
 | AIR-23 | Textes de la dalle : `temperature_text()` une décimale arrondie avec retenue (21.95 → `22.0°`), signe gardé sauf `-0.0`, degré UTF-8 ; `humidity_text()` arrondi à l'unité, plafonné à 100 % ; tampon trop petit ⇒ 0 et chaîne vide. |
 | AIR-21 | Bus bloqué / NACK ⇒ réinitialisation, compteur, aucune attente bloquante. |
-| AIR-24 | Chauffe cyclique (§8) : veille `OPMODE` idle après une capture valide, AHT21 lu pendant la veille, réveil à la période, dernière mesure gardée pendant le préchauffage, plafond de 4 min, retour au continu immédiat, défaut ⇒ défaut. |
+| AIR-25 | Chauffe cyclique : climat publié figé à la dernière lecture plaque froide pendant la chauffe, compensation ENS160 avec la lecture vive, reprise en veille. |
+| AIR-24 | Chauffe cyclique (§8) : séquence de réveil (un reset et un effacement GPR par réveil, dès le démarrage), donnée effacée après le reset ignorée, veille `OPMODE` idle après une capture valide, AHT21 lu pendant la veille, réveil à la période, dernière mesure gardée pendant le préchauffage, plafond de 4 min, retour au continu immédiat, défaut ⇒ défaut. |
 | AIR-22 | Modèle ⇄ wizard `/air` : aucun paramètre orphelin. |
 
 Vérifications matérielles :

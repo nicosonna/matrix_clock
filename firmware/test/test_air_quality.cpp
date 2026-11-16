@@ -48,6 +48,8 @@ public:
     uint32_t last_comp_order = 0U;
     uint32_t last_data_order = 0U;
     uint8_t opmode = 0U;
+    uint32_t ens_resets = 0U;
+    uint32_t ens_gpr_clears = 0U;
 
     FakeBus() { set_aht(2345, 456U); }
 
@@ -89,6 +91,11 @@ public:
         ++ens_writes;
         if ((len == 2U) && (data[0] == kEns160RegOpMode)) {
             opmode = data[1];
+            if (data[1] == kEns160OpModeReset) {
+                ++ens_resets;
+            }
+        } else if ((len == 2U) && (data[0] == kEns160RegCommand) && (data[1] == kEns160CommandClearGpr)) {
+            ++ens_gpr_clears;
         } else if ((len == 5U) && (data[0] == kEns160RegTempIn)) {
             ++comp_writes;
             last_comp_order = order_counter;
@@ -284,6 +291,7 @@ void test_sensor_loop() {
         CHECK_EQ(bus.opmode, kEns160OpModeStandard);
         CHECK_EQ(r.opmode_raw, kEns160OpModeStandard);
         CHECK_EQ(r.status_raw, 0x02U);
+        CHECK_EQ(bus.ens_resets, 0U);  // continuous mode: no reset, an ESP reboot keeps the sensor's data valid
         CHECK(bus.comp_writes >= 1U);
         CHECK(bus.data_reads >= 1U);
         // AIR-10: the compensation is written before the data is read.
@@ -761,10 +769,14 @@ void test_heater_cycle() {
     // Not woken before the period: 4 min 50 s after the wake, still idle.
     run(s, now, 290000U - now);
     CHECK_EQ(bus.opmode, kEns160OpModeIdle);
-    // Woken at 5 min; warming up again: the previous values stay, flagged warm-up.
+    // Woken at 5 min through a software reset; warming up again: the previous values stay, flagged warm-up.
     bus.ens_status = 0x06U;
     bus.ens_data[0] = 4U;
+    CHECK_EQ(bus.ens_resets, 1U);                  // boot in cycle mode: full sequence (the sensor may be idle)
+    CHECK_EQ(bus.ens_gpr_clears, 1U);
     run(s, now, 302000U - now);
+    CHECK_EQ(bus.ens_resets, 2U);
+    CHECK_EQ(bus.ens_gpr_clears, 2U);
     CHECK_EQ(bus.opmode, kEns160OpModeStandard);
     CHECK(s.reading().heater_on);
     CHECK(s.reading().warming_up);
@@ -776,14 +788,59 @@ void test_heater_cycle() {
     CHECK(!s.reading().heater_on);
     CHECK_EQ(s.reading().aqi, 3U);
     CHECK(s.reading().air_valid);
-    // Next wake at 10 min captures the new value and sleeps.
+    // Next wake at 10 min: a stale "valid + new data" right after the reset with cleared
+    // registers (AQI 0) is not a capture: the previous reading stays, the heater stays on.
     run(s, now, 603000U - now);
+    CHECK_EQ(bus.ens_resets, 3U);
     CHECK_EQ(bus.opmode, kEns160OpModeStandard);
+    bus.ens_data[0] = 0U;
     bus.ens_status = 0x02U;
+    run(s, now, 3000U);
+    CHECK_EQ(bus.opmode, kEns160OpModeStandard);
+    CHECK(s.reading().air_valid);
+    CHECK_EQ(s.reading().aqi, 3U);
+    CHECK_EQ(s.reading().eco2_ppm, 820U);
+    // Then the real value: captured, asleep.
+    bus.ens_data[0] = 4U;
     run(s, now, 3000U);
     CHECK_EQ(s.reading().aqi, 4U);
     CHECK(!s.reading().warming_up);
     CHECK_EQ(bus.opmode, kEns160OpModeIdle);
+    // AIR-25: while the plate heats, the published climate stays frozen at the
+    // last plate-off reading; the ENS160 compensation gets the live one.
+    bus.set_aht(2100, 500U);
+    run(s, now, 2000U);                             // asleep: live, cold
+    CHECK((s.reading().temperature_centi >= 2099) && (s.reading().temperature_centi <= 2101));
+    CHECK(s.reading().climate_cold);
+    const uint32_t cold_ms = s.reading().climate_ms;
+    CHECK((now - cold_ms) < 2000U);
+    bus.ens_status = 0x06U;                         // the next wake will warm up for a while
+    run(s, now, 903000U - now);                     // third wake, 5 min after the second one
+    CHECK_EQ(bus.opmode, kEns160OpModeStandard);
+    bus.set_aht(2600, 400U);                        // the module heats up
+    run(s, now, 5000U);
+    CHECK((s.reading().temperature_centi >= 2099) && (s.reading().temperature_centi <= 2101));  // frozen
+    CHECK_EQ(s.reading().humidity_pct10, 500U);
+    CHECK(s.reading().climate_cold);
+    CHECK(s.reading().climate_valid);
+    const uint32_t k64_live = static_cast<uint32_t>(bus.last_comp[1] | (bus.last_comp[2] << 8));
+    CHECK((k64_live >= 19144U) && (k64_live <= 19146U));  // 26.00 degC -> 299.15 K * 64
+    // The AHT21 failing during the heating phase does not erase the frozen value.
+    bus.aht_present = false;
+    run(s, now, 3000U);
+    CHECK(s.reading().climate_valid);
+    CHECK((s.reading().temperature_centi >= 2099) && (s.reading().temperature_centi <= 2101));
+    CHECK(s.reading().compensation_default);
+    bus.aht_present = true;
+    // Valid again: capture, sleep, and the live (cooling) reading is published once more.
+    bus.ens_status = 0x02U;
+    run(s, now, 3000U);
+    CHECK_EQ(bus.opmode, kEns160OpModeIdle);
+    bus.set_aht(2400, 450U);
+    run(s, now, 2000U);
+    CHECK((s.reading().temperature_centi >= 2399) && (s.reading().temperature_centi <= 2401));
+    CHECK(s.reading().climate_cold);
+    CHECK(s.reading().climate_ms > cold_ms);
     // Back to continuous mode while asleep: heater on at once and it stays on.
     SensorConfig cont = cfg;
     cont.heater_cycle = false;
@@ -794,6 +851,10 @@ void test_heater_cycle() {
     run(s, now, 5000U);
     CHECK_EQ(bus.opmode, kEns160OpModeStandard);
     CHECK(bus.comp_writes > comp_before);
+    CHECK(!s.reading().climate_cold);               // continuous: live again, not a cold reading
+    bus.set_aht(2700, 420U);
+    run(s, now, 2000U);
+    CHECK((s.reading().temperature_centi >= 2699) && (s.reading().temperature_centi <= 2701));
     // A sensor fault while cycling is still a fault (nothing kept).
     bus.ens_status = 0x0EU;  // validity 3 (invalid)
     s.configure(cfg);
